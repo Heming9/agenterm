@@ -120,3 +120,7 @@ The server itself serves HTTP. For encrypted transport between devices, use an H
 ```sh
 go test ./...
 ```
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).

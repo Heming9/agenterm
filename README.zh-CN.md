@@ -114,3 +114,7 @@ Server 当前只提供 HTTP。跨设备时可在可信网络中使用；如需�
 - `execute_command` 在结束后返回输出；需要边运行边读取时使用 `session_start` 和 `session_read`。
 - Windows 输出会根据首段非 ASCII 内容推测 UTF-8 或系统代码页并转换为 UTF-8；同一命令混合多种编码时仍可能乱码。
 - 命令执行使用 macOS/Linux 的 `/bin/sh -c` 或 Windows 的 `cmd.exe /C`。
+
+## 开源协议
+
+本项目采用 [Apache License 2.0](LICENSE) 开源协议。
