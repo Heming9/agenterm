@@ -41,7 +41,11 @@ type server struct {
 }
 
 func random() string {
-	b := make([]byte, 24)
+	return randomBytes(24)
+}
+
+func randomBytes(size int) string {
+	b := make([]byte, size)
 	if _, err := rand.Read(b); err != nil {
 		log.Fatal(err)
 	}
@@ -303,7 +307,7 @@ func main() {
 		u.Scheme = "ws"
 	}
 	u.Path = "/client"
-	s := &server{secret: random()}
+	s := &server{secret: randomBytes(protocol.TokenSecretSize)}
 	token, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: s.secret})
 	if err != nil {
 		log.Fatal(err)

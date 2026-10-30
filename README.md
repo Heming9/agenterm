@@ -46,7 +46,7 @@ GUI 使用 Fyne，构建需要 CGo 和本机 C 编译器。Linux 还需要相应
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 会输出连接 token 和 MCP 地址。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
+将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 会输出 `agenterm:<编码内容>` 格式的连接 token 和 MCP 地址。编码内容采用紧凑二进制结构，包含连接协议、16 字节（128 位）随机凭证和主机地址（含可选端口），使用无填充的 Base64 URL-safe 编码；连接路径固定为 `/client`。IPv4/IPv6 地址及其端口使用二进制存储，域名保留为文本。默认本机地址的 token 为 40 个字符。此格式不兼容旧版 token，Server 与 Client 需同时更新。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
 
 在被控电脑运行：
 
