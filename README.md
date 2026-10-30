@@ -57,7 +57,7 @@ To package the GUI with its system application icon, install the Fyne CLI matchi
 go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
 cd cmd/agenterm-gui
 fyne package -os darwin   # macOS: Agenterm.app
-fyne package -os windows  # Windows: Agenterm.exe
+fyne package -os windows -icon assets/app-icon-windows.png  # Windows: Agenterm.exe
 ```
 
 Run the command for your operating system; Windows packaging requires a working Windows C compiler. The Fyne CLI increments the build number in `FyneApp.toml` after packaging.

@@ -55,7 +55,7 @@ GUI 使用 Fyne，构建需要 CGo 和本机 C 编译器。Linux 还需要相应
 go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
 cd cmd/agenterm-gui
 fyne package -os darwin   # macOS：Agenterm.app
-fyne package -os windows  # Windows：Agenterm.exe
+fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm.exe
 ```
 
 选择当前操作系统对应的命令；Windows 打包需要可用的 Windows C 编译器。Fyne CLI 每次打包后会递增 `FyneApp.toml` 中的构建号。

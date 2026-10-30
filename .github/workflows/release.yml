@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location cmd/agenterm-gui
-          & "$(go env GOPATH)/bin/fyne.exe" package -os windows
+          & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Move-Item Agenterm.exe ../../Agenterm-Windows-amd64.exe
           Set-Location ../..
