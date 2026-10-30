@@ -1,6 +1,21 @@
+# Operating system and editor files
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Build outputs
 /dist/
 /agenterm-server
 /agenterm-client
 /agenterm-gui
+/agenterm-client-*
 *.exe
+*.test
+*.out
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
