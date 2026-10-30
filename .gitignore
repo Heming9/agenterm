@@ -1,0 +1,6 @@
+.DS_Store
+/dist/
+/agenterm-server
+/agenterm-client
+/agenterm-gui
+*.exe
