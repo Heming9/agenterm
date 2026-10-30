@@ -14,6 +14,8 @@ Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> s
 
 **The server uses unencrypted HTTP and WebSocket by default. Anyone able to observe traffic can read tokens, commands and output, and anyone with a token can execute commands on its connected client with that user’s permissions. Use only on a trusted network or in a controlled test environment; do not expose it directly to the public internet.** Each token authenticates and selects one client for MCP requests. Tokens can be reused until the server restarts. Clients do not save tokens or reconnect automatically.
 
+Authentication failures are limited by directly connected source IP: 10 failures within one minute block that IP for five minutes, including valid credentials during the block. Users behind a shared IP affect each other. The server does not trust forwarded headers; behind a reverse proxy, requests may share the proxy IP, so also rate-limit by real source IP at the proxy. Distributed sources can still attempt authentication.
+
 The server can see commands and their output. Commands also appear on the client, so secrets in commands may be visible. Closing the client disconnects it and attempts to stop running commands, but completed operations cannot be undone and detached child processes may continue running.
 
 ## Build
@@ -105,7 +107,7 @@ curl -s http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_command","arguments":{"command":"echo hello"}}}'
 ```
 
-The server itself serves HTTP. For encrypted transport between devices, use an HTTPS reverse proxy that supports WebSocket and set `-public-url` to its HTTPS origin. HTTPS protects traffic in transit, but tokens must still be kept secret; public exposure requires appropriate access controls.
+The server itself serves HTTP and warns when `-public-url` uses HTTP. For encrypted transport between devices, use an HTTPS reverse proxy that supports WebSocket and set `-public-url` to its HTTPS origin. When the proxy and server run on the same machine, bind the backend to `127.0.0.1:8080`. Setting an HTTPS public URL does not enable TLS by itself; the reverse proxy must be configured separately. HTTPS protects traffic in transit, but tokens must still be kept secret; public exposure requires appropriate access controls.
 
 ## Limitations
 

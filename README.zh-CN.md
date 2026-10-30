@@ -14,6 +14,8 @@ Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> s
 
 **Server 默认使用未加密的 HTTP 和 WebSocket。能监听流量的人可能读取 token、命令及输出；持有 token 的人可以在对应 Client 上执行命令，权限等同于运行 Client 的用户。仅在可信网络或受控测试环境使用，不要直接暴露到公网。** 每个 token 用于验证并选择对应的 Client；token 可重复使用，Server 重启后失效。Client 不会保存 token 或自动重连。
 
+认证失败按直接连接的来源 IP 计数：1 分钟内失败 10 次后，该 IP 被限制 5 分钟；限制期间正确凭证也不能使用。共享 IP 的用户会相互影响。Server 不信任转发头：使用反向代理时，所有请求可能显示为同一个代理 IP，建议同时在代理入口按真实来源 IP 限流。分布式来源仍可继续尝试。
+
 Server 可以看到命令与输出。命令会显示在 Client 终端，包含在命令中的敏感信息也可能被显示。关闭 Client 会断开连接并尝试停止运行中的命令，但已完成的操作不能撤销，脱离的子进程也不一定会停止。
 
 ## 构建
@@ -105,7 +107,7 @@ curl -s http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_command","arguments":{"command":"echo hello"}}}'
 ```
 
-Server 当前只提供 HTTP。跨设备时可在可信网络中使用；如需加密传输，可在前面配置支持 WebSocket 的 HTTPS 反向代理，并将 `-public-url` 设为代理的 HTTPS 地址。HTTPS 可以保护传输，但仍需妥善保管 token；公开部署还需要适当的访问控制。
+Server 当前只提供 HTTP。使用 HTTP 的 `-public-url` 时会输出未加密警告。跨设备时可在可信网络中使用；如需加密传输，可在前面配置支持 WebSocket 的 HTTPS 反向代理，并将 `-public-url` 设为代理的 HTTPS 地址。代理与 Server 同机时，建议仅监听本机，例如 `-listen 127.0.0.1:8080 -public-url https://agenterm.example.com`。仅设置 HTTPS 地址不会自动启用 TLS，必须单独配置反向代理。HTTPS 可以保护传输，但仍需妥善保管 token；公开部署还需要适当的访问控制。
 
 ## 当前限制
 

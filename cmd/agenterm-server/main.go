@@ -37,6 +37,7 @@ type server struct {
 	clients  map[string]*client // client credential -> connection
 	mu       sync.Mutex
 	sessions map[string]*session
+	limiter  authLimiter
 }
 
 func random() string {
@@ -61,8 +62,11 @@ func (s *server) validSecret(secret string) bool {
 
 func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if r.Header.Get("Authorization") != "Bearer "+secret || !s.validSecret(secret) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if status, err := s.authorize(r.RemoteAddr, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret)); err != nil {
+		if status == http.StatusTooManyRequests {
+			w.Header().Set("Retry-After", "300")
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	s.mu.Lock()
@@ -194,9 +198,13 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 	header := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(header, "Bearer ")
 	secret, ok := s.tokens[token]
-	if header != "Bearer "+token || !ok {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="agenterm"`)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if status, err := s.authorize(r.RemoteAddr, header == "Bearer "+token && ok); err != nil {
+		if status == http.StatusTooManyRequests {
+			w.Header().Set("Retry-After", "300")
+		} else {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="agenterm"`)
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	var req rpcRequest
@@ -319,7 +327,8 @@ func main() {
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		log.Fatal("public-url must be an http(s) origin without a path")
 	}
-	if u.Scheme == "https" {
+	securePublicURL := u.Scheme == "https"
+	if securePublicURL {
 		u.Scheme = "wss"
 	} else {
 		u.Scheme = "ws"
@@ -339,7 +348,9 @@ func main() {
 		fmt.Printf("Agenterm token %d:\n%s\n\n", i, token)
 	}
 	fmt.Printf("MCP endpoint: %s/mcp\n", strings.TrimRight(*public, "/"))
-	log.Print("WARNING: HTTP and WebSocket traffic is unencrypted. Use only in a trusted network.")
+	if !securePublicURL {
+		log.Print("WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.")
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/client", s.connect)
 	mux.HandleFunc("/mcp", s.mcp)
