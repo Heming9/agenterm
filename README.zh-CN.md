@@ -1,5 +1,7 @@
 # Agenterm
 
+<img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm 应用图标" width="128">
+
 [English](README.md) | 简体中文
 
 让本机 Agent 通过 MCP 在另一台电脑执行命令。第一版只支持一个在线 Client。
@@ -46,6 +48,17 @@ go build -o agenterm-gui ./cmd/agenterm-gui
 ```
 
 GUI 使用 Fyne，构建需要 CGo 和本机 C 编译器。Linux 还需要相应图形库开发文件；跨平台编译需要目标系统的 C 交叉编译器，不能直接复用下面纯 Go 命令行版的交叉编译方式。Windows 可在本机用 `go build -ldflags=-H=windowsgui -o Agenterm.exe ./cmd/agenterm-gui` 构建，避免额外的控制台窗口。不同系统的图形包依赖和发布要求参见 [Fyne 构建说明](https://docs.fyne.io/started/)。
+
+要打包包含系统应用图标的 GUI，请先安装与项目 Fyne 版本一致的 CLI，再在目标系统上运行对应的打包命令：
+
+```sh
+go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
+cd cmd/agenterm-gui
+fyne package -os darwin   # macOS：Agenterm.app
+fyne package -os windows  # Windows：Agenterm.exe
+```
+
+选择当前操作系统对应的命令；Windows 打包需要可用的 Windows C 编译器。Fyne CLI 每次打包后会递增 `FyneApp.toml` 中的构建号。
 
 ## 运行
 

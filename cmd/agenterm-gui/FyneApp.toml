@@ -1,0 +1,6 @@
+[Details]
+Icon = "assets/app-icon-agent.png"
+Name = "Agenterm"
+ID = "io.agenterm.client"
+Version = "0.1.0"
+Build = 1

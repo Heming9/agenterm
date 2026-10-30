@@ -1,5 +1,7 @@
 # Agenterm
 
+<img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm app icon" width="128">
+
 English | [简体中文](README.zh-CN.md)
 
 Agenterm lets an agent execute commands on another computer through MCP. A server exposes the MCP endpoint, and a client connects to it over WebSocket. The current version supports one connected client at a time.
@@ -48,6 +50,17 @@ go build -o agenterm-gui ./cmd/agenterm-gui
 ```
 
 The GUI uses Fyne and requires CGo and a C compiler. Linux also requires graphics development libraries. Cross-compiling it requires a C cross-compiler for the target platform. On Windows, build locally with `go build -ldflags=-H=windowsgui -o Agenterm.exe ./cmd/agenterm-gui` to avoid an extra console window. See the [Fyne setup documentation](https://docs.fyne.io/started/) for platform dependencies.
+
+To package the GUI with its system application icon, install the Fyne CLI matching the project's Fyne version, then run the package command on the target platform:
+
+```sh
+go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
+cd cmd/agenterm-gui
+fyne package -os darwin   # macOS: Agenterm.app
+fyne package -os windows  # Windows: Agenterm.exe
+```
+
+Run the command for your operating system; Windows packaging requires a working Windows C compiler. The Fyne CLI increments the build number in `FyneApp.toml` after packaging.
 
 ## Run
 
