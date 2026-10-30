@@ -27,7 +27,7 @@ func TestInterfaceFontCoversChineseWithoutFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const labels = "Agenterm 粘贴 Server 生成的连接 Token 已执行 0 条 平均耗时 — 执行记录 命令与输出 等待连接 后，命令和输出将显示在这里。断开连接 清空 正在执行 完成 失败 退出码"
+	const labels = "Agenterm 粘贴 Server 生成的连接 Token 已执行 0 条 平均耗时 — 执行记录 命令与输出 等待连接 后，命令和输出将显示在这里。断开连接 清空 正在执行"
 	for _, r := range labels {
 		if _, ok := face.NominalGlyph(r); !ok {
 			t.Errorf("UI character %q would require a different fallback font", r)
@@ -114,8 +114,8 @@ func TestCommandStatisticsAndClear(t *testing.T) {
 		v.address.SetText("192.168.1.8:8080")
 		v.inputRow.Hide()
 		v.connectedRow.Show()
-		v.refreshTerminalStatus()
-		fmt.Fprint(v.buffer, "14:32:15  $ pwd\n/Users/ming/Projects/agenterm\n\n完成 · 退出码 0 · 200 ms\n\n14:32:18  $ go test ./internal/client\nok  agenterm/internal/client  0.800s\n\n完成 · 退出码 0 · 800 ms\n")
+		v.refreshTerminalTheme()
+		fmt.Fprint(v.buffer, "14:32:15  $ pwd\n/Users/ming/Projects/agenterm\n\n14:32:18  $ go test ./internal/client\nok  agenterm/internal/client  0.800s\n")
 		v.flushLogs()
 		capture("client-connected")
 		win.Resize(fyne.NewSize(700, 420))

@@ -16,7 +16,10 @@ type monochromeTheme struct {
 	inactive bool
 }
 
-const colourTag fyne.ThemeColorName = "agentermTag"
+const (
+	colourTag     fyne.ThemeColorName = "agentermTag"
+	colourTagText fyne.ThemeColorName = "agentermTagText"
+)
 
 var systemSans, systemMono fyne.Resource
 
@@ -125,9 +128,14 @@ func (t *monochromeTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVari
 	switch name {
 	case colourTag:
 		if dark {
-			return gray(38)
+			return color.NRGBA{R: 25, G: 65, B: 43, A: 255}
 		}
-		return gray(240)
+		return color.NRGBA{R: 230, G: 247, B: 234, A: 255}
+	case colourTagText:
+		if dark {
+			return color.NRGBA{R: 159, G: 224, B: 174, A: 255}
+		}
+		return color.NRGBA{R: 47, G: 133, B: 74, A: 255}
 	case theme.ColorNameBackground, theme.ColorNameInputBackground:
 		return bg
 	case theme.ColorNameForeground, theme.ColorNamePrimary, theme.ColorNameHyperlink,

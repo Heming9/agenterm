@@ -11,6 +11,7 @@ import (
 	"agenterm/internal/client"
 	"agenterm/internal/protocol"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -65,8 +66,7 @@ type clientView struct {
 	header, historyHeader           *fyne.Container
 	statusBadge                     *surface
 	connectionError                 *widget.Label
-	terminal                        *widget.RichText
-	terminalStatus                  *uiText
+	terminal                        *widget.Label
 	emptyTitle, emptyDetail         *uiText
 	terminalTheme                   *monochromeTheme
 	terminalPanel                   *container.ThemeOverride
@@ -111,7 +111,7 @@ func newClientView(win fyne.Window) *clientView {
 	v.disconnectButton = newButton("断开连接", unplugIcon, v.disconnect)
 	v.address = mutedLabel("")
 	v.address.TextStyle.Monospace = true
-	v.status = mutedLabel("●  已连接")
+	v.status = newText("●  已连接", 12, colourTagText)
 	v.statusBadge = newSurface(padded(v.status, 4, 4, 10, 10), 6)
 	v.statusBadge.fill, v.statusBadge.border = colourTag, false
 	connectControl := container.NewThemeOverride(v.connectButton, buttonTheme{newMonochromeTheme(false)})
@@ -124,12 +124,17 @@ func newClientView(win fyne.Window) *clientView {
 	v.connectedRow.Hide()
 	connection := container.NewStack(slot(v.inputRow, 440, 38, true), v.connectedRow)
 
-	logo := widget.NewIcon(theme.NewColoredResource(terminalIcon, theme.ColorNameForegroundOnPrimary))
-	logoBox := newSurface(padded(logo, 6, 6, 6, 6), 8)
-	logoBox.fill, logoBox.border = theme.ColorNamePrimary, false
+	logo := canvas.NewImageFromResource(fyne.NewStaticResource("app-icon.png", appIcon))
+	logo.FillMode = canvas.ImageFillContain
 	title := newText("Agenterm", 20, theme.ColorNameForeground)
+	var brandTitle fyne.CanvasObject = title
+	if version := strings.TrimSpace(fyne.CurrentApp().Metadata().Version); version != "" {
+		versionLabel := newText("v"+strings.TrimPrefix(version, "v"), 10, theme.ColorNamePlaceHolder)
+		versionLabel.Alignment = fyne.TextAlignTrailing
+		brandTitle = container.New(layout.NewCustomPaddedVBoxLayout(-6), title, versionLabel)
+	}
 	brand := padded(container.New(layout.NewCustomPaddedHBoxLayout(10),
-		slot(logoBox, 32, 32, false), title), 0, 0, 0, 24)
+		container.NewCenter(slot(logo, 32, 32, false)), brandTitle), 0, 0, 0, 24)
 	v.header = container.NewBorder(nil, nil, brand, nil, connection)
 	v.connectionError = widget.NewLabel("")
 	v.connectionError.Importance = widget.DangerImportance
@@ -146,7 +151,8 @@ func newClientView(win fyne.Window) *clientView {
 		container.New(layout.NewCustomPaddedHBoxLayout(12), v.statistics,
 			container.NewCenter(slot(widget.NewSeparator(), 1, 16, false)), clearControl), nil)
 
-	v.terminal = widget.NewRichText()
+	v.terminal = widget.NewLabel("")
+	v.terminal.Selectable = true
 	v.terminal.Wrapping = fyne.TextWrapBreak
 	v.scroll = container.NewVScroll(padded(v.terminal, 20, 20, 20, 20))
 	v.scroll.SetMinSize(fyne.NewSize(0, 180))
@@ -169,10 +175,9 @@ func newClientView(win fyne.Window) *clientView {
 	terminalHeader := container.NewBorder(nil, nil,
 		container.New(layout.NewCustomPaddedHBoxLayout(8),
 			container.NewCenter(slot(widget.NewIcon(theme.NewColoredResource(terminalIcon, theme.ColorNamePlaceHolder)), 15, 15, false)), toolbarTitle), toolbarShell, nil)
-	v.terminalStatus = newText("●  等待连接", 11, theme.ColorNamePlaceHolder)
 	terminalBody := container.NewBorder(
 		container.NewVBox(padded(terminalHeader, 11, 11, 17, 17), widget.NewSeparator()),
-		container.NewVBox(widget.NewSeparator(), padded(v.terminalStatus, 9, 9, 18, 18)),
+		nil,
 		nil, nil, viewport)
 	v.terminalTheme = newMonochromeTheme(true).(*monochromeTheme)
 	v.terminalTheme.inactive = true
@@ -210,7 +215,6 @@ func (v *clientView) connect() {
 	v.connectButton.SetIcon(theme.CancelIcon())
 	v.connectButton.Importance = widget.MediumImportance
 	v.token.Disable()
-	v.terminalStatus.SetText("●  正在连接…")
 	buffer := &logBuffer{}
 	v.buffer = buffer
 	v.decoder = displayDecoder{}
@@ -237,7 +241,7 @@ func (v *clientView) connect() {
 					v.emptyDetail.Show()
 					v.empty.Show()
 					v.scroll.Hide()
-					v.refreshTerminalStatus()
+					v.refreshTerminalTheme()
 					v.content.Refresh()
 				})
 			},
@@ -250,7 +254,7 @@ func (v *clientView) connect() {
 					v.stats.apply(event)
 					v.statistics.SetText(v.stats.text())
 					v.historyHeader.Refresh()
-					v.refreshTerminalStatus()
+					v.refreshTerminalTheme()
 				})
 			},
 		})
@@ -274,7 +278,7 @@ func (v *clientView) connect() {
 			} else if wasConnected {
 				fmt.Fprintln(buffer, "\n连接已断开。")
 			}
-			v.refreshTerminalStatus()
+			v.refreshTerminalTheme()
 			v.flushLogs()
 			v.content.Refresh()
 		})
@@ -286,13 +290,8 @@ func writeCommandEvent(buffer *logBuffer, event client.CommandEvent) {
 		fmt.Fprintf(buffer, "\n%s  $ %s\n", event.StartedAt.Format("15:04:05"), event.Command)
 		return
 	}
-	result := "完成"
-	if event.ExitCode != 0 {
-		result = "失败"
-	}
-	fmt.Fprintf(buffer, "\n%s · 退出码 %d · %s\n", result, event.ExitCode, durationText(event.Duration))
 	if event.Error != "" {
-		fmt.Fprintln(buffer, event.Error)
+		fmt.Fprintf(buffer, "\n%s\n", event.Error)
 	}
 }
 
@@ -315,26 +314,18 @@ func (v *clientView) disconnect() {
 	}
 }
 
-func (v *clientView) refreshTerminalStatus() {
+func (v *clientView) refreshTerminalTheme() {
 	if v.terminalTheme.inactive != !v.connected {
 		v.terminalTheme.inactive = !v.connected
 		v.terminalPanel.Refresh()
 	}
-	switch {
-	case !v.connected:
-		v.terminalStatus.SetText("●  未连接")
-	case len(v.stats.running) > 0:
-		v.terminalStatus.SetText(fmt.Sprintf("●  正在执行 %d 条命令", len(v.stats.running)))
-	default:
-		v.terminalStatus.SetText("●  等待下一个命令")
-	}
+
 }
 
 func (v *clientView) clearLogs() {
 	v.buffer.take()
 	v.logText = ""
-	v.terminal.Segments = nil
-	v.terminal.Refresh()
+	v.terminal.SetText("")
 	v.scroll.Hide()
 	v.emptyTitle.SetText("暂无执行记录")
 	v.emptyDetail.Show()
@@ -351,23 +342,7 @@ func (v *clientView) flushLogs() {
 		return
 	}
 	v.logText = logTail(v.logText + v.decoder.text(chunk))
-	v.terminal.Segments = nil
-	for _, line := range strings.Split(strings.Trim(v.logText, "\n"), "\n") {
-		colour := theme.ColorNameForeground
-		size := theme.SizeNameText
-		if strings.HasPrefix(line, "完成 ·") || strings.HasPrefix(line, "失败 ·") {
-			colour, size = theme.ColorNamePlaceHolder, theme.SizeNameCaptionText
-		}
-		if line == "" {
-			line = " "
-		}
-		v.terminal.Segments = append(v.terminal.Segments, &widget.TextSegment{
-			Text: line,
-			Style: widget.RichTextStyle{ColorName: colour, Inline: false,
-				SizeName: size, TextStyle: fyne.TextStyle{Monospace: !containsCJK(line)}},
-		})
-	}
-	v.terminal.Refresh()
+	v.terminal.SetText(strings.Trim(v.logText, "\n"))
 	v.empty.Hide()
 	v.scroll.Show()
 	v.scroll.ScrollToBottom()

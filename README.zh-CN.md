@@ -41,7 +41,7 @@ GOOS=windows GOARCH=amd64 go build -o agenterm-client-windows-amd64.exe ./cmd/ag
 
 ## 图形界面
 
-图形版与命令行版使用相同的 Client 内核，采用跟随系统明暗模式的黑白主题。顶部一行放置 Token 输入框和连接按钮；连接后显示服务器地址、连接状态和“断开连接”。执行记录显示命令、实时输出、退出码和耗时；右上角统计本次连接已完成的命令数与平均耗时，包含失败或取消的命令，不包含仍在执行的命令。“清空”只清除显示的输出，重新连接成功时重置统计。连接过程中可点击“取消连接”，关闭窗口会断开连接。图形版不会保存 token，也不会自动重连。执行记录仅保存在内存，最多保留最近约 64 KiB；命令或输出可能含有敏感信息。
+图形版与命令行版使用相同的 Client 内核，采用跟随系统明暗模式的黑白主题。顶部一行放置 Token 输入框和连接按钮；连接后显示服务器地址、连接状态和“断开连接”。执行记录显示命令和实时输出；右上角统计本次连接已完成的命令数与平均耗时，包含失败或取消的命令，不包含仍在执行的命令。“清空”只清除显示的输出，重新连接成功时重置统计。连接过程中可点击“取消连接”，关闭窗口会断开连接。图形版不会保存 token，也不会自动重连。执行记录仅保存在内存，最多保留最近约 64 KiB；命令或输出可能含有敏感信息。
 
 ```sh
 go build -o agenterm-gui ./cmd/agenterm-gui
@@ -54,7 +54,7 @@ GUI 使用 Fyne，构建需要 CGo 和本机 C 编译器。Linux 还需要相应
 ```sh
 go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
 cd cmd/agenterm-gui
-fyne package -os darwin   # macOS：Agenterm.app
+fyne package -os darwin --use-raw-icon   # macOS：Agenterm.app
 fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm.exe
 ```
 

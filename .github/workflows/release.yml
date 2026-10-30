@@ -20,7 +20,7 @@ jobs:
       - name: Build app and server
         run: |
           cd cmd/agenterm-gui
-          "$(go env GOPATH)/bin/fyne" package -os darwin
+          "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon
           ditto -c -k --keepParent Agenterm.app ../../Agenterm-macOS-arm64.zip
           cd ../..
           go build -o agenterm-server-macos-arm64 ./cmd/agenterm-server

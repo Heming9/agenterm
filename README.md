@@ -41,7 +41,7 @@ GOOS=windows GOARCH=amd64 go build -o agenterm-client-windows-amd64.exe ./cmd/ag
 
 ## Desktop client
 
-The graphical client uses the same client core and follows the system light or dark theme. Enter the token to connect; the window shows connection status, commands, live output, exit codes, and durations. It also shows the number and average duration of completed commands, including failed or cancelled commands. Clearing output only clears the display; a successful reconnection resets the statistics. Connection attempts can be cancelled, and closing the window disconnects the client.
+The graphical client uses the same client core and follows the system light or dark theme. Enter the token to connect; the window shows connection status, commands, and live output. It also shows the number and average duration of completed commands, including failed or cancelled commands. Clearing output only clears the display; a successful reconnection resets the statistics. Connection attempts can be cancelled, and closing the window disconnects the client.
 
 Logs are held in memory and retain approximately the latest 64 KiB. Commands and output may contain sensitive information. The GUI does not save tokens or reconnect automatically. The current interface text is in Chinese.
 
@@ -56,7 +56,7 @@ To package the GUI with its system application icon, install the Fyne CLI matchi
 ```sh
 go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
 cd cmd/agenterm-gui
-fyne package -os darwin   # macOS: Agenterm.app
+fyne package -os darwin --use-raw-icon   # macOS: Agenterm.app
 fyne package -os windows -icon assets/app-icon-windows.png  # Windows: Agenterm.exe
 ```
 
