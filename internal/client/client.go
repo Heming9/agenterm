@@ -11,7 +11,29 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"time"
 )
+
+// CommandEvent describes one command's lifecycle. Done distinguishes a completion
+// from a start; Duration includes process startup and is only set on completion.
+type CommandEvent struct {
+	ID          string
+	Command     string
+	Interactive bool
+	StartedAt   time.Time
+	Done        bool
+	Duration    time.Duration
+	ExitCode    int
+	Error       string
+}
+
+// Callbacks may be invoked concurrently by running commands. When Command is
+// supplied, it replaces the plain-text command headers and footers in logWriter;
+// process output is still written to logWriter as it arrives.
+type Callbacks struct {
+	Connected func()
+	Command   func(CommandEvent)
+}
 
 type connection struct {
 	ws      *websocket.Conn
@@ -19,6 +41,28 @@ type connection struct {
 	mu      sync.Mutex
 	running map[string]*process
 	log     io.Writer
+	command func(CommandEvent)
+}
+
+func (c *connection) commandStarted(m protocol.Message) CommandEvent {
+	e := CommandEvent{ID: m.ID, Command: m.Command, Interactive: m.Interactive, StartedAt: time.Now()}
+	if c.command != nil {
+		c.command(e)
+	} else if m.Interactive {
+		fmt.Fprintf(c.log, "\n[Agenterm] Running (interactive): %s\n", m.Command)
+	} else {
+		fmt.Fprintf(c.log, "\n[Agenterm] Running: %s\n", m.Command)
+	}
+	return e
+}
+
+func (c *connection) commandFinished(e CommandEvent, code int, detail string) {
+	e.Done, e.Duration, e.ExitCode, e.Error = true, time.Since(e.StartedAt), code, detail
+	if c.command != nil {
+		c.command(e)
+	} else {
+		fmt.Fprintf(c.log, "\n[Agenterm] Finished (exit code: %d)\n", code)
+	}
 }
 
 func (c *connection) send(m protocol.Message) error {
@@ -55,7 +99,7 @@ func (c *connection) run(m protocol.Message) {
 	c.mu.Unlock()
 	go func() {
 		defer func() { cancel(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
-		fmt.Fprintf(c.log, "\n[Agenterm] Running: %s\n", m.Command)
+		event := c.commandStarted(m)
 		shell, args := "/bin/sh", []string{"-c", m.Command}
 		if runtime.GOOS == "windows" {
 			shell, args = "cmd.exe", []string{"/C", m.Command}
@@ -77,13 +121,13 @@ func (c *connection) run(m protocol.Message) {
 				detail = err.Error()
 			}
 		}
-		fmt.Fprintf(c.log, "\n[Agenterm] Finished (exit code: %d)\n", code)
+		c.commandFinished(event, code, detail)
 		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail})
 	}()
 }
 func (c *connection) runInteractive(m protocol.Message) {
 	ctx, cancel := context.WithCancel(context.Background())
-	fmt.Fprintf(c.log, "\n[Agenterm] Running (interactive): %s\n", m.Command)
+	event := c.commandStarted(m)
 	shell, args := "/bin/sh", []string{"-c", m.Command}
 	if runtime.GOOS == "windows" {
 		shell, args = "cmd.exe", []string{"/C", m.Command}
@@ -92,6 +136,7 @@ func (c *connection) runInteractive(m protocol.Message) {
 	input, output, err := startInteractive(cmd)
 	if err != nil {
 		cancel()
+		c.commandFinished(event, -1, err.Error())
 		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: -1, Error: err.Error()})
 		return
 	}
@@ -121,7 +166,7 @@ func (c *connection) runInteractive(m protocol.Message) {
 				detail = err.Error()
 			}
 		}
-		fmt.Fprintf(c.log, "\n[Agenterm] Finished (exit code: %d)\n", code)
+		c.commandFinished(event, code, detail)
 		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail})
 	}()
 }
@@ -129,6 +174,12 @@ func (c *connection) runInteractive(m protocol.Message) {
 // Run connects until the context is canceled or the connection is lost.
 // onConnected is called after the WebSocket handshake. The caller owns logWriter.
 func Run(ctx context.Context, token string, logWriter io.Writer, onConnected func()) error {
+	return RunWithCallbacks(ctx, token, logWriter, Callbacks{Connected: onConnected})
+}
+
+// RunWithCallbacks runs a connection with structured lifecycle notifications for
+// consumers such as the desktop UI. A lost connection still requires reconnecting.
+func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, callbacks Callbacks) error {
 	t, err := protocol.Decode(token)
 	if err != nil {
 		return err
@@ -143,7 +194,7 @@ func Run(ctx context.Context, token string, logWriter io.Writer, onConnected fun
 		return err
 	}
 	defer ws.Close()
-	c := &connection{ws: ws, running: make(map[string]*process), log: logWriter}
+	c := &connection{ws: ws, running: make(map[string]*process), log: logWriter, command: callbacks.Command}
 	defer func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -160,8 +211,8 @@ func Run(ctx context.Context, token string, logWriter io.Writer, onConnected fun
 		case <-closed:
 		}
 	}()
-	if onConnected != nil {
-		onConnected()
+	if callbacks.Connected != nil {
+		callbacks.Connected()
 	}
 	ws.SetReadLimit(2 << 20)
 	for {

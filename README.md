@@ -28,9 +28,9 @@ GOOS=linux GOARCH=amd64 go build -o agenterm-client-linux-amd64 ./cmd/agenterm-c
 GOOS=windows GOARCH=amd64 go build -o agenterm-client-windows-amd64.exe ./cmd/agenterm-client
 ```
 
-## 图形界面原型
+## 图形界面
 
-图形版与命令行版使用相同的 Client 内核。打开窗口后，粘贴 token 并点击“连接”；连接成功后可查看 Agent 发起的命令和输出，点击“断开”或关闭窗口结束会话。图形版不会保存 token，也不会自动重连。执行记录仅保存在内存，最多保留最近约 64 KiB；命令或输出可能含有敏感信息。
+图形版与命令行版使用相同的 Client 内核，采用跟随系统明暗模式的黑白主题。顶部一行放置 Token 输入框和连接按钮；连接后显示服务器地址、连接状态和“断开连接”。执行记录显示命令、实时输出、退出码和耗时；右上角统计本次连接已完成的命令数与平均耗时，包含失败或取消的命令，不包含仍在执行的命令。“清空”只清除显示的输出，重新连接成功时重置统计。连接过程中可点击“取消连接”，关闭窗口会断开连接。图形版不会保存 token，也不会自动重连。执行记录仅保存在内存，最多保留最近约 64 KiB；命令或输出可能含有敏感信息。
 
 ```sh
 go build -o agenterm-gui ./cmd/agenterm-gui
