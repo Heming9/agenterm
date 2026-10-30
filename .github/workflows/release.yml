@@ -17,19 +17,15 @@ jobs:
         with:
           go-version: '1.24.3'
       - run: go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
-      - name: Build app and server
+      - name: Build client
         run: |
           cd cmd/agenterm-gui
           "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon
-          ditto -c -k --keepParent Agenterm.app ../../Agenterm-macOS-arm64.zip
-          cd ../..
-          go build -o agenterm-server-macos-arm64 ./cmd/agenterm-server
+          ditto -c -k --keepParent Agenterm.app ../../agenterm-client-macos-arm64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: |
-            Agenterm-macOS-arm64.zip
-            agenterm-server-macos-arm64
+          path: agenterm-client-macos-arm64.zip
           if-no-files-found: error
 
   windows:
@@ -47,26 +43,48 @@ jobs:
         shell: pwsh
         run: '"C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
       - run: go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
-      - name: Build app and server
+      - name: Build client
         shell: pwsh
         run: |
           Set-Location cmd/agenterm-gui
           & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Move-Item Agenterm.exe ../../Agenterm-Windows-amd64.exe
-          Set-Location ../..
-          go build -o agenterm-server-windows-amd64.exe ./cmd/agenterm-server
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item Agenterm.exe ../../agenterm-client-windows-amd64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: |
-            Agenterm-Windows-amd64.exe
-            agenterm-server-windows-amd64.exe
+          path: agenterm-client-windows-amd64.exe
+          if-no-files-found: error
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
+      - name: Build server for macOS, Linux, and Windows
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          for os in darwin linux windows; do
+            for arch in amd64 arm64; do
+              platform="$os"
+              extension=""
+              if [ "$os" = darwin ]; then platform=macos; fi
+              if [ "$os" = windows ]; then extension=.exe; fi
+              GOOS="$os" GOARCH="$arch" go build -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: dist/*
           if-no-files-found: error
 
   publish:
-    needs: [macos, windows]
+    needs: [macos, windows, server]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -81,4 +99,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "Agenterm preview release. HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details."
+          gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
+          Agenterm preview release.
+
+          - Client: graphical application for the computer where commands run (macOS arm64 and Windows amd64).
+          - Server: MCP endpoint for macOS, Linux, and Windows (amd64 and arm64).
+
+          Server and client must use the same token format; this release is incompatible with the older format. Update both together.
+
+          HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
+          EOF
+          )"
