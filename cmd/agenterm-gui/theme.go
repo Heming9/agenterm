@@ -17,11 +17,27 @@ type monochromeTheme struct {
 }
 
 const (
+	colourSystem  fyne.ThemeColorName = "agentermLogSystem"
+	colourCommand fyne.ThemeColorName = "agentermLogCommand"
 	colourTag     fyne.ThemeColorName = "agentermTag"
 	colourTagText fyne.ThemeColorName = "agentermTagText"
 )
 
 var systemSans, systemMono fyne.Resource
+
+// The transparent label handles selection over the identically laid-out
+// colored text underneath. Its selection highlight remains visible.
+type logSelectionTheme struct{ fyne.Theme }
+
+func (t logSelectionTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if name == theme.ColorNameForeground {
+		return color.NRGBA{}
+	}
+	if name == theme.ColorNameSelection {
+		return color.NRGBA{R: 80, G: 135, B: 180, A: 110}
+	}
+	return t.Theme.Color(name, variant)
+}
 
 type compactControlTheme struct{ fyne.Theme }
 
@@ -126,6 +142,16 @@ func (t *monochromeTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVari
 		bg = soft
 	}
 	switch name {
+	case colourSystem:
+		if dark {
+			return color.NRGBA{R: 153, G: 177, B: 195, A: 255}
+		}
+		return color.NRGBA{R: 75, G: 103, B: 122, A: 255}
+	case colourCommand:
+		if dark {
+			return color.NRGBA{R: 133, G: 201, B: 155, A: 255}
+		}
+		return color.NRGBA{R: 37, G: 116, B: 69, A: 255}
 	case colourTag:
 		if dark {
 			return color.NRGBA{R: 25, G: 65, B: 43, A: 255}

@@ -29,10 +29,12 @@ type CommandEvent struct {
 
 // Callbacks may be invoked concurrently by running commands. When Command is
 // supplied, it replaces the plain-text command headers and footers in logWriter;
-// process output is still written to logWriter as it arrives.
+// Output, when supplied, receives process output with its command ID; otherwise
+// process output is written to logWriter as it arrives.
 type Callbacks struct {
 	Connected func()
 	Command   func(CommandEvent)
+	Output    func(id string, data []byte)
 }
 
 type connection struct {
@@ -42,6 +44,7 @@ type connection struct {
 	running map[string]*process
 	log     io.Writer
 	command func(CommandEvent)
+	output  func(string, []byte)
 }
 
 func (c *connection) commandStarted(m protocol.Message) CommandEvent {
@@ -82,7 +85,11 @@ type outputWriter struct {
 }
 
 func (o outputWriter) Write(p []byte) (int, error) {
-	_, _ = o.c.log.Write(p)
+	if o.c.output != nil {
+		o.c.output(o.id, p)
+	} else {
+		_, _ = o.c.log.Write(p)
+	}
 	if err := o.c.send(protocol.Message{Type: "output", ID: o.id, Output: string(p)}); err != nil {
 		return 0, err
 	}
@@ -194,7 +201,7 @@ func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, ca
 		return err
 	}
 	defer ws.Close()
-	c := &connection{ws: ws, running: make(map[string]*process), log: logWriter, command: callbacks.Command}
+	c := &connection{ws: ws, running: make(map[string]*process), log: logWriter, command: callbacks.Command, output: callbacks.Output}
 	defer func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()

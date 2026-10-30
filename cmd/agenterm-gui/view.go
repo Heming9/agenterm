@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"agenterm/internal/client"
 	"agenterm/internal/protocol"
@@ -66,7 +67,9 @@ type clientView struct {
 	header, historyHeader           *fyne.Container
 	statusBadge                     *surface
 	connectionError                 *widget.Label
-	terminal                        *widget.Label
+	terminal                        *fyne.Container
+	logColors                       *widget.RichText
+	logSelection                    *widget.Label
 	emptyTitle, emptyDetail         *uiText
 	terminalTheme                   *monochromeTheme
 	terminalPanel                   *container.ThemeOverride
@@ -75,6 +78,7 @@ type clientView struct {
 
 	buffer     *logBuffer
 	logText    string
+	logSpans   []logSpan
 	decoder    displayDecoder
 	stats      commandStats
 	cancel     context.CancelFunc
@@ -151,9 +155,13 @@ func newClientView(win fyne.Window) *clientView {
 		container.New(layout.NewCustomPaddedHBoxLayout(12), v.statistics,
 			container.NewCenter(slot(widget.NewSeparator(), 1, 16, false)), clearControl), nil)
 
-	v.terminal = widget.NewLabel("")
-	v.terminal.Selectable = true
-	v.terminal.Wrapping = fyne.TextWrapBreak
+	v.logColors = widget.NewRichText()
+	v.logColors.Wrapping = fyne.TextWrapBreak
+	v.logSelection = widget.NewLabel("")
+	v.logSelection.Selectable = true
+	v.logSelection.Wrapping = fyne.TextWrapBreak
+	selectionOverlay := container.NewThemeOverride(v.logSelection, logSelectionTheme{newMonochromeTheme(true)})
+	v.terminal = container.NewStack(v.logColors, selectionOverlay)
 	v.scroll = container.NewVScroll(padded(v.terminal, 20, 20, 20, 20))
 	v.scroll.SetMinSize(fyne.NewSize(0, 180))
 	v.scroll.Hide()
@@ -237,6 +245,9 @@ func (v *clientView) connect() {
 					v.inputRow.Hide()
 					v.connectedRow.Show()
 					v.logText = ""
+					v.logSpans = nil
+					v.logColors.Segments = nil
+					v.logSelection.SetText("")
 					v.emptyTitle.SetText("暂无执行记录")
 					v.emptyDetail.Show()
 					v.empty.Show()
@@ -245,8 +256,9 @@ func (v *clientView) connect() {
 					v.content.Refresh()
 				})
 			},
+			Output: buffer.output,
 			Command: func(event client.CommandEvent) {
-				writeCommandEvent(buffer, event)
+				buffer.command(event)
 				fyne.Do(func() {
 					if v.closed || current != v.generation {
 						return
@@ -285,16 +297,6 @@ func (v *clientView) connect() {
 	}()
 }
 
-func writeCommandEvent(buffer *logBuffer, event client.CommandEvent) {
-	if !event.Done {
-		fmt.Fprintf(buffer, "\n%s  $ %s\n", event.StartedAt.Format("15:04:05"), event.Command)
-		return
-	}
-	if event.Error != "" {
-		fmt.Fprintf(buffer, "\n%s\n", event.Error)
-	}
-}
-
 func (v *clientView) showConnectionError(message string) {
 	v.connectionError.SetText(message)
 	v.connectionError.Show()
@@ -323,9 +325,12 @@ func (v *clientView) refreshTerminalTheme() {
 }
 
 func (v *clientView) clearLogs() {
-	v.buffer.take()
+	v.buffer.clear()
 	v.logText = ""
-	v.terminal.SetText("")
+	v.logSpans = nil
+	v.logColors.Segments = nil
+	v.logColors.Refresh()
+	v.logSelection.SetText("")
 	v.scroll.Hide()
 	v.emptyTitle.SetText("暂无执行记录")
 	v.emptyDetail.Show()
@@ -337,15 +342,79 @@ func (v *clientView) clearLogs() {
 }
 
 func (v *clientView) flushLogs() {
-	chunk := v.buffer.take()
-	if chunk == "" {
+	spans := v.buffer.takeSpans()
+	if len(spans) == 0 {
 		return
 	}
-	v.logText = logTail(v.logText + v.decoder.text(chunk))
-	v.terminal.SetText(strings.Trim(v.logText, "\n"))
+	for _, span := range spans {
+		span.text = v.decoder.text(span.text)
+		if span.text == "" {
+			continue
+		}
+		if len(v.logSpans) > 0 && v.logSpans[len(v.logSpans)-1].kind == span.kind {
+			v.logSpans[len(v.logSpans)-1].text += span.text
+		} else {
+			v.logSpans = append(v.logSpans, span)
+		}
+	}
+	// Bound the displayed history as well as the pending buffer.
+	total := 0
+	for _, span := range v.logSpans {
+		total += len(span.text)
+	}
+	for total > maxLogBytes && len(v.logSpans) > 0 {
+		excess := total - maxLogBytes
+		if len(v.logSpans[0].text) <= excess {
+			total -= len(v.logSpans[0].text)
+			v.logSpans = v.logSpans[1:]
+			continue
+		}
+		old := v.logSpans[0].text
+		tail := old[excess:]
+		for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
+			tail = tail[1:]
+		}
+		v.logSpans[0].text = tail
+		total -= len(old) - len(tail)
+	}
+	v.logText = ""
+	for _, span := range v.logSpans {
+		v.logText += span.text
+	}
+	wasSelecting := v.logSelection.SelectedText() != ""
+	v.renderLog()
 	v.empty.Hide()
 	v.scroll.Show()
-	v.scroll.ScrollToBottom()
+	if !wasSelecting {
+		v.scroll.ScrollToBottom()
+	}
+}
+
+func (v *clientView) renderLog() {
+	segments := make([]widget.RichTextSegment, 0, len(v.logSpans))
+	for _, span := range v.logSpans {
+		colorName := theme.ColorNameForeground
+		switch span.kind {
+		case "system":
+			colorName = colourSystem
+		case "command":
+			colorName = colourCommand
+		case "error":
+			colorName = theme.ColorNameError
+		}
+		segments = append(segments, &widget.TextSegment{Text: span.text, Style: widget.RichTextStyle{ColorName: colorName, Inline: true, SizeName: theme.SizeNameText}})
+	}
+	v.logColors.Segments = segments
+	v.logColors.Refresh()
+	if strings.HasPrefix(v.logText, v.logSelection.Text) {
+		// Refresh preserves the active selection when output is appended.
+		v.logSelection.Text = v.logText
+		v.logSelection.Refresh()
+	} else {
+		// Truncation changes offsets, so discard the old selection.
+		v.logSelection.SetText(v.logText)
+	}
+	v.terminal.Refresh()
 }
 
 func (v *clientView) startUpdates() {

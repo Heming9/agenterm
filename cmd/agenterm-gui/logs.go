@@ -1,6 +1,8 @@
 package main
 
 import (
+	"agenterm/internal/client"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -22,8 +24,49 @@ func logTail(text string) string {
 // Each connection owns a buffer so a finishing old process cannot write into a
 // newly connected session. Pending and displayed output are both bounded.
 type logBuffer struct {
-	mu   sync.Mutex
-	data string
+	mu       sync.Mutex
+	data     string
+	spans    []logSpan
+	next     int
+	last     string
+	shells   map[string]int
+	decoders map[string]*displayDecoder
+}
+
+type logSpan struct {
+	kind string
+	text string
+}
+
+func (b *logBuffer) append(kind, text string) {
+	if text == "" {
+		return
+	}
+	b.data = logTail(b.data + text)
+	if len(b.spans) > 0 && b.spans[len(b.spans)-1].kind == kind {
+		b.spans[len(b.spans)-1].text += text
+	} else {
+		b.spans = append(b.spans, logSpan{kind, text})
+	}
+	total := 0
+	for _, span := range b.spans {
+		total += len(span.text)
+	}
+	for total > maxLogBytes && len(b.spans) > 0 {
+		excess := total - maxLogBytes
+		if len(b.spans[0].text) <= excess {
+			total -= len(b.spans[0].text)
+			b.spans = b.spans[1:]
+			continue
+		}
+		old := b.spans[0].text
+		tail := old[excess:]
+		for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
+			tail = tail[1:]
+		}
+		b.spans[0].text = tail
+		total -= len(old) - len(tail)
+	}
 }
 
 var _ io.Writer = (*logBuffer)(nil)
@@ -31,7 +74,7 @@ var _ io.Writer = (*logBuffer)(nil)
 func (b *logBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.data = logTail(b.data + string(p))
+	b.append("output", string(p))
 	return len(p), nil
 }
 
@@ -40,7 +83,75 @@ func (b *logBuffer) take() string {
 	defer b.mu.Unlock()
 	text := b.data
 	b.data = ""
+	b.spans = nil
 	return text
+}
+
+func (b *logBuffer) takeSpans() []logSpan {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	spans := b.spans
+	b.data = ""
+	b.spans = nil
+	return spans
+}
+
+// command and output serialize labels with their associated chunks, including
+// when several shells write concurrently.
+func (b *logBuffer) command(event client.CommandEvent) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if event.Done {
+		if event.Error != "" {
+			b.switchSource(event.ID)
+			b.append("error", "\n"+event.Error+"\n")
+		}
+		delete(b.shells, event.ID)
+		delete(b.decoders, event.ID)
+		return
+	}
+	if b.shells == nil {
+		b.shells = make(map[string]int)
+		b.decoders = make(map[string]*displayDecoder)
+	}
+	b.next++
+	b.shells[event.ID] = b.next
+	b.decoders[event.ID] = &displayDecoder{}
+	b.append("system", fmt.Sprintf("\ns%d  %s  $ ", b.next, event.StartedAt.Format("15:04:05")))
+	b.append("command", event.Command+"\n")
+	b.last = event.ID
+}
+
+func (b *logBuffer) switchSource(id string) {
+	if b.last != id {
+		if n, ok := b.shells[id]; ok {
+			b.append("system", fmt.Sprintf("\ns%d\n", n))
+		}
+		b.last = id
+	}
+}
+
+func (b *logBuffer) output(id string, data []byte) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	decoder := b.decoders[id]
+	if decoder == nil {
+		return
+	}
+	text := decoder.text(string(data))
+	if text == "" {
+		return
+	}
+	b.switchSource(id)
+	b.append("output", text)
+}
+
+func (b *logBuffer) clear() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.data = ""
+	b.spans = nil
+	b.last = ""
 }
 
 // The GUI is a log viewer, not a terminal emulator. Escape state spans chunks.
