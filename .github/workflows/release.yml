@@ -81,4 +81,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "First preview release of Agenterm. The MCP endpoint has no authentication; use only on a trusted network. See the README for setup and security details."
+          gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "Agenterm preview release. HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details."

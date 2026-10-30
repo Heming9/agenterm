@@ -4,7 +4,7 @@
 
 [English](README.md) | 简体中文
 
-让本机 Agent 通过 MCP 在另一台电脑执行命令。第一版只支持一个在线 Client。
+让本机 Agent 通过 MCP 在另一台电脑执行命令。支持多个 Client 同时在线，每个 Client 使用独立的 token。
 
 ```text
 Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> shell
@@ -12,7 +12,7 @@ Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> s
 
 ## 安全范围
 
-**MCP 接口没有认证。任何能访问 Server 的人都能在已连接的 Client 上执行任意命令，权限等同于运行 Client 的用户。仅在可信网络或受控测试环境使用，不要直接暴露到公网。** Token 只验证 Client，并不保护 MCP 接口。Token 可重复使用，Server 重启后失效；Client 不会保存 token 或自动重连。
+**Server 默认使用未加密的 HTTP 和 WebSocket。能监听流量的人可能读取 token、命令及输出；持有 token 的人可以在对应 Client 上执行命令，权限等同于运行 Client 的用户。仅在可信网络或受控测试环境使用，不要直接暴露到公网。** 每个 token 用于验证并选择对应的 Client；token 可重复使用，Server 重启后失效。Client 不会保存 token 或自动重连。
 
 Server 可以看到命令与输出。命令会显示在 Client 终端，包含在命令中的敏感信息也可能被显示。关闭 Client 会断开连接并尝试停止运行中的命令，但已完成的操作不能撤销，脱离的子进程也不一定会停止。
 
@@ -68,7 +68,7 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 会输出 `agenterm:<编码内容>` 格式的连接 token 和 MCP 地址。编码内容采用紧凑二进制结构，包含连接协议、16 字节（128 位）随机凭证和主机地址（含可选端口），使用无填充的 Base64 URL-safe 编码；连接路径固定为 `/client`。IPv4/IPv6 地址及其端口使用二进制存储，域名保留为文本。默认本机地址的 token 为 40 个字符。此格式不兼容旧版 token，Server 与 Client 需同时更新。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
+将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 默认输出 5 个 `agenterm:<编码内容>` 格式的连接 token 和 MCP 地址；可用 `-clients N` 设置签发数量（1–1000）。每个 token 对应一条 Client 链路，同一个 token 同时只能连接一个 Client。编码内容采用紧凑二进制结构，包含连接协议、16 字节（128 位）随机凭证和主机地址（含可选端口），使用无填充的 Base64 URL-safe 编码；连接路径固定为 `/client`。IPv4/IPv6 地址及其端口使用二进制存储，域名保留为文本。默认本机地址的 token 为 40 个字符。此格式不兼容旧版 token，Server 与 Client 需同时更新。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
 
 在被控电脑运行：
 
@@ -78,7 +78,7 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 
 按提示粘贴 token 并回车。Client 不安装系统 SSH 服务，也不要求单独的系统登录；它以当前登录用户的权限运行命令。
 
-在支持 Streamable HTTP 的 Agent 中添加远程 MCP 服务，地址为 `http://SERVER_IP:8080/mcp`。连接后调用 `execute_command`，传入 `command` 参数。例如：
+在支持 Streamable HTTP 和自定义请求头的 Agent 中添加远程 MCP 服务，地址为 `http://SERVER_IP:8080/mcp`。将请求头 `Authorization` 设置为 `Bearer <token>`，其中 token 是目标 Client 使用的完整 `agenterm:` token。需要操作多个 Client 时，可分别配置 MCP 服务；不同 Agent 对自定义请求头的支持可能不同。连接后调用 `execute_command`，传入 `command` 参数。例如：
 
 ```json
 {"command":"pwd && ls"}
@@ -99,18 +99,19 @@ MCP 客户端必须能访问 Server；不同 Agent 的配置方式和远程 MCP 
 
 ```sh
 curl -s http://127.0.0.1:8080/mcp \
+  -H 'Authorization: Bearer YOUR_AGENTERM_TOKEN' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_command","arguments":{"command":"echo hello"}}}'
 ```
 
-Server 当前只提供 HTTP。跨设备时可在可信网络中使用；如需加密传输，可在前面配置支持 WebSocket 的 HTTPS 反向代理，并将 `-public-url` 设为代理的 HTTPS 地址。HTTPS 本身不提供 MCP 鉴权，不能因此安全地暴露到公网。
+Server 当前只提供 HTTP。跨设备时可在可信网络中使用；如需加密传输，可在前面配置支持 WebSocket 的 HTTPS 反向代理，并将 `-public-url` 设为代理的 HTTPS 地址。HTTPS 可以保护传输，但仍需妥善保管 token；公开部署还需要适当的访问控制。
 
 ## 当前限制
 
 - macOS/Linux 交互会话使用 PTY；Windows 使用普通输入输出管道，支持简单提示交互，但不支持要求真实终端的程序。暂不支持远程图形界面。
 - 全屏终端界面会输出控制字符，Agent 不一定能正确理解。终端输入可能被程序回显，避免通过 Agent 输入密码等敏感信息。
-- 一次只允许一个 Client 连接；Server 重启或连接中断后需要重新连接。
+- 每个 token 同时只允许一个 Client 连接；Server 重启后 token 失效，需要使用新 token 重新连接。连接中断后也需要重新连接。
 - `execute_command` 在结束后返回输出；需要边运行边读取时使用 `session_start` 和 `session_read`。
 - Windows 输出会根据首段非 ASCII 内容推测 UTF-8 或系统代码页并转换为 UTF-8；同一命令混合多种编码时仍可能乱码。
 - 命令执行使用 macOS/Linux 的 `/bin/sh -c` 或 Windows 的 `cmd.exe /C`。

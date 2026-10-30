@@ -4,7 +4,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Agenterm lets an agent execute commands on another computer through MCP. A server exposes the MCP endpoint, and a client connects to it over WebSocket. The current version supports one connected client at a time.
+Agenterm lets an agent execute commands on another computer through MCP. A server exposes the MCP endpoint, and a client connects to it over WebSocket. Multiple clients can connect simultaneously, each with its own token.
 
 ```text
 Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> shell
@@ -12,7 +12,7 @@ Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> s
 
 ## Security
 
-**The MCP endpoint has no authentication. Anyone who can reach the server can execute arbitrary commands on the connected client with the client's user permissions. Use it only on a trusted network or in a controlled test environment; do not expose it directly to the public internet.** The token authenticates the client only; it does not protect the MCP endpoint. Tokens can be reused until the server restarts. Clients do not save tokens or reconnect automatically.
+**The server uses unencrypted HTTP and WebSocket by default. Anyone able to observe traffic can read tokens, commands and output, and anyone with a token can execute commands on its connected client with that user’s permissions. Use only on a trusted network or in a controlled test environment; do not expose it directly to the public internet.** Each token authenticates and selects one client for MCP requests. Tokens can be reused until the server restarts. Clients do not save tokens or reconnect automatically.
 
 The server can see commands and their output. Commands also appear on the client, so secrets in commands may be visible. Closing the client disconnects it and attempts to stop running commands, but completed operations cannot be undone and detached child processes may continue running.
 
@@ -70,7 +70,7 @@ Start the server on a machine reachable by both the client and agent:
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-Replace `SERVER_IP` with the reachable address. The server prints an `agenterm:` connection token and the MCP endpoint. The default listen address and public URL use `127.0.0.1:8080`, suitable for local testing. Treat the token as a password: it contains the server address and a 128-bit random credential. It expires when the server restarts. Server and client must use the same token format; the current format is incompatible with the older format.
+Replace `SERVER_IP` with the reachable address. The server prints five `agenterm:` connection tokens and the MCP endpoint by default; use `-clients N` to issue a different number (1–1000). Each token selects one client and can have only one client connected at a time. The default listen address and public URL use `127.0.0.1:8080`, suitable for local testing. Treat the token as a password: it contains the server address and a 128-bit random credential. It expires when the server restarts. Server and client must use the same token format; the current format is incompatible with the older format.
 
 Run the client on the target computer:
 
@@ -80,7 +80,7 @@ Run the client on the target computer:
 
 Paste the token at the prompt, or enter it in the desktop client. The client runs commands as the current user; it does not require an SSH service or a separate system login.
 
-Add `http://SERVER_IP:8080/mcp` as a remote MCP server in an agent that supports Streamable HTTP. For a non-interactive command, call `execute_command` with a `command` argument, for example:
+Add `http://SERVER_IP:8080/mcp` as a remote MCP server in an agent that supports Streamable HTTP and custom headers. Set the header `Authorization: Bearer <token>` to the same full `agenterm:` token used by the target client. Configure a separate MCP entry for each target if needed; support for custom headers varies by agent. For a non-interactive command, call `execute_command` with a `command` argument, for example:
 
 ```json
 {"command":"pwd && ls"}
@@ -99,18 +99,19 @@ You can also inspect the MCP endpoint directly:
 
 ```sh
 curl -s http://127.0.0.1:8080/mcp \
+  -H 'Authorization: Bearer YOUR_AGENTERM_TOKEN' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_command","arguments":{"command":"echo hello"}}}'
 ```
 
-The server itself serves HTTP. For encrypted transport between devices, use an HTTPS reverse proxy that supports WebSocket and set `-public-url` to its HTTPS origin. HTTPS alone does not authenticate MCP requests and does not make public exposure safe.
+The server itself serves HTTP. For encrypted transport between devices, use an HTTPS reverse proxy that supports WebSocket and set `-public-url` to its HTTPS origin. HTTPS protects traffic in transit, but tokens must still be kept secret; public exposure requires appropriate access controls.
 
 ## Limitations
 
 - Interactive sessions use a PTY on macOS and Linux. Windows uses ordinary input/output pipes: simple prompts work, but programs requiring a real terminal do not. Remote graphical interfaces are not supported.
 - Full-screen terminal programs emit control characters that agents may not understand. Terminal input can be echoed; avoid entering passwords or other secrets through an agent.
-- Only one client can connect at a time. Reconnect after a server restart or connection loss.
+- Each token permits one connected client. Tokens expire on server restart; reconnect with a newly issued token after a restart or connection loss.
 - `execute_command` returns output at completion; use `session_start` and `session_read` to read while a command runs.
 - Windows output is decoded as UTF-8 or the system code page based on the first non-ASCII content. Mixed encodings can still produce garbled output.
 - Commands run with `/bin/sh -c` on macOS/Linux and `cmd.exe /C` on Windows.

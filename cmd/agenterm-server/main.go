@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -34,9 +33,9 @@ func (c *client) send(m protocol.Message) error {
 }
 
 type server struct {
-	secret   string
+	tokens   map[string]string  // full token -> client credential
+	clients  map[string]*client // client credential -> connection
 	mu       sync.Mutex
-	client   *client
 	sessions map[string]*session
 }
 
@@ -51,15 +50,25 @@ func randomBytes(size int) string {
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
+func (s *server) validSecret(secret string) bool {
+	for _, candidate := range s.tokens {
+		if candidate == secret {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *server) connect(w http.ResponseWriter, r *http.Request) {
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.secret)) != 1 {
+	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if r.Header.Get("Authorization") != "Bearer "+secret || !s.validSecret(secret) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.client != nil {
-		http.Error(w, "a client is already connected", http.StatusConflict)
+	if s.clients[secret] != nil {
+		http.Error(w, "a client is already connected with this token", http.StatusConflict)
 		return
 	}
 	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, nil)
@@ -67,14 +76,14 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &client{conn: conn, pending: make(map[string]chan protocol.Message)}
-	s.client = c
+	s.clients[secret] = c
 	log.Println("client connected")
 	go func() {
 		defer func() {
 			conn.Close()
 			s.mu.Lock()
-			if s.client == c {
-				s.client = nil
+			if s.clients[secret] == c {
+				delete(s.clients, secret)
 			}
 			s.mu.Unlock()
 			c.mu.Lock()
@@ -107,9 +116,9 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 }
-func (s *server) execute(ctx context.Context, command string) (string, error) {
+func (s *server) execute(ctx context.Context, secret, command string) (string, error) {
 	s.mu.Lock()
-	c := s.client
+	c := s.clients[secret]
 	s.mu.Unlock()
 	if c == nil {
 		return "", fmt.Errorf("no client connected")
@@ -182,6 +191,14 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	header := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(header, "Bearer ")
+	secret, ok := s.tokens[token]
+	if header != "Bearer "+token || !ok {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="agenterm"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	var req rpcRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		respond(w, json.RawMessage("null"), nil, map[string]any{"code": -32700, "message": "parse error"})
@@ -201,7 +218,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		if version != "2025-03-26" && version != "2025-06-18" {
 			version = "2025-03-26"
 		}
-		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.0"}}, nil)
+		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.5"}}, nil)
 	case "ping":
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
@@ -240,14 +257,14 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			if strings.TrimSpace(a.Command) == "" {
 				err = fmt.Errorf("command is required")
 			} else {
-				result, err = s.execute(r.Context(), a.Command)
+				result, err = s.execute(r.Context(), secret, a.Command)
 			}
 		case "session_start":
 			if strings.TrimSpace(a.Command) == "" {
 				err = fmt.Errorf("command is required")
 			} else {
 				var sess *session
-				sess, err = s.startSession(a.Command)
+				sess, err = s.startSession(secret, a.Command)
 				if err == nil {
 					result = map[string]any{"session_id": sess.id, "cursor": 0}
 				}
@@ -257,14 +274,14 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 				err = fmt.Errorf("invalid cursor or wait_ms")
 			} else {
 				var sess *session
-				sess, err = s.getSession(a.SessionID)
+				sess, err = s.getSession(secret, a.SessionID)
 				if err == nil {
 					result, err = sess.read(r.Context(), a.Cursor, time.Duration(a.WaitMS)*time.Millisecond)
 				}
 			}
 		case "session_write", "session_stop":
 			var sess *session
-			sess, err = s.getSession(a.SessionID)
+			sess, err = s.getSession(secret, a.SessionID)
 			if err == nil {
 				typ := "input"
 				if p.Name == "session_stop" {
@@ -295,6 +312,7 @@ func tool(name, description string, properties map[string]any, required []string
 }
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
+	count := flag.Int("clients", 5, "number of client connection tokens to issue")
 	public := flag.String("public-url", "http://127.0.0.1:8080", "Server base URL reachable by client")
 	flag.Parse()
 	u, err := url.Parse(*public)
@@ -307,13 +325,21 @@ func main() {
 		u.Scheme = "ws"
 	}
 	u.Path = "/client"
-	s := &server{secret: randomBytes(protocol.TokenSecretSize)}
-	token, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: s.secret})
-	if err != nil {
-		log.Fatal(err)
+	if *count < 1 || *count > 1000 {
+		log.Fatal("clients must be between 1 and 1000")
 	}
-	fmt.Printf("Agenterm token:\n%s\n\nMCP endpoint: %s/mcp\n", token, strings.TrimRight(*public, "/"))
-	log.Print("WARNING: MCP has no authentication. Use only in a trusted network.")
+	s := &server{tokens: make(map[string]string), clients: make(map[string]*client)}
+	for i := 1; i <= *count; i++ {
+		secret := randomBytes(protocol.TokenSecretSize)
+		token, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: secret})
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.tokens[token] = secret
+		fmt.Printf("Agenterm token %d:\n%s\n\n", i, token)
+	}
+	fmt.Printf("MCP endpoint: %s/mcp\n", strings.TrimRight(*public, "/"))
+	log.Print("WARNING: HTTP and WebSocket traffic is unencrypted. Use only in a trusted network.")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/client", s.connect)
 	mux.HandleFunc("/mcp", s.mcp)

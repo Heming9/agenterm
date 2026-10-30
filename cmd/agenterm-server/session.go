@@ -13,6 +13,7 @@ const maxSessionOutput = 1 << 20
 
 type session struct {
 	id       string
+	owner    string
 	client   *client
 	mu       sync.Mutex
 	output   []byte
@@ -85,10 +86,10 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (m
 		}
 	}
 }
-func (s *server) startSession(command string) (*session, error) {
+func (s *server) startSession(secret, command string) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c := s.client
+	c := s.clients[secret]
 	if c == nil {
 		return nil, fmt.Errorf("no client connected")
 	}
@@ -106,7 +107,7 @@ func (s *server) startSession(command string) (*session, error) {
 	if len(s.sessions) >= 100 {
 		return nil, fmt.Errorf("session limit reached; try again later")
 	}
-	p := &session{id: random(), client: c, changed: make(chan struct{})}
+	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{})}
 	ch := make(chan protocol.Message, 256)
 	c.mu.Lock()
 	if c.closed {
@@ -134,11 +135,11 @@ func (s *server) startSession(command string) (*session, error) {
 	}()
 	return p, nil
 }
-func (s *server) getSession(id string) (*session, error) {
+func (s *server) getSession(secret, id string) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.sessions[id]
-	if p == nil {
+	if p == nil || p.owner != secret {
 		return nil, fmt.Errorf("unknown session")
 	}
 	return p, nil
