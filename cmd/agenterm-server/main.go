@@ -37,6 +37,7 @@ func (c *client) send(m protocol.Message) error {
 type server struct {
 	tokens      map[string]string  // full token -> client credential
 	clients     map[string]*client // client credential -> connection
+	waiters     map[string]map[chan struct{}]struct{}
 	mu          sync.Mutex
 	sessions    map[string]*session
 	limiter     authLimiter
@@ -113,6 +114,10 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	c := &client{conn: conn, pending: make(map[string]chan protocol.Message)}
 	s.clients[secret] = c
+	for ch := range s.waiters[secret] {
+		close(ch)
+	}
+	delete(s.waiters, secret)
 	log.Println("client connected")
 	go func() {
 		defer func() {
@@ -151,6 +156,48 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			c.mu.Unlock()
 		}
 	}()
+}
+
+// waitForClient checks and subscribes under the same lock so a connection
+// cannot arrive between the two operations and go unnoticed.
+func (s *server) waitForClient(ctx context.Context, secret string, timeout time.Duration) (string, error) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		s.mu.Lock()
+		if s.clients[secret] != nil {
+			s.mu.Unlock()
+			return "connected", nil
+		}
+		ch := make(chan struct{})
+		if s.waiters == nil {
+			s.waiters = make(map[string]map[chan struct{}]struct{})
+		}
+		if s.waiters[secret] == nil {
+			s.waiters[secret] = make(map[chan struct{}]struct{})
+		}
+		s.waiters[secret][ch] = struct{}{}
+		s.mu.Unlock()
+
+		var status string
+		var err error
+		select {
+		case <-ch:
+		case <-timer.C:
+			status = "timeout"
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		s.mu.Lock()
+		delete(s.waiters[secret], ch)
+		if len(s.waiters[secret]) == 0 {
+			delete(s.waiters, secret)
+		}
+		s.mu.Unlock()
+		if status != "" || err != nil {
+			return status, err
+		}
+	}
 }
 func (s *server) execute(ctx context.Context, secret, command string) (string, error) {
 	s.mu.Lock()
@@ -263,6 +310,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
 		tools := []any{
+			tool("wait_for_client", "After sharing the invitation or token, call this tool to wait for the client associated with this MCP connection. Returns connected or timeout; call again after a timeout if appropriate.", map[string]any{"timeout_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 300000, "description": "Maximum wait in milliseconds (default 30000; 0 checks immediately)"}}, []string{}),
 			tool("execute_command", "Execute a non-interactive command and return output when it finishes.", map[string]any{"command": stringField("Shell command")}, []string{"command"}),
 			tool("session_start", "Start an interactive terminal session. Then use session_read to see output, session_write to answer prompts, and session_stop to stop it.", map[string]any{"command": stringField("Shell command to run")}, []string{"command"}),
 			tool("session_read", "Read new output while the session is running. Supply next_cursor from the previous read; wait_ms can long-poll for output.", map[string]any{"session_id": stringField("Session identifier"), "cursor": map[string]any{"type": "integer", "minimum": 0, "description": "Byte cursor, initially 0"}, "wait_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 20000, "description": "Wait up to this many milliseconds for output"}}, []string{"session_id"}),
@@ -285,6 +333,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			Input     string `json:"input"`
 			Cursor    int64  `json:"cursor"`
 			WaitMS    int    `json:"wait_ms"`
+			TimeoutMS *int   `json:"timeout_ms"`
 		}
 		if err := json.Unmarshal(p.Arguments, &a); err != nil {
 			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": "invalid arguments"})
@@ -293,6 +342,20 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		var result any
 		var err error
 		switch p.Name {
+		case "wait_for_client":
+			timeout := 30000
+			if a.TimeoutMS != nil {
+				timeout = *a.TimeoutMS
+			}
+			if timeout < 0 || timeout > 300000 {
+				err = fmt.Errorf("timeout_ms must be between 0 and 300000")
+			} else {
+				var status string
+				status, err = s.waitForClient(r.Context(), secret, time.Duration(timeout)*time.Millisecond)
+				if err == nil {
+					result = map[string]any{"status": status}
+				}
+			}
 		case "execute_command":
 			if strings.TrimSpace(a.Command) == "" {
 				err = fmt.Errorf("command is required")

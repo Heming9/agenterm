@@ -88,6 +88,8 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 
 对方需要访问 GitHub 和 Server 的 `-public-url`；默认的 `127.0.0.1` 只适用于同机。生产环境应通过支持 WebSocket 的 HTTPS 反向代理提供 Server，防止邀请及连接凭证被窃听。安装脚本通过 HTTPS 从 GitHub 下载，不再单独校验脚本本身的固定哈希；脚本使用 Release 的校验清单检查客户端文件，可发现下载损坏，但不代替代码签名或保护已被篡改的 Release。源码本地构建不会生成下载命令，请使用发布版。
 
+分享对应的邀请或 token 后，Agent 可以调用 `wait_for_client` 等待该目标 Client 连接，然后继续执行。返回值为 `{"status":"connected"}` 或 `{"status":"timeout"}`。`timeout_ms` 默认为 30000，允许 0–300000；设为 0 立即检查。超时后 Agent 可以再次调用。Agent 宿主需要在等待前展示邀请，并允许工具调用运行足够长的时间；Server 不通过 MCP 提供邀请。
+
 在支持 Streamable HTTP 和自定义请求头的 Agent 中添加远程 MCP 服务，地址为 `http://SERVER_IP:8080/mcp`。将请求头 `Authorization` 设置为 `Bearer <token>`，其中 token 是目标 Client 使用的完整 `agenterm:` token。需要操作多个 Client 时，可分别配置 MCP 服务；不同 Agent 对自定义请求头的支持可能不同。连接后调用 `execute_command`，传入 `command` 参数。例如：
 
 ```json

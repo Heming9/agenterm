@@ -90,6 +90,8 @@ Each invitation expires after 15 minutes and can be redeemed once. Press Enter i
 
 The other computer must be able to reach GitHub and the server's `-public-url`; the default `127.0.0.1` only works locally. Use an HTTPS reverse proxy with WebSocket support to protect invitations and credentials in transit. The installer script is fetched over HTTPS from GitHub without a separate pinned hash. It checks client downloads against the release checksum manifest, which detects download corruption but does not replace code signing or protect against a compromised release. Locally built servers do not print download commands; use a release build.
 
+After sharing the corresponding invitation or token, the agent can call `wait_for_client` to wait for that target to connect and then continue. It returns `{"status":"connected"}` or `{"status":"timeout"}`. `timeout_ms` defaults to 30000 and accepts 0–300000; 0 checks immediately. The agent may call it again after a timeout. The agent host must display the invitation before waiting and allow the tool call to run for the chosen duration; the server does not provide invitations through MCP.
+
 Add `http://SERVER_IP:8080/mcp` as a remote MCP server in an agent that supports Streamable HTTP and custom headers. Set the header `Authorization: Bearer <token>` to the same full `agenterm:` token used by the target client. Configure a separate MCP entry for each target if needed; support for custom headers varies by agent. For a non-interactive command, call `execute_command` with a `command` argument, for example:
 
 ```json
