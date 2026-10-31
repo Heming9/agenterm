@@ -20,7 +20,7 @@ jobs:
       - name: Build client
         run: |
           cd cmd/agenterm-gui
-          "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon
+          "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon --release
           ditto -c -k --keepParent Agenterm.app ../../agenterm-client-macos-arm64.zip
       - uses: actions/upload-artifact@v4
         with:
@@ -47,13 +47,16 @@ jobs:
         shell: pwsh
         run: |
           Set-Location cmd/agenterm-gui
-          & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png
+          & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Move-Item Agenterm.exe ../../agenterm-client-windows-amd64.exe
+          Compress-Archive -Path ../../agenterm-client-windows-amd64.exe -DestinationPath ../../agenterm-client-windows-amd64.zip -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: agenterm-client-windows-amd64.exe
+          path: |
+            agenterm-client-windows-amd64.exe
+            agenterm-client-windows-amd64.zip
           if-no-files-found: error
 
   server:
@@ -76,7 +79,13 @@ jobs:
               if [ "$os" = darwin ]; then platform=macos; fi
               if [ "$os" = windows ]; then extension=.exe; fi
               GOOS="$os" GOARCH="$arch" go build -ldflags "-X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
-              GOOS="$os" GOARCH="$arch" go build -o "dist/agenterm-cli-${platform}-${arch}${extension}" ./cmd/agenterm-client
+              name="agenterm-cli-${platform}-${arch}${extension}"
+              GOOS="$os" GOARCH="$arch" go build -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
+              if [ "$os" = windows ]; then
+                (cd dist && zip -q "${name%.exe}.zip" "$name")
+              else
+                tar -C dist -czf "dist/${name}.tar.gz" "$name"
+              fi
             done
           done
           cp internal/installer/install.sh internal/installer/install.ps1 dist/
@@ -108,7 +117,7 @@ jobs:
 
           - Client: graphical application for the computer where commands run (macOS arm64 and Windows amd64).
           - Server: MCP endpoint for macOS, Linux, and Windows (amd64 and arm64).
-          - CLI client: macOS, Linux, and Windows (amd64 and arm64). The one-time invitation installer selects the GUI where available and the CLI otherwise.
+          - CLI client: macOS, Linux, and Windows (amd64 and arm64). The one-time invitation installer uses the CLI.
 
           Server and client must use the same token format; this release is incompatible with the older format. Update both together.
 

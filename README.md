@@ -84,7 +84,7 @@ Paste the token at the prompt, or enter it in the desktop client. The client run
 
 ### Connect with a one-time invitation
 
-A release build of the server prints installer commands for macOS/Linux and Windows PowerShell for each connection token. Send the appropriate command privately to the other user. It downloads the installer and client for the server's release from GitHub, detects the architecture, and asks for authorization before connecting. macOS arm64 and Windows amd64 use the GUI; other supported macOS, Linux, and Windows architectures use the terminal client. Closing the client disconnects it; no startup service is installed.
+A release build of the server prints installer commands for macOS/Linux and Windows PowerShell for each connection token. Send the appropriate command privately to the other user. It downloads the installer and command-line client for the server's release from GitHub, detects the architecture, and asks for authorization in the terminal before connecting. Closing the client disconnects it; no startup service is installed. The GUI remains available separately from the release and can connect using a token.
 
 Each invitation expires after 15 minutes and can be redeemed once. Press Enter in the server console to replace all unused invitations with fresh ones; existing connections are unaffected. The connection token retains its existing lifetime and each token supports one connected client at a time. Treat invitation commands and tokens as credentials; commands may remain in shell history.
 

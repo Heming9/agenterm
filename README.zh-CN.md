@@ -82,7 +82,7 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 
 ### 使用一次性邀请连接
 
-使用发布版 Server 时，每个连接 token 同时生成一组安装命令，分别供 macOS/Linux 和 Windows PowerShell 使用。将适合对方系统的命令私下发送给对方；命令从该 Server 对应版本的 GitHub Release 下载脚本和客户端，自动检测架构。macOS arm64 和 Windows amd64 使用图形客户端，其他已支持的 macOS、Linux 和 Windows 架构使用终端客户端。客户端展示服务器地址与权限说明，对方确认后才会连接。关闭客户端即可断开；不会设置开机自启。
+使用发布版 Server 时，每个连接 token 同时生成一组安装命令，分别供 macOS/Linux 和 Windows PowerShell 使用。将适合对方系统的命令私下发送给对方；命令从该 Server 对应版本的 GitHub Release 下载脚本和命令行客户端，自动检测架构。终端中展示服务器地址与权限说明，对方确认后才会连接。关闭客户端即可断开；不会设置开机自启。图形客户端仍可从 Release 单独下载并使用 token 连接。
 
 邀请有效期为 15 分钟、只能兑换一次。过期后在 Server 控制台按回车，可为所有 token 重新生成邀请，并作废尚未兑换的旧邀请；已有连接不受影响。每个 token 仍只能同时连接一个客户端，兑换后的连接 token 原有的有效期规则不变。邀请命令及 token 都是凭证，应私下发送，避免粘贴到公开场所；命令可能保存在终端历史中，完成后应清理。
 
