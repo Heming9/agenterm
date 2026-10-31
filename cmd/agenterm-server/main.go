@@ -39,16 +39,19 @@ func (c *client) send(m protocol.Message) error {
 }
 
 type server struct {
-	adminKey    string
-	noPassword  bool
-	clientURL   string
-	tokens      map[string]string  // full token -> client credential
-	clients     map[string]*client // client credential -> connection
-	waiters     map[string]map[chan struct{}]struct{}
-	mu          sync.Mutex
-	sessions    map[string]*session
-	limiter     authLimiter
-	invitations map[string]invitation
+	adminKey        string
+	noPassword      bool
+	clientURL       string
+	tokens          map[string]string  // full token -> client credential
+	clients         map[string]*client // client credential -> connection
+	waiters         map[string]map[chan struct{}]struct{}
+	mu              sync.Mutex
+	sessions        map[string]*session
+	limiter         authLimiter
+	invitations     map[string]invitation
+	maxClientsPerIP int
+	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
+	nextClientOrder uint64
 }
 
 type invitation struct {
@@ -136,8 +139,24 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A token may have been reclaimed since the initial authentication check.
+	valid := false
+	for _, candidate := range s.tokens {
+		if candidate == secret {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
+		return
+	}
 	if s.clients[secret] != nil {
 		http.Error(w, i18n.Text(i18n.Terminal(), "a.client.is.already.connected.with.this.token"), http.StatusConflict)
+		return
+	}
+	if owner := s.clientOwners[secret]; owner != nil && s.maxClientsPerIP > 0 && s.onlineForIP(owner.ip) >= s.maxClientsPerIP {
+		http.Error(w, i18n.Text(i18n.Terminal(), "client.ip.limit.reached"), http.StatusTooManyRequests)
 		return
 	}
 	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
@@ -146,6 +165,10 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	c := &client{conn: conn, pending: make(map[string]chan protocol.Message)}
 	s.clients[secret] = c
+	if owner := s.clientOwners[secret]; owner != nil {
+		owner.used = true
+		s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
+	}
 	for ch := range s.waiters[secret] {
 		close(ch)
 	}
@@ -400,7 +423,13 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			switch p.Name {
 			case "create_client":
-				result, err = s.createClient()
+				var owner string
+				if s.maxClientsPerIP > 0 {
+					owner, err = s.requestIP(r)
+				}
+				if err == nil {
+					result, err = s.createClient(owner)
+				}
 
 			case "wait_for_client":
 				timeout := 90000
@@ -482,7 +511,11 @@ func main() {
 	noPassword := flag.Bool("no-password", false, serverText("allow.mcp.management.access.without.a.password"))
 	autoCreate := flag.Bool("generate", false, serverText("generate.a.client.token.and.invitation.at"))
 	public := flag.String("public-url", "http://127.0.0.1:8080", serverText("public.server.url.optional.agenterm.suffix"))
+	maxClientsPerIP := flag.Int("max-clients-per-ip", 0, serverText("max.clients.per.ip"))
 	flag.Parse()
+	if *maxClientsPerIP < 0 {
+		log.Fatal(serverText("max.clients.per.ip.invalid"))
+	}
 	u, err := parsePublicURL(*public)
 	if err != nil {
 		log.Fatal(err)
@@ -515,7 +548,7 @@ func main() {
 		adminKey = randomManagementKey()
 		fmt.Printf(serverText("mcp.management.key.save.securely.s"), adminKey)
 	}
-	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation)}
+	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation), maxClientsPerIP: *maxClientsPerIP}
 	if *noPassword {
 		log.Print(serverText("warning.mcp.management.access.has.no.password"))
 	}

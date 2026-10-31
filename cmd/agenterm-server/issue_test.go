@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,19 @@ import (
 	"context"
 )
 
+func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
+	s := &server{clientURL: "wss://example.com/agenterm/client", tokens: make(map[string]string)}
+	for i := 0; i < 1000; i++ {
+		s.tokens[fmt.Sprintf("existing-%d", i)] = "secret"
+	}
+	if _, err := s.createClient(""); err != nil {
+		t.Fatalf("creating a client with 1000 existing tokens failed: %v", err)
+	}
+	if got := len(s.tokens); got != 1001 {
+		t.Fatalf("got %d tokens, want 1001", got)
+	}
+}
+
 func TestCreateClientDisplayText(t *testing.T) {
 	originalTag := releaseTag
 	t.Cleanup(func() { releaseTag = originalTag })
@@ -20,7 +34,7 @@ func TestCreateClientDisplayText(t *testing.T) {
 		t.Run(tag, func(t *testing.T) {
 			releaseTag = tag
 			s := &server{clientURL: "wss://example.com/agenterm/client"}
-			result, err := s.createClient()
+			result, err := s.createClient("")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -75,7 +75,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	defer frontend.Close()
 	publicURL = frontend.URL
 	state.clientURL = "ws" + strings.TrimPrefix(publicURL, "http") + prefix + "/client"
-	issued, err := state.createClient()
+	issued, err := state.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestShellInstallerVersionMismatchStopsDownload(t *testing.T) {
 	}))
 	defer ts.Close()
 	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
-	issued, err := state.createClient()
+	issued, err := state.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}

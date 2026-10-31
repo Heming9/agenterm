@@ -156,13 +156,11 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.18 preview release.
+          Agenterm v0.2.19 preview release.
 
-          - Reduce server distribution size by embedding all six CLI binaries in one solid XZ archive. macOS, Linux, and Windows remain supported on amd64 and arm64.
-          - Reconstruct standard gzip/ZIP downloads and SHA256SUMS entirely in memory at server startup, before invitations are printed or requests are accepted. Downloads do not trigger decompression or write server-side temporary files.
-          - Use the same deterministic archive writer for release files and server downloads. Verify extracted binaries and reconstructed downloads before building the release servers.
-          - Preserve CLI/TUI and GUI functionality, invitation flows, cached-client verification, and HTTP HEAD/Range support. Losslessly recompress GUI icons without changing pixels or metadata.
-          - Trade additional startup CPU and memory for smaller server binaries. CLI archives may be slightly larger than the previous compression settings.
+          - Add an optional per-issuing-IP limit for connected clients and pending credentials, with oldest-unused invitation recycling.
+          - Read the issuing IP from the reverse proxy's X-Real-IP header when the quota is enabled. Restrict direct Server access and configure the proxy to overwrite this header.
+          - Remove the fixed global limit of 1,000 client tokens.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

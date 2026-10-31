@@ -31,7 +31,7 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 	}))
 	defer gateway.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(gateway.URL, "http") + protocol.ClientPath
-	issued, err := s.createClient()
+	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 
 func TestProbeRejectsInvalidInvitations(t *testing.T) {
 	s := &server{clientURL: "ws://example.com/agenterm/client"}
-	issued, _ := s.createClient()
+	issued, _ := s.createClient("")
 	value := issued["invitation"].(string)
 	decoded, _ := protocol.Decode(value)
 	otherServer, _ := protocol.Encode(protocol.Token{URL: "ws://other.example/agenterm/client", Secret: decoded.Secret})

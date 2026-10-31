@@ -13,7 +13,7 @@ const installerTestTag = "v" + version.Current
 
 func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 	s := &server{clientURL: "ws://example.com" + protocol.ClientPath, clients: make(map[string]*client)}
-	issued, err := s.createClient()
+	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}

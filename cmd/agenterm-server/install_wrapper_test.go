@@ -19,7 +19,7 @@ func TestInstallWrapperLifecycle(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
-	issued, err := s.createClient()
+	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestInstallWrapperLifecycle(t *testing.T) {
 
 func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
 	s := &server{clientURL: "wss://example.com/agenterm/client"}
-	issued, _ := s.createClient()
+	issued, _ := s.createClient("")
 	decoded, _ := protocol.Decode(issued["invitation"].(string))
 	path := "/c/" + decoded.Secret
 	entry := s.invitations[decoded.Secret]

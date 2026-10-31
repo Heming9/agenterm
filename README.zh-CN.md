@@ -117,9 +117,19 @@ Server 默认监听 `127.0.0.1:8080`，每次启动生成 10 位小写字母和�
 
 MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Client token>`。管理模式用参数 `client_token` 选择目标；普通 Client token 无权调用 `create_client`。也可为每个目标单独配置 MCP。Agent 需支持 Streamable HTTP 和自定义请求头。
 
-`create_client` 返回 `client_token`、`invitation`、`expires_at` 和 `display_text`。发布版还返回 `macos_linux_command` 与 `windows_powershell_command`，两条命令共用同一个邀请，任选其一。Server 最多创建 1000 个 Client token；即使管理密钥固定，所有 token 和邀请仍在重启后失效。
+`create_client` 返回 `client_token`、`invitation`、`expires_at` 和 `display_text`。发布版还返回 `macos_linux_command` 与 `windows_powershell_command`，两条命令共用同一个邀请，任选其一。即使管理密钥固定，所有 token 和邀请仍在重启后失效。
 
 `-no-password` 关闭 MCP 管理认证，任何能访问接口的人都能创建和控制连接，仅限私有环境。不能与 `--passwd` 同用。
+
+### 按创建者 IP 限制客户端
+
+`--max-clients-per-ip 5` 将每个创建者 IP 的在线客户端限制为 5 个，默认 `0` 表示不限制。配额按调用 MCP `create_client` 的 IP 计算，而不是受邀电脑的 IP。此功能适用于两种认证模式。
+
+在线连接未满时可以创建邀请；在线数加上尚未连接过的 token 数最多为 5。待使用名额已满时，新邀请会撤销该 IP 最早创建且从未连接过的 token 及对应邀请，即使邀请已兑换。未兑换的邀请过期时，其从未连接过的 token 在下次创建邀请时回收。在线数已满时不能创建；客户端重连时也会检查上限。已连接过的 token 不会因为断线或新邀请被回收；Server 重启后所有 token 失效。`--generate` 在启动时生成的 token 没有创建者 IP，不受此配额限制。
+
+启用 IP 配额后，Server 从 `X-Real-IP` 请求头读取创建者 IP。缺少该请求头、提供多个值或地址无效时，创建请求会被拒绝。必须限制 Server 仅供可信反向代理访问，并让代理覆盖该请求头；否则直接访问 Server 的调用方可以伪造 IP。
+
+Cloudflare → Nginx → Agenterm 需要 Nginx 启用 `ngx_http_realip_module`，将 Cloudflare 官方公布的全部 IPv4 和 IPv6 网段设置为 `set_real_ip_from` 并持续更新，设置 `real_ip_header CF-Connecting-IP;`，在 Agenterm 代理位置设置 `proxy_set_header X-Real-IP $remote_addr;`。只信任 Cloudflare 网段，不可信任所有来源。参考 [Cloudflare 还原访客 IP](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) 和 [Cloudflare IP 列表](https://www.cloudflare.com/ips/)。Pseudo IPv4 的覆盖模式会替换原始 IPv6，应关闭以准确计数。IP 配额无法阻止更换 IP，同一 NAT 下的使用者也会共享配额。
 
 版本号遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)，连接时双向校验，并采用以下兼容策略：
 

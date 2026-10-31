@@ -117,9 +117,19 @@ Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url
 
 MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <client token>`. Management calls select a target with `client_token`; ordinary client tokens cannot call `create_client`. You can also configure one MCP entry per target. Your agent must support Streamable HTTP and custom headers.
 
-`create_client` returns `client_token`, `invitation`, `expires_at`, and `display_text`. Release builds also return `macos_linux_command` and `windows_powershell_command`; both redeem the same invitation, so use one. The server allows up to 1000 client tokens. All tokens and invitations expire on restart, even with a fixed management key.
+`create_client` returns `client_token`, `invitation`, `expires_at`, and `display_text`. Release builds also return `macos_linux_command` and `windows_powershell_command`; both redeem the same invitation, so use one. All tokens and invitations expire on restart, even with a fixed management key.
 
 `-no-password` disables MCP management authentication: anyone who can reach the endpoint can create and control connections. Keep this mode private. It cannot be combined with `--passwd`.
+
+### Limit clients by issuing IP
+
+`--max-clients-per-ip 5` limits each issuing IP to five connected clients; the default `0` disables this limit. The issuing IP is the MCP caller of `create_client`, not the invited machine. This works in either authentication mode.
+
+While fewer than five clients are online, a new invitation can be created. Online clients plus tokens that have never connected are capped at five per issuing IP. If pending capacity is full, creating an invitation revokes the oldest never-connected token and its invitation, including an already redeemed invitation. Expired unredeemed invitations and their never-connected tokens are removed on the next creation. Creation is rejected when all slots are online; reconnects also check the limit. Previously connected tokens survive disconnects and new invitations; Server restart invalidates all tokens. Startup tokens from `--generate` have no issuing IP and are exempt.
+
+When the IP quota is enabled, the Server reads the issuing IP from the `X-Real-IP` header. Creation requests with missing, multiple, or invalid values are rejected. Restrict direct access to the Server to a trusted reverse proxy, and have the proxy overwrite this header; otherwise direct callers can spoof their IP.
+
+For Cloudflare → Nginx → Agenterm, enable Nginx's `ngx_http_realip_module`, configure `set_real_ip_from` for all Cloudflare IPv4 and IPv6 ranges and keep them current, set `real_ip_header CF-Connecting-IP;`, and set `proxy_set_header X-Real-IP $remote_addr;` in the Agenterm proxy location. Trust only Cloudflare ranges, never all sources. See [Cloudflare's visitor IP guidance](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) and [IP ranges](https://www.cloudflare.com/ips/). Pseudo IPv4 header overwriting replaces the original IPv6 address and should be disabled for accurate quotas. IP limits cannot prevent IP rotation; users behind the same NAT share a quota.
 
 Versions follow [SemVer 2.0.0](https://semver.org/). Connections validate versions in both directions using this policy:
 

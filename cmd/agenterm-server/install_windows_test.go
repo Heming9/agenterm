@@ -59,7 +59,7 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	}))
 	defer ts.Close()
 	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
-	issued, err := state.createClient()
+	issued, err := state.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	}))
 	defer other.Close()
 	incompatible.clientURL = "ws" + strings.TrimPrefix(other.URL, "http") + protocol.ClientPath
-	invitation, err := incompatible.createClient()
+	invitation, err := incompatible.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}

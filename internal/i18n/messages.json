@@ -1,4 +1,20 @@
 {
+  "client.ip.limit.reached": {
+    "en": "client connection limit for this IP reached",
+    "zh-CN": "该 IP 的客户端连接数量已达上限"
+  },
+  "client.ip.invalid": {
+    "en": "cannot determine a valid client IP address",
+    "zh-CN": "无法确定有效的客户端 IP 地址"
+  },
+  "max.clients.per.ip": {
+    "en": "maximum connected clients per issuing IP (0 disables the limit)",
+    "zh-CN": "每个邀请创建者 IP 的最大在线客户端数（0 表示不限制）"
+  },
+  "max.clients.per.ip.invalid": {
+    "en": "max-clients-per-ip must be nonnegative",
+    "zh-CN": "max-clients-per-ip 必须大于或等于 0"
+  },
   "client.connected": {
     "en": "client connected",
     "zh-CN": "客户端已连接"
@@ -346,10 +362,6 @@
   "session.already.ended": {
     "en": "session already ended",
     "zh-CN": "会话已结束"
-  },
-  "client.limit.reached": {
-    "en": "client limit reached",
-    "zh-CN": "客户端数量已达上限"
   },
   "public.url.must.be.an.http.s.origin": {
     "en": "public-url must be an http(s) origin, optionally ending in %s",
