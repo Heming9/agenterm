@@ -3,6 +3,7 @@
   <img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm 应用图标" width="128">
   <p><a href="README.md">English</a> | 简体中文</p>
   <p><strong>让Agents随时随地控制任意远程电脑</strong></p>
+  <p>通过一键连接远程电脑，让 AI Agent 使用 MCP 和终端提供远程协助。</p>
   <p><code>Agent ── HTTP / MCP ──&gt; Server &lt;── WebSocket ── Client ──&gt; shell</code></p>
   <p>macOS / Linux / Windows · CLI / GUI · 多客户端 · 交互式会话 · 无需 SSH 服务</p>
 </div>
