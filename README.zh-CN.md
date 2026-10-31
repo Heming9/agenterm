@@ -144,7 +144,7 @@ Server 当前只提供 HTTP。使用 HTTP 的 `-public-url` 时会输出未加�
 - 每个 token 同时只允许一个 Client 连接；Server 重启后 token 失效，需要使用新 token 重新连接。连接中断后也需要重新连接。
 - `execute_command` 在结束后返回输出；需要边运行边读取时使用 `session_start` 和 `session_read`。
 - Windows 输出会根据首段非 ASCII 内容推测 UTF-8 或系统代码页并转换为 UTF-8；同一命令混合多种编码时仍可能乱码。
-- 命令执行使用 macOS/Linux 的 `/bin/sh -c` 或 Windows 的 `cmd.exe /C`。
+- 命令默认使用直接启动客户端的受支持 shell（如 PowerShell、cmd、bash、zsh 或 fish）；无法识别时，macOS/Linux 回退到 `/bin/sh`，Windows 回退到 `ComSpec` 指定的命令解释器（通常是 `cmd.exe`）。每条命令都在新的 shell 进程中执行，不会共享启动 shell 的会话变量或函数。
 
 ## 开源协议
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -174,10 +173,7 @@ func newClientView(win fyne.Window) *clientView {
 		container.NewCenter(slot(widget.NewIcon(theme.NewColoredResource(terminalIcon, theme.ColorNamePlaceHolder)), 27, 27, false)),
 		v.emptyTitle, v.emptyDetail))
 	viewport := container.NewStack(v.scroll, v.empty)
-	shell := "/bin/sh"
-	if runtime.GOOS == "windows" {
-		shell = "cmd.exe"
-	}
+	shell := client.Shell()
 	toolbarTitle := newText("命令与输出", 11, theme.ColorNamePlaceHolder)
 	toolbarShell := newText(shell, 11, theme.ColorNamePlaceHolder)
 	terminalHeader := container.NewBorder(nil, nil,

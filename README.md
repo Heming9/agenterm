@@ -144,7 +144,7 @@ The server itself serves HTTP and warns when `-public-url` uses HTTP. For encryp
 - Each token permits one connected client. Tokens expire on server restart; reconnect with a newly issued token after a restart or connection loss.
 - `execute_command` returns output at completion; use `session_start` and `session_read` to read while a command runs.
 - Windows output is decoded as UTF-8 or the system code page based on the first non-ASCII content. Mixed encodings can still produce garbled output.
-- Commands run with `/bin/sh -c` on macOS/Linux and `cmd.exe /C` on Windows.
+- Commands use the supported shell that directly started the client (such as PowerShell, cmd, bash, zsh, or fish). If it cannot be identified, they fall back to `/bin/sh` on macOS/Linux or the command interpreter specified by `ComSpec` (usually `cmd.exe`) on Windows. Each command starts a new shell process and does not share session variables or functions with the launching shell.
 
 ## Test
 

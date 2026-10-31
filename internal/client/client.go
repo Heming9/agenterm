@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -107,11 +106,7 @@ func (c *connection) run(m protocol.Message) {
 	go func() {
 		defer func() { cancel(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
 		event := c.commandStarted(m)
-		shell, args := "/bin/sh", []string{"-c", m.Command}
-		if runtime.GOOS == "windows" {
-			shell, args = "cmd.exe", []string{"/C", m.Command}
-		}
-		cmd := exec.CommandContext(ctx, shell, args...)
+		cmd := shellCommand(ctx, m.Command)
 		writer := newOutputWriter(outputWriter{c: c, id: m.ID})
 		cmd.Stdout = writer
 		cmd.Stderr = writer
@@ -135,11 +130,7 @@ func (c *connection) run(m protocol.Message) {
 func (c *connection) runInteractive(m protocol.Message) {
 	ctx, cancel := context.WithCancel(context.Background())
 	event := c.commandStarted(m)
-	shell, args := "/bin/sh", []string{"-c", m.Command}
-	if runtime.GOOS == "windows" {
-		shell, args = "cmd.exe", []string{"/C", m.Command}
-	}
-	cmd := exec.CommandContext(ctx, shell, args...)
+	cmd := shellCommand(ctx, m.Command)
 	input, output, err := startInteractive(cmd)
 	if err != nil {
 		cancel()
