@@ -1,17 +1,22 @@
 package main
 
 import (
+	"agenterm/internal/protocol"
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestShellInvitationPreservesConsentInput(t *testing.T) {
@@ -26,17 +31,12 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	template, err := os.ReadFile(filepath.Join("..", "..", "internal", "installer", "install.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	write := func(path string, data []byte, mode os.FileMode) {
 		t.Helper()
 		if err := os.WriteFile(path, data, mode); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(assets, "install.sh"), []byte(strings.ReplaceAll(string(template), "@RELEASE_TAG@", "v0.1.8")), 0o600)
 	name := "agenterm-cli-linux-amd64"
 	client := []byte("#!/bin/sh\nread -r answer\nprintf 'consent=%s arg=%s invitation=%s\\n' \"$answer\" \"$1\" \"$2\"\n")
 	var data bytes.Buffer
@@ -58,39 +58,54 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	write(filepath.Join(assets, archive), data.Bytes(), 0o600)
 	write(filepath.Join(assets, "SHA256SUMS"), []byte(fmt.Sprintf("%x  %s\n%x  %s\n", sha256.Sum256(data.Bytes()), archive, sha256.Sum256(client), name)), 0o600)
 	write(filepath.Join(bin, "uname"), []byte("#!/bin/sh\ncase $1 in -s) echo Linux;; -m) echo x86_64;; esac\n"), 0o755)
-	write(filepath.Join(bin, "curl"), []byte(`#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    https://github.com/Heming9/agenterm/releases/download/v0.1.8/*) src=${1##*/} ;;
-    -o) shift; dst=$1 ;;
-  esac
-  shift
-done
-[ -n "${src:-}" ] || exit 1
-printf '%s\n' "$src" >> "$TEST_DOWNLOAD_LOG"
-if [ -n "${dst:-}" ]; then cp "$TEST_ASSETS/$src" "$dst"; else cat "$TEST_ASSETS/$src"; fi
-`), 0o755)
-	command, _ := installCommands("v0.1.8", "agenterm:test")
 	log := filepath.Join(root, "downloads")
+	state := &server{}
+	var blockWebSocket atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/client", state.connect)
+	mux.Handle("/c/", state.installWrapper("v0.1.8"))
+	mux.Handle("/downloads/", downloadHandler("v0.1.8", os.DirFS(assets)))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := os.OpenFile(log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		fmt.Fprintln(f, r.URL.Path)
+		f.Close()
+		if blockWebSocket.Load() && r.URL.Path == "/client" {
+			http.Error(w, "WebSocket upgrades blocked by proxy", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}))
+	defer ts.Close()
+	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	issued, err := state.createClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	invitation := issued["invitation"].(string)
+	command, _ := installCommands(invitation)
 	cache := filepath.Join(root, "cache")
 	run := func() string {
 		t.Helper()
 		cmd := exec.Command("sh", "-c", command)
-		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache, "TEST_ASSETS="+assets, "TEST_DOWNLOAD_LOG="+log)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 		cmd.Stdin = strings.NewReader("y\n")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("command failed: %v\n%s", err, out)
 		}
-		if !strings.Contains(string(out), "consent=y arg=-invite invitation=agenterm:test") {
+		if !strings.Contains(string(out), "consent=y arg=-invite invitation="+invitation) {
 			t.Fatalf("unexpected client output: %s", out)
 		}
 		return string(out)
 	}
-	if output := run(); !strings.Contains(output, "Downloading client.") {
+	if output := run(); !strings.Contains(output, "正在下载客户端") {
 		t.Fatalf("first run: %s", output)
 	}
-	if output := run(); !strings.Contains(output, "Using verified cached client.") {
+	if output := run(); !strings.Contains(output, "本地客户端校验通过，跳过下载") {
 		t.Fatalf("second run: %s", output)
 	}
 	logContent, err := os.ReadFile(log)
@@ -102,7 +117,7 @@ if [ -n "${dst:-}" ]; then cp "$TEST_ASSETS/$src" "$dst"; else cat "$TEST_ASSETS
 	}
 	cached := filepath.Join(cache, "agenterm", "v0.1.8", "linux-amd64", name)
 	write(cached, []byte("corrupted"), 0o700)
-	if output := run(); !strings.Contains(output, "Downloading client.") {
+	if output := run(); !strings.Contains(output, "正在下载客户端") {
 		t.Fatalf("corrupted cache: %s", output)
 	}
 	logContent, err = os.ReadFile(log)
@@ -116,10 +131,47 @@ if [ -n "${dst:-}" ]; then cp "$TEST_ASSETS/$src" "$dst"; else cat "$TEST_ASSETS
 	write(cached, []byte("corrupted"), 0o700)
 	write(filepath.Join(assets, archive), []byte("corrupted archive"), 0o600)
 	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache, "TEST_ASSETS="+assets, "TEST_DOWNLOAD_LOG="+log)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "Archive checksum mismatch") || strings.Contains(string(out), "consent=y") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
+	}
+	// Invalid/expired invitations must fail before fetching the manifest or archive,
+	// even when the local cache is missing or damaged.
+	before, _ := os.ReadFile(log)
+	decoded, _ := protocol.Decode(invitation)
+	state.mu.Lock()
+	entry := state.invitations[decoded.Secret]
+	entry.expires = time.Now().Add(-time.Second)
+	state.invitations[decoded.Secret] = entry
+	state.mu.Unlock()
+	cmd = exec.Command("sh", "-c", command)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+	cmd.Stdin = strings.NewReader("y\n")
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "401") {
+		t.Fatalf("expired preflight: err=%v output=%s", err, out)
+	}
+	after, _ := os.ReadFile(log)
+	if strings.Contains(string(after[len(before):]), "SHA256SUMS") || strings.Contains(string(after[len(before):]), archive) {
+		t.Fatalf("download continued after failed probe: %s", after[len(before):])
+	}
+	// Being able to fetch the script over HTTP does not imply WebSocket support.
+	state.mu.Lock()
+	entry.expires = time.Now().Add(time.Minute)
+	state.invitations[decoded.Secret] = entry
+	state.mu.Unlock()
+	blockWebSocket.Store(true)
+	before = after
+	cmd = exec.Command("sh", "-c", command)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "WebSocket connectivity check failed (HTTP 403)") {
+		t.Fatalf("blocked WebSocket: err=%v output=%s", err, out)
+	}
+	after, _ = os.ReadFile(log)
+	if strings.Contains(string(after[len(before):]), "SHA256SUMS") || strings.Contains(string(after[len(before):]), archive) {
+		t.Fatalf("download continued after blocked WebSocket: %s", after[len(before):])
 	}
 }

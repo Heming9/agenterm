@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"agenterm/internal/installer"
 	"agenterm/internal/protocol"
 	"github.com/gorilla/websocket"
 )
@@ -113,6 +114,10 @@ func (s *server) validSecret(secret string) bool {
 }
 
 func (s *server) connect(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("probe") == "1" {
+		s.probeConnection(w, r)
+		return
+	}
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if status, err := s.authorize(r.RemoteAddr, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret)); err != nil {
 		if status == http.StatusTooManyRequests {
@@ -328,7 +333,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		if version != "2025-03-26" && version != "2025-06-18" {
 			version = "2025-03-26"
 		}
-		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.10"}}, nil)
+		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.12"}}, nil)
 	case "ping":
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
@@ -558,6 +563,8 @@ func main() {
 	mux.HandleFunc("/client", s.connect)
 	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
 	mux.HandleFunc("/mcp", s.mcp)
+	mux.Handle("/downloads/", downloadHandler(releaseTag, installer.Assets()))
+	mux.Handle("/c/", s.installWrapper(releaseTag))
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }

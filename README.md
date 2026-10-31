@@ -86,11 +86,13 @@ Both clients keep recent logs in memory (~64 KiB), never save tokens, and requir
 <details>
 <summary>Invitations & downloads</summary>
 
-Release servers generate one-command installers that fetch the matching release’s script and CLI from GitHub, detect the architecture, and ask for authorization before connecting. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
+Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server, validate the invitation and probe the WebSocket handshake on `/client`, then verify the cache or download the matching CLI and ask for authorization before connecting. Probes do not redeem invitations or register clients. Installation shows five connection stages: connectivity check, client preparation, authorization, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
+
+Commands use a short `/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
 Invitations expire after 15 minutes and can be redeemed once. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. Redeemed client tokens remain reusable until the server restarts, with one connected client per token. Share credentials privately; invitation commands may remain in shell history.
 
-The target needs access to GitHub and `-public-url`; `127.0.0.1` works only locally. Each invocation fetches the release checksum manifest and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
+The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies must forward `/c/` and `/downloads/` and allow WebSocket upgrades and the Authorization header on `/client`. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
 
 | OS | Cache |
 | --- | --- |
@@ -98,7 +100,7 @@ The target needs access to GitHub and `-public-url`; `127.0.0.1` works only loca
 | Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
 | Windows | `%LOCALAPPDATA%\Agenterm\cache` |
 
-The cache remains after disconnecting; delete it manually to remove it. Each connection still requires authorization. The installer script is fetched over HTTPS without a pinned hash. Release checksums detect corruption; they do not replace code signing or protect against a compromised release.
+The cache remains after disconnecting; delete it manually to remove it. Each connection still requires authorization. Scripts and assets use the server’s HTTP(S) origin without a pinned script hash; use HTTPS for public deployments. Checksums detect corruption; they do not replace code signing or protect against a compromised server or release. macOS/Linux use gzip archives and Windows uses zip. The server serves embedded archives directly; extraction happens on the target computer.
 
 </details>
 

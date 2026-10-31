@@ -35,6 +35,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.3'
+      - name: Test Windows installer and connection probes
+        run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper'
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -66,7 +68,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.3'
-      - name: Build server for macOS, Linux, and Windows
+      - name: Test CLI, server, and installers
+        run: go test ./cmd/agenterm-client ./cmd/agenterm-server ./internal/...
+      - name: Build and bundle clients, then build servers
         env:
           CGO_ENABLED: '0'
           RELEASE_TAG: ${{ github.ref_name }}
@@ -79,14 +83,25 @@ jobs:
               extension=""
               if [ "$os" = darwin ]; then platform=macos; fi
               if [ "$os" = windows ]; then extension=.exe; fi
-              GOOS="$os" GOARCH="$arch" go build -ldflags "-X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
               name="agenterm-cli-${platform}-${arch}${extension}"
-              GOOS="$os" GOARCH="$arch" go build -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
+              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
               if [ "$os" = windows ]; then
-                (cd dist && zip -q "${name%.exe}.zip" "$name")
+                (cd dist && zip -9 -q "${name%.exe}.zip" "$name")
               else
-                tar -C dist -czf "dist/${name}.tar.gz" "$name"
+                tar -C dist -cf - "$name" | gzip -9 > "dist/${name}.tar.gz"
               fi
+            done
+          done
+          # The embedded manifest covers both the archives and extracted clients.
+          (cd dist && sha256sum agenterm-cli-* > SHA256SUMS)
+          cp dist/*.tar.gz dist/*.zip dist/SHA256SUMS internal/installer/assets/
+          for os in darwin linux windows; do
+            for arch in amd64 arm64; do
+              platform="$os"
+              extension=""
+              if [ "$os" = darwin ]; then platform=macos; fi
+              if [ "$os" = windows ]; then extension=.exe; fi
+              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
             done
           done
           sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.sh > dist/install.sh
@@ -113,15 +128,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          (cd artifacts && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
+          (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
           Agenterm preview release.
 
-          - Client: graphical application for the computer where commands run (macOS arm64 and Windows amd64).
-          - Server: MCP endpoint for macOS, Linux, and Windows (amd64 and arm64).
-          - CLI client: macOS, Linux, and Windows (amd64 and arm64). Interactive terminals now show a TUI with connection status and command logs. Use -plain for text output; redirected output remains plain text. The one-time invitation installer uses the CLI.
+          - One-command connection no longer accesses GitHub: each Server bundles CLI archives and checksums for macOS, Linux, and Windows (amd64 and arm64), serving compressed files directly.
+          - Short invitation URLs dynamically provide the installer with its version, invitation, and download address. Invitations remain valid for 15 minutes and redeemable once; fetching scripts does not consume them.
+          - Check invitation validity and the actual WebSocket handshake before downloading a client. Failed probes stop installation immediately.
+          - Show five connection stages and terminal download progress. Verified cached clients skip downloading; connection success is shown only after the real handshake.
+          - GUI downloads remain available for macOS arm64 and Windows amd64. CLI clients retain the interactive TUI and optional -plain mode.
 
-          Server and client must use the same token format; this release is incompatible with the older format. Update both together.
+          Reverse proxies must forward /c/ and /downloads/, and support WebSocket upgrades and the Authorization header on /client. Use matching Server and client release versions.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

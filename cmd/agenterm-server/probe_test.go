@@ -1,0 +1,107 @@
+package main
+
+import (
+	"agenterm/internal/invite"
+	"agenterm/internal/protocol"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
+	s := &server{clients: make(map[string]*client)}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/client", s.connect)
+	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	issued, err := s.createClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := issued["invitation"].(string)
+	token, _ := protocol.Decode(issued["client_token"].(string))
+	waiter := make(chan struct{})
+	s.waiters = map[string]map[chan struct{}]struct{}{token.Secret: {waiter: {}}}
+	for i := 0; i < 2; i++ {
+		ws, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{"Authorization": {"Bearer " + value}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = ws.SetReadDeadline(time.Now().Add(time.Second))
+		_, _, err = ws.ReadMessage()
+		ws.Close()
+		if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+			t.Fatalf("probe should close without sending commands: %v", err)
+		}
+		s.mu.Lock()
+		connected := len(s.clients)
+		invitations := len(s.invitations)
+		s.mu.Unlock()
+		if connected != 0 || invitations != 1 {
+			t.Fatalf("probe changed state: clients=%d invitations=%d", connected, invitations)
+		}
+		select {
+		case <-waiter:
+			t.Fatal("probe woke a client waiter")
+		default:
+		}
+	}
+	got, err := invite.Redeem(context.Background(), value)
+	if err != nil || got != issued["client_token"] {
+		t.Fatalf("redeem after probing: %q %v", got, err)
+	}
+	if ws, response, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{"Authorization": {"Bearer " + value}}); err == nil {
+		ws.Close()
+		t.Fatal("redeemed invitation accepted")
+	} else {
+		response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("redeemed probe status: %d", response.StatusCode)
+		}
+	}
+	// A genuine connection still registers and wakes the waiter after a probe.
+	ws, _, err := websocket.DefaultDialer.Dial(s.clientURL, http.Header{"Authorization": {"Bearer " + token.Secret}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	select {
+	case <-waiter:
+	case <-time.After(time.Second):
+		t.Fatal("real connection did not wake waiter")
+	}
+}
+
+func TestProbeRejectsInvalidInvitations(t *testing.T) {
+	s := &server{clientURL: "ws://example.com/client"}
+	issued, _ := s.createClient()
+	value := issued["invitation"].(string)
+	decoded, _ := protocol.Decode(value)
+	otherServer, _ := protocol.Encode(protocol.Token{URL: "ws://other.example/client", Secret: decoded.Secret})
+	for _, header := range []string{"", "Bearer invalid", "Bearer " + issued["client_token"].(string), "Bearer " + otherServer} {
+		r := httptest.NewRequest(http.MethodGet, "/client?probe=1", nil)
+		r.Header.Set("Authorization", header)
+		w := httptest.NewRecorder()
+		s.connect(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("invalid probe status %d", w.Code)
+		}
+	}
+	entry := s.invitations[decoded.Secret]
+	entry.expires = time.Now().Add(-time.Second)
+	s.invitations[decoded.Secret] = entry
+	r := httptest.NewRequest(http.MethodGet, "/client?probe=1", nil)
+	r.Header.Set("Authorization", "Bearer "+value)
+	w := httptest.NewRecorder()
+	s.connect(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expired probe status %d", w.Code)
+	}
+}

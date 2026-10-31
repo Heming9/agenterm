@@ -86,11 +86,13 @@ Authorization:  Bearer agenterm:...
 <details>
 <summary>邀请与下载</summary>
 
-发布版 Server 生成的一键命令从 GitHub 下载同版本安装脚本和 CLI，自动识别架构，确认授权后连接。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
+发布版 Server 内置六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，先检查邀请有效性和 `/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI，确认授权后连接。探测不会消耗邀请，也不会使客户端上线。安装过程显示 5 个连接阶段：连通性检查、准备客户端、等待授权、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
+
+命令使用 `/c/<22位邀请ID>` 短入口，Windows 入口带 `.ps1` 后缀。Server 动态返回带好邀请、版本和下载地址的安装脚本。入口 ID 复用原有 128 位随机邀请凭证；获取脚本不会消耗邀请，响应禁止缓存。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
 
 邀请 15 分钟有效，只能兑换一次。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。兑换后的 Client token 可重复使用，Server 重启后失效，每个 token 同时只允许一个 Client 在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
 
-目标电脑需要访问 GitHub 和 `-public-url`；`127.0.0.1` 仅适用于同机。每次运行都会获取 Release 校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
+目标电脑只需访问 `-public-url`，连接和下载过程均无需访问 GitHub；`127.0.0.1` 仅适用于同机。反向代理需转发 `/c/` 和 `/downloads/`，并允许 `/client` 的 WebSocket 升级及 Authorization 请求头。探测失败时停止下载；探测成功后，每次运行都会从 Server 获取校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
 
 | 系统 | 缓存目录 |
 | --- | --- |
@@ -98,7 +100,7 @@ Authorization:  Bearer agenterm:...
 | Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
 | Windows | `%LOCALAPPDATA%\Agenterm\cache` |
 
-断开后缓存保留，可手动删除；每次连接仍需授权。安装脚本通过 HTTPS 下载，不校验固定哈希。Release 校验和用于发现下载损坏，不能替代代码签名，也不能防御 Release 本身被篡改。
+断开后缓存保留，可手动删除；每次连接仍需授权。安装脚本和下载资源使用 Server 的 HTTP(S) 地址，不校验脚本的固定哈希；公网部署请使用 HTTPS。校验和用于发现下载损坏，不能替代代码签名，也不能防御 Server 或发布包本身被篡改。macOS/Linux 使用 gzip 压缩包，Windows 使用 zip；Server 直接提供内嵌压缩包，由目标电脑解压。
 
 </details>
 

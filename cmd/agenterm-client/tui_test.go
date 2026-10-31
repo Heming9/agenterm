@@ -2,6 +2,7 @@ package main
 
 import (
 	"agenterm/internal/client"
+	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -11,6 +12,32 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+func TestInvitationProgressRequiresConnectedEvent(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.connectionProgress = true
+	m.generation = 1
+	m.state = "connecting"
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	if !strings.Contains(m.View(), "[4/5]") || strings.Contains(m.View(), progressConnected) {
+		t.Fatalf("premature connection success: %s", m.View())
+	}
+	m.Update(tuiEvent{generation: 1, finished: true, err: errors.New("handshake rejected")})
+	if strings.Contains(m.View(), progressConnected) || !strings.Contains(m.View(), "handshake rejected") {
+		t.Fatalf("failed handshake progress: %s", m.View())
+	}
+	m.state = "connecting"
+	m.generation = 2
+	m.Update(tuiEvent{generation: 1, connected: true})
+	if strings.Contains(m.View(), progressConnected) {
+		t.Fatal("stale handshake completed progress")
+	}
+	m.Update(tuiEvent{generation: 2, connected: true})
+	if !strings.Contains(m.View(), progressConnected) {
+		t.Fatalf("successful handshake missing progress: %s", m.View())
+	}
+}
 
 func TestDisplayDecoderSplitSequences(t *testing.T) {
 	d := &displayDecoder{}

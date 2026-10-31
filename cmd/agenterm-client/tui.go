@@ -56,6 +56,7 @@ type tuiModel struct {
 	spans                         []logSpan
 	lastID                        string
 	width, height                 int
+	connectionProgress            bool
 }
 
 func newTUI(token string) *tuiModel {
@@ -67,8 +68,9 @@ func newTUI(token string) *tuiModel {
 	input.Focus()
 	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", decoders: make(map[string]*displayDecoder), shells: make(map[string]int)}
 }
-func runTUI(token string) error {
+func runTUI(token string, connectionProgress bool) error {
 	m := newTUI(token)
+	m.connectionProgress = connectionProgress
 	defer m.cancel()
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
@@ -223,6 +225,9 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastID = ""
 			m.decoders = make(map[string]*displayDecoder)
 			m.viewport.SetContent("")
+			if m.connectionProgress {
+				m.appendLog("system", progressConnected+"\n")
+			}
 		}
 		if e := msg.command; e != nil {
 			if !e.Done {
@@ -297,6 +302,14 @@ func (m *tuiModel) view() string {
 	}
 	if m.state == "connected" {
 		status = "Connected"
+	}
+	if m.connectionProgress {
+		switch m.state {
+		case "connecting":
+			status = "[4/5] 正在连接…"
+		case "connected":
+			status = progressConnected
+		}
 	}
 	if style, ok := statusStyles[m.state]; ok {
 		status = style.Render(status)

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"agenterm/internal/invite"
+	"agenterm/internal/protocol"
 	"context"
 )
 
@@ -36,7 +37,8 @@ func TestCreateClientDisplayText(t *testing.T) {
 			} else {
 				for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
 					command := result[key].(string)
-					if !strings.Contains(display, command) || !strings.Contains(command, result["invitation"].(string)) {
+					decoded, _ := protocol.Decode(result["invitation"].(string))
+					if !strings.Contains(display, command) || !strings.Contains(command, "/c/"+decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
 						t.Fatalf("invalid %s in display: %s", key, display)
 					}
 				}
