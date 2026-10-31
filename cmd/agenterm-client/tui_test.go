@@ -37,6 +37,10 @@ func TestInvitationProgressRequiresConnectedEvent(t *testing.T) {
 	if !strings.Contains(m.View(), progressConnected) {
 		t.Fatalf("successful handshake missing progress: %s", m.View())
 	}
+	header := ansi.Strip(strings.Split(m.View(), "\n")[0])
+	if !strings.HasSuffix(header, "已连接 ") || strings.Contains(header, "[5/5]") {
+		t.Fatalf("connected header still shows progress: %q", header)
+	}
 }
 
 func TestDisplayDecoderSplitSequences(t *testing.T) {
@@ -86,7 +90,7 @@ func TestGUILogFormatAndColors(t *testing.T) {
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "second", Command: "pwd", StartedAt: started}})
 	m.Update(tuiEvent{generation: 1, id: "first", output: []byte("hello\n")})
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "first", Done: true, Error: "failed"}})
-	want := "\ns1  14:32:08  $ echo hello\n\ns2  14:32:08  $ pwd\n\ns1\nhello\n\nfailed\n"
+	want := "s1 14:32:08 $ echo hello\n\ns2 14:32:08 $ pwd\n\ns1\nhello\nfailed\n"
 	if m.logs != want {
 		t.Fatalf("log = %q, want %q", m.logs, want)
 	}
@@ -104,12 +108,35 @@ func TestGUILogFormatAndColors(t *testing.T) {
 			t.Errorf("missing light color %s in %q", color, view)
 		}
 	}
-	m.Update(tea.WindowSizeMsg{Width: 18, Height: 15})
+	m.Update(tea.WindowSizeMsg{Width: 18, Height: 20})
 	if !strings.Contains(strings.ReplaceAll(ansi.Strip(m.View()), "\n", ""), "echo hello") {
-		t.Error("wrapped command missing")
+		t.Errorf("wrapped command missing: %q", ansi.Strip(m.View()))
 	}
 	if strings.Contains(view, "Finished") {
 		t.Error("completion footer should not be shown in log")
+	}
+}
+
+func TestTUIOutputSpacingAndClear(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.Update(tuiEvent{connected: true})
+	started := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	m.Update(tuiEvent{command: &client.CommandEvent{ID: "one", Command: "pwd", StartedAt: started}})
+	for _, chunk := range []string{"\r\n", " \r\nPath\r", "\n----\r\nC:\\Users\\dmhe", "\r\n\r\n", "\r\n"} {
+		m.Update(tuiEvent{id: "one", output: []byte(chunk)})
+	}
+	m.Update(tuiEvent{command: &client.CommandEvent{ID: "two", Command: "printf test", StartedAt: started}})
+	m.Update(tuiEvent{id: "two", output: []byte("test")})
+	m.Update(tuiEvent{command: &client.CommandEvent{ID: "three", Command: "next", StartedAt: started}})
+	want := "s1 12:00:00 $ pwd\nPath\n----\nC:\\Users\\dmhe\n\ns2 12:00:00 $ printf test\ntest\n\ns3 12:00:00 $ next\n"
+	if m.logs != want {
+		t.Fatalf("log = %q, want %q", m.logs, want)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m.Update(tuiEvent{id: "one", output: []byte("\n  after clear\n\n")})
+	if want := "s1\n  after clear\n"; m.logs != want {
+		t.Fatalf("output after clear = %q, want %q", m.logs, want)
 	}
 }
 
@@ -124,10 +151,10 @@ func TestHeaderRightAlignmentAndNarrowWidth(t *testing.T) {
 		if ansi.StringWidth(header) > width {
 			t.Errorf("width %d: %q overflows", width, header)
 		}
-		if !strings.HasSuffix(header, "Connected ") {
+		if !strings.HasSuffix(header, "已连接 ") {
 			t.Errorf("width %d: status not right aligned: %q", width, header)
 		}
-		if width == 80 && !strings.Contains(header, m.address+"  ·  Connected") {
+		if width == 80 && !strings.Contains(header, m.address+"  ·  已连接") {
 			t.Errorf("address and status order: %q", header)
 		}
 	}
@@ -141,7 +168,7 @@ func TestStatusColors(t *testing.T) {
 	defer m.cancel()
 	m.width = 80
 	for _, tc := range []struct{ state, label, color string }{
-		{"connected", "Connected", "38;2;133;201;155"},
+		{"connected", "已连接", "38;2;133;201;155"},
 		{"connecting", "Connecting", "38;2;230;190;105"},
 		{"disconnected", "Disconnected", "38;2;163;163;163"},
 	} {

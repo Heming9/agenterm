@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"agenterm/internal/client"
+	"agenterm/internal/logview"
 	"agenterm/internal/protocol"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -57,6 +58,7 @@ type tuiModel struct {
 	lastID                        string
 	width, height                 int
 	connectionProgress            bool
+	spacing                       logview.Spacing
 }
 
 func newTUI(token string) *tuiModel {
@@ -127,6 +129,7 @@ func (m *tuiModel) appendLog(kind, s string) {
 	if s == "" {
 		return
 	}
+	m.spacing.Observe(s)
 	m.logs += s
 	if len(m.spans) > 0 && m.spans[len(m.spans)-1].kind == kind {
 		m.spans[len(m.spans)-1].text += s
@@ -207,6 +210,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logs = ""
 				m.spans = nil
 				m.lastID = ""
+				m.spacing = logview.Spacing{}
+				for _, decoder := range m.decoders {
+					decoder.output = logview.Output{}
+				}
 				m.viewport.SetContent("")
 				return m, nil
 			}
@@ -223,6 +230,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nextShell = 0
 			m.completed = 0
 			m.lastID = ""
+			m.spacing = logview.Spacing{}
 			m.decoders = make(map[string]*displayDecoder)
 			m.viewport.SetContent("")
 			if m.connectionProgress {
@@ -234,14 +242,14 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.decoders[e.ID] = &displayDecoder{}
 				m.nextShell++
 				m.shells[e.ID] = m.nextShell
-				m.appendLog("system", fmt.Sprintf("\ns%d  %s  $ ", m.nextShell, e.StartedAt.Format("15:04:05")))
+				m.appendLog("system", m.spacing.Before(2)+fmt.Sprintf("s%d %s $ ", m.nextShell, e.StartedAt.Format("15:04:05")))
 				m.appendLog("command", cleanText(e.Command)+"\n")
 				m.lastID = e.ID
 			} else {
 				m.completed++
 				if e.Error != "" {
 					m.switchSource(e.ID)
-					m.appendLog("error", "\n"+cleanText(e.Error)+"\n")
+					m.appendLog("error", m.spacing.Before(1)+cleanText(e.Error)+"\n")
 				}
 				delete(m.shells, e.ID)
 				delete(m.decoders, e.ID)
@@ -249,7 +257,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(msg.output) > 0 {
 			if d := m.decoders[msg.id]; d != nil {
-				s := d.text(string(msg.output))
+				s := d.output.Text(d.text(string(msg.output)))
+				if m.lastID != msg.id {
+					s = logview.TrimLeadingBlankLines(s)
+				}
 				if s != "" {
 					m.switchSource(msg.id)
 					m.appendLog("output", s)
@@ -279,7 +290,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *tuiModel) switchSource(id string) {
 	if m.lastID != id {
 		if number, ok := m.shells[id]; ok {
-			m.appendLog("system", fmt.Sprintf("\ns%d\n", number))
+			m.appendLog("system", m.spacing.Before(2)+fmt.Sprintf("s%d\n", number))
 		}
 		m.lastID = id
 	}
@@ -301,14 +312,12 @@ func (m *tuiModel) view() string {
 		status = "Connecting"
 	}
 	if m.state == "connected" {
-		status = "Connected"
+		status = "已连接"
 	}
 	if m.connectionProgress {
 		switch m.state {
 		case "connecting":
 			status = "[4/5] 正在连接…"
-		case "connected":
-			status = progressConnected
 		}
 	}
 	if style, ok := statusStyles[m.state]; ok {
@@ -348,6 +357,7 @@ func cleanText(s string) string { return (&displayDecoder{}).text(s) }
 type displayDecoder struct {
 	state   byte
 	pending string
+	output  logview.Output
 }
 
 func (d *displayDecoder) text(chunk string) string {

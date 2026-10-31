@@ -134,6 +134,9 @@ jobs:
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
           Agenterm preview release.
 
+          - Use single spaces in command prefixes and one blank line between command blocks in both the GUI and terminal interface.
+          - Remove extra blank lines at the edges of command output while preserving interior blank lines, indentation, and automatic wrapping. Keep streaming and concurrent output correctly separated, including commands without a final newline.
+          - Show a green 已连接 status in the terminal header after connecting; connection-stage progress remains available during setup and in the connection log.
           - All HTTP and WebSocket endpoints now share the /agenterm/ prefix: MCP, client connections, invitation redemption, short installation URLs, and downloads. Reverse proxies need just one route, preserving the prefix.
           - Breaking change: previous root endpoints and token formats are unsupported. Update Server and Client (including the GUI) together, configure MCP at /agenterm/mcp, and generate new tokens/invitations.
           - Enforce version compatibility during probes, invitation redemption, and WebSocket connection: stable 1.0+ versions require matching majors; 0.x requires matching minors (0.0.x also requires matching patches). Prereleases require the same core and prerelease identifiers; build metadata is ignored. Missing or malformed version information is rejected before registering a connection or redeeming an invitation.

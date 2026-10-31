@@ -115,7 +115,7 @@ func TestCommandStatisticsAndClear(t *testing.T) {
 		v.inputRow.Hide()
 		v.connectedRow.Show()
 		v.refreshTerminalTheme()
-		fmt.Fprint(v.buffer, "14:32:15  $ pwd\n/Users/ming/Projects/agenterm\n\n14:32:18  $ go test ./internal/client\nok  agenterm/internal/client  0.800s\n")
+		fmt.Fprint(v.buffer, "14:32:15 $ pwd\n/Users/ming/Projects/agenterm\n\n14:32:18 $ go test ./internal/client\nok  agenterm/internal/client  0.800s\n")
 		v.flushLogs()
 		capture("client-connected")
 		win.Resize(fyne.NewSize(700, 420))

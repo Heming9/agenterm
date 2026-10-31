@@ -2,6 +2,7 @@ package main
 
 import (
 	"agenterm/internal/client"
+	"agenterm/internal/logview"
 	"fmt"
 	"io"
 	"strings"
@@ -31,6 +32,7 @@ type logBuffer struct {
 	last     string
 	shells   map[string]int
 	decoders map[string]*displayDecoder
+	spacing  logview.Spacing
 }
 
 type logSpan struct {
@@ -42,6 +44,7 @@ func (b *logBuffer) append(kind, text string) {
 	if text == "" {
 		return
 	}
+	b.spacing.Observe(text)
 	b.data = logTail(b.data + text)
 	if len(b.spans) > 0 && b.spans[len(b.spans)-1].kind == kind {
 		b.spans[len(b.spans)-1].text += text
@@ -104,7 +107,7 @@ func (b *logBuffer) command(event client.CommandEvent) {
 	if event.Done {
 		if event.Error != "" {
 			b.switchSource(event.ID)
-			b.append("error", "\n"+event.Error+"\n")
+			b.append("error", b.spacing.Before(1)+event.Error+"\n")
 		}
 		delete(b.shells, event.ID)
 		delete(b.decoders, event.ID)
@@ -117,7 +120,7 @@ func (b *logBuffer) command(event client.CommandEvent) {
 	b.next++
 	b.shells[event.ID] = b.next
 	b.decoders[event.ID] = &displayDecoder{}
-	b.append("system", fmt.Sprintf("\ns%d  %s  $ ", b.next, event.StartedAt.Format("15:04:05")))
+	b.append("system", b.spacing.Before(2)+fmt.Sprintf("s%d %s $ ", b.next, event.StartedAt.Format("15:04:05")))
 	b.append("command", event.Command+"\n")
 	b.last = event.ID
 }
@@ -125,7 +128,7 @@ func (b *logBuffer) command(event client.CommandEvent) {
 func (b *logBuffer) switchSource(id string) {
 	if b.last != id {
 		if n, ok := b.shells[id]; ok {
-			b.append("system", fmt.Sprintf("\ns%d\n", n))
+			b.append("system", b.spacing.Before(2)+fmt.Sprintf("s%d\n", n))
 		}
 		b.last = id
 	}
@@ -138,7 +141,10 @@ func (b *logBuffer) output(id string, data []byte) {
 	if decoder == nil {
 		return
 	}
-	text := decoder.text(string(data))
+	text := decoder.output.Text(decoder.text(string(data)))
+	if b.last != id {
+		text = logview.TrimLeadingBlankLines(text)
+	}
 	if text == "" {
 		return
 	}
@@ -152,12 +158,17 @@ func (b *logBuffer) clear() {
 	b.data = ""
 	b.spans = nil
 	b.last = ""
+	b.spacing = logview.Spacing{}
+	for _, decoder := range b.decoders {
+		decoder.output = logview.Output{}
+	}
 }
 
 // The GUI is a log viewer, not a terminal emulator. Escape state spans chunks.
 type displayDecoder struct {
 	state   byte
 	pending string
+	output  logview.Output
 }
 
 func (d *displayDecoder) text(chunk string) string {
