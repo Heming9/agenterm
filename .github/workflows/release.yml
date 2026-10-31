@@ -66,6 +66,7 @@ jobs:
       - name: Build server for macOS, Linux, and Windows
         env:
           CGO_ENABLED: '0'
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           mkdir -p dist
           for os in darwin linux windows; do
@@ -74,9 +75,11 @@ jobs:
               extension=""
               if [ "$os" = darwin ]; then platform=macos; fi
               if [ "$os" = windows ]; then extension=.exe; fi
-              GOOS="$os" GOARCH="$arch" go build -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
+              GOOS="$os" GOARCH="$arch" go build -ldflags "-X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
+              GOOS="$os" GOARCH="$arch" go build -o "dist/agenterm-cli-${platform}-${arch}${extension}" ./cmd/agenterm-client
             done
           done
+          cp internal/installer/install.sh internal/installer/install.ps1 dist/
       - uses: actions/upload-artifact@v4
         with:
           name: server
@@ -99,11 +102,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          (cd artifacts && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
           Agenterm preview release.
 
           - Client: graphical application for the computer where commands run (macOS arm64 and Windows amd64).
           - Server: MCP endpoint for macOS, Linux, and Windows (amd64 and arm64).
+          - CLI client: macOS, Linux, and Windows (amd64 and arm64). The one-time invitation installer selects the GUI where available and the CLI otherwise.
 
           Server and client must use the same token format; this release is incompatible with the older format. Update both together.
 

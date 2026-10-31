@@ -82,6 +82,14 @@ Run the client on the target computer:
 
 Paste the token at the prompt, or enter it in the desktop client. The client runs commands as the current user; it does not require an SSH service or a separate system login.
 
+### Connect with a one-time invitation
+
+A release build of the server prints installer commands for macOS/Linux and Windows PowerShell for each connection token. Send the appropriate command privately to the other user. It downloads the installer and client for the server's release from GitHub, detects the architecture, and asks for authorization before connecting. macOS arm64 and Windows amd64 use the GUI; other supported macOS, Linux, and Windows architectures use the terminal client. Closing the client disconnects it; no startup service is installed.
+
+Each invitation expires after 15 minutes and can be redeemed once. Press Enter in the server console to replace all unused invitations with fresh ones; existing connections are unaffected. The connection token retains its existing lifetime and each token supports one connected client at a time. Treat invitation commands and tokens as credentials; commands may remain in shell history.
+
+The other computer must be able to reach GitHub and the server's `-public-url`; the default `127.0.0.1` only works locally. Use an HTTPS reverse proxy with WebSocket support to protect invitations and credentials in transit. The command verifies the installer against the hash embedded in the server, and the installer checks client downloads against the release checksum manifest. The manifest detects download corruption but does not replace code signing or protect against a compromised release. Locally built servers do not print download commands; use a release build.
+
 Add `http://SERVER_IP:8080/mcp` as a remote MCP server in an agent that supports Streamable HTTP and custom headers. Set the header `Authorization: Bearer <token>` to the same full `agenterm:` token used by the target client. Configure a separate MCP entry for each target if needed; support for custom headers varies by agent. For a non-interactive command, call `execute_command` with a `command` argument, for example:
 
 ```json

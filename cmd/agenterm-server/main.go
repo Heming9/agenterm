@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,11 +35,41 @@ func (c *client) send(m protocol.Message) error {
 }
 
 type server struct {
-	tokens   map[string]string  // full token -> client credential
-	clients  map[string]*client // client credential -> connection
-	mu       sync.Mutex
-	sessions map[string]*session
-	limiter  authLimiter
+	tokens      map[string]string  // full token -> client credential
+	clients     map[string]*client // client credential -> connection
+	mu          sync.Mutex
+	sessions    map[string]*session
+	limiter     authLimiter
+	invitations map[string]invitation
+}
+
+type invitation struct {
+	token   string
+	expires time.Time
+}
+
+func (s *server) redeemInvitation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	s.mu.Lock()
+	entry, ok := s.invitations[secret]
+	ok = ok && r.Header.Get("Authorization") == "Bearer "+secret && time.Now().Before(entry.expires)
+	if status, err := s.authorize(r.RemoteAddr, ok); err != nil {
+		s.mu.Unlock()
+		if status == http.StatusTooManyRequests {
+			w.Header().Set("Retry-After", "300")
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	delete(s.invitations, secret)
+	s.mu.Unlock()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.token})
 }
 
 func random() string {
@@ -226,7 +258,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		if version != "2025-03-26" && version != "2025-06-18" {
 			version = "2025-03-26"
 		}
-		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.5"}}, nil)
+		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.6"}}, nil)
 	case "ping":
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
@@ -337,7 +369,8 @@ func main() {
 	if *count < 1 || *count > 1000 {
 		log.Fatal("clients must be between 1 and 1000")
 	}
-	s := &server{tokens: make(map[string]string), clients: make(map[string]*client)}
+	s := &server{tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation)}
+	var issuedTokens []string
 	for i := 1; i <= *count; i++ {
 		secret := randomBytes(protocol.TokenSecretSize)
 		token, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: secret})
@@ -345,14 +378,47 @@ func main() {
 			log.Fatal(err)
 		}
 		s.tokens[token] = secret
+		issuedTokens = append(issuedTokens, token)
 		fmt.Printf("Agenterm token %d:\n%s\n\n", i, token)
 	}
+	issueInvitations := func() {
+		type output struct {
+			value string
+			index int
+		}
+		var outputs []output
+		s.mu.Lock()
+		s.invitations = make(map[string]invitation)
+		for i, token := range issuedTokens {
+			secret := randomBytes(protocol.TokenSecretSize)
+			value, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: secret})
+			if err != nil {
+				s.mu.Unlock()
+				log.Fatal(err)
+			}
+			s.invitations[secret] = invitation{token: token, expires: time.Now().Add(15 * time.Minute)}
+			outputs = append(outputs, output{value: value, index: i + 1})
+		}
+		s.mu.Unlock()
+		for _, out := range outputs {
+			printInstallCommands(out.index, out.value)
+		}
+		fmt.Println("Press Enter to replace all unredeemed invitations with fresh ones.")
+	}
+	issueInvitations()
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			issueInvitations()
+		}
+	}()
 	fmt.Printf("MCP endpoint: %s/mcp\n", strings.TrimRight(*public, "/"))
 	if !securePublicURL {
 		log.Print("WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.")
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/client", s.connect)
+	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
 	mux.HandleFunc("/mcp", s.mcp)
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())

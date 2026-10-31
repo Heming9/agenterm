@@ -8,6 +8,8 @@ require github.com/creack/pty v1.1.24
 
 require golang.org/x/text v0.28.0
 
+require github.com/FyshOS/fancyfs v0.0.1 // indirect
+
 require (
 	fyne.io/fyne/v2 v2.8.2
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
