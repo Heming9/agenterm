@@ -4,6 +4,7 @@ package installer
 import (
 	"agenterm/internal/i18n"
 	"embed"
+	"errors"
 	"io/fs"
 	"strings"
 )
@@ -19,7 +20,15 @@ func Script(name string) ([]byte, error) {
 	return []byte(strings.ReplaceAll(string(data), "@TRANSLATIONS@", i18n.ScriptTranslations(strings.HasSuffix(name, ".ps1")))), nil
 }
 
-func Assets() fs.FS {
+func Assets() (fs.FS, error) {
 	assets, _ := fs.Sub(content, "assets")
-	return assets
+	bundle, err := assets.Open("clients.tar.xz")
+	if errors.Is(err, fs.ErrNotExist) {
+		return assets, nil // Source builds have no bundled downloads.
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer bundle.Close()
+	return unpackDownloads(bundle)
 }

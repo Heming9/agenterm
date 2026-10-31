@@ -504,6 +504,12 @@ func main() {
 	if keySpecified && (*passwordFlag == "" || *noPassword) {
 		log.Fatal(serverText("passwd.must.be.nonempty.and.cannot.be"))
 	}
+	// Prepare downloads before printing invitations or accepting requests, so a
+	// first installer request never waits for decompression or archive generation.
+	assets, err := installer.Assets()
+	if err != nil {
+		log.Fatal(err)
+	}
 	adminKey := *passwordFlag
 	if !*noPassword && !keySpecified {
 		adminKey = randomManagementKey()
@@ -570,6 +576,6 @@ func main() {
 	if !securePublicURL {
 		log.Print(serverText("warning.http.and.websocket.traffic.is.unencrypted"))
 	}
-	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, installer.Assets()), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, assets), ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }

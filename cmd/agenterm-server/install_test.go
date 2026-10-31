@@ -2,10 +2,6 @@ package main
 
 import (
 	"agenterm/internal/protocol"
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
-	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -42,24 +38,10 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	}
 	name := "agenterm-cli-linux-amd64"
 	client := []byte("#!/bin/sh\nprintf 'arg=%s invitation=%s consent=%s\\n' \"$1\" \"$2\" \"$3\"\n")
-	var data bytes.Buffer
-	gz := gzip.NewWriter(&data)
-	tarball := tar.NewWriter(gz)
-	if err := tarball.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(client))}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tarball.Write(client); err != nil {
-		t.Fatal(err)
-	}
-	if err := tarball.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := gz.Close(); err != nil {
-		t.Fatal(err)
-	}
 	archive := name + ".tar.gz"
-	write(filepath.Join(assets, archive), data.Bytes(), 0o600)
-	write(filepath.Join(assets, "SHA256SUMS"), []byte(fmt.Sprintf("%x  %s\n%x  %s\n", sha256.Sum256(data.Bytes()), archive, sha256.Sum256(client), name)), 0o600)
+	for filename, data := range installerFixture(t, client) {
+		write(filepath.Join(assets, filename), data, 0o600)
+	}
 	write(filepath.Join(bin, "uname"), []byte("#!/bin/sh\ncase $1 in -s) echo Linux;; -m) echo x86_64;; esac\n"), 0o755)
 	log := filepath.Join(root, "downloads")
 	state := &server{}

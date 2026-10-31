@@ -39,6 +39,8 @@ jobs:
         run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion'
       - name: Test Windows connection locks
         run: go test ./internal/client -run 'TestConnectionLock|TestConcurrentConnection|TestDuplicateInvitations|TestInvitationConnection'
+      - name: Test deterministic download archives on Windows
+        run: go test ./internal/installer -run 'TestDownload|TestBundle'
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -70,6 +72,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.3'
+      - name: Install release compression tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xz-utils
       - name: Test CLI, server, and installers
         run: go test ./cmd/agenterm-client ./cmd/agenterm-server ./internal/...
       - name: Build and bundle clients, then build servers
@@ -81,6 +87,7 @@ jobs:
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
           mkdir -p dist
+          rm -f internal/installer/assets/agenterm-cli-* internal/installer/assets/SHA256SUMS internal/installer/assets/clients.tar.xz
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
               platform="$os"
@@ -89,16 +96,24 @@ jobs:
               if [ "$os" = windows ]; then extension=.exe; fi
               name="agenterm-cli-${platform}-${arch}${extension}"
               GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
-              if [ "$os" = windows ]; then
-                (cd dist && zip -9 -q "${name%.exe}.zip" "$name")
-              else
-                tar -C dist -cf - "$name" | gzip -9 > "dist/${name}.tar.gz"
-              fi
             done
           done
-          # The embedded manifest covers both the archives and extracted clients.
-          (cd dist && sha256sum agenterm-cli-* > SHA256SUMS)
-          cp dist/*.tar.gz dist/*.zip dist/SHA256SUMS internal/installer/assets/
+          # Share the server's deterministic gzip/ZIP writer and checksum rules.
+          go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
+          # Only the solid archive is embedded, never the individual downloads.
+          xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
+          # Verify the exact executable bytes before hashing and embedding.
+          for archive in dist/agenterm-cli-*.tar.gz; do
+            name=$(basename "$archive" .tar.gz)
+            tar -xOzf "$archive" "$name" | cmp - "dist/$name"
+          done
+          for archive in dist/agenterm-cli-*.zip; do
+            name=$(basename "$archive" .zip).exe
+            unzip -p "$archive" "$name" | cmp - "dist/$name"
+          done
+          # Decode the real embedded bundle and compare every generated download
+          # and checksum with the release files, before building any server.
+          AGENTERM_RELEASE_DIR="$PWD/dist" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
               platform="$os"
@@ -110,6 +125,13 @@ jobs:
           done
           sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.sh > dist/install.sh
           sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.ps1 > dist/install.ps1
+          # Keep distribution sizes visible when dependencies or assets change.
+          {
+            printf '| Artifact | Bytes |\n| --- | ---: |\n'
+            for artifact in dist/agenterm-*; do
+              printf '| %s | %s |\n' "$(basename "$artifact")" "$(wc -c < "$artifact" | tr -d ' ')"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: server
@@ -134,24 +156,13 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm preview release.
+          Agenterm v0.2.18 preview release.
 
-          - Prevent duplicate connections to the same server address under the same OS account, including different invitations and CLI/GUI combinations. Acquire a shared local OS file lock before redeeming an invitation, and release it on disconnect or process termination.
-          - Show remote control authorization separately before connection progress. After confirmation, proceed through four stages without asking again: connectivity check, client preparation, connecting, and connected.
-          - Use single spaces in command prefixes and one blank line between command blocks in both the GUI and terminal interface.
-          - Remove extra blank lines at the edges of command output while preserving interior blank lines, indentation, and automatic wrapping. Keep streaming and concurrent output correctly separated, including commands without a final newline.
-          - Show a green 已连接 status in the terminal header after connecting; connection-stage progress remains available during setup and in the connection log.
-          - All HTTP and WebSocket endpoints now share the /agenterm/ prefix: MCP, client connections, invitation redemption, short installation URLs, and downloads. Reverse proxies need just one route, preserving the prefix.
-          - Breaking change: previous root endpoints and token formats are unsupported. Update Server and Client (including the GUI) together, configure MCP at /agenterm/mcp, and generate new tokens/invitations.
-          - Enforce version compatibility during probes, invitation redemption, and WebSocket connection: stable 1.0+ versions require matching majors; 0.x requires matching minors (0.0.x also requires matching patches). Prereleases require the same core and prerelease identifiers; build metadata is ignored. Missing or malformed version information is rejected before registering a connection or redeeming an invitation.
-          - The public-url option accepts an origin or an address ending in /agenterm; generated URLs always include the prefix exactly once.
-          - One-command connection no longer accesses GitHub: each Server bundles CLI archives and checksums for macOS, Linux, and Windows (amd64 and arm64), serving compressed files directly.
-          - Short invitation URLs dynamically provide the installer with its version, invitation, and download address. Invitations remain valid for 15 minutes and redeemable once; fetching scripts does not consume them.
-          - Check invitation validity and the actual WebSocket handshake before downloading a client. Failed probes stop installation immediately.
-          - Show terminal download progress. Verified cached clients skip downloading; connection success is shown only after the real handshake.
-          - GUI downloads remain available for macOS arm64 and Windows amd64. CLI clients retain the interactive TUI and optional -plain mode.
-
-          All endpoints now use /agenterm/. Reverse proxies only need to forward this prefix unchanged, with WebSocket upgrades and the Authorization header enabled. Update Server and Client (including the GUI) together, regenerate tokens, and use /agenterm/mcp. Previous root endpoints and token formats are unsupported.
+          - Reduce server distribution size by embedding all six CLI binaries in one solid XZ archive. macOS, Linux, and Windows remain supported on amd64 and arm64.
+          - Reconstruct standard gzip/ZIP downloads and SHA256SUMS entirely in memory at server startup, before invitations are printed or requests are accepted. Downloads do not trigger decompression or write server-side temporary files.
+          - Use the same deterministic archive writer for release files and server downloads. Verify extracted binaries and reconstructed downloads before building the release servers.
+          - Preserve CLI/TUI and GUI functionality, invitation flows, cached-client verification, and HTTP HEAD/Range support. Losslessly recompress GUI icons without changing pixels or metadata.
+          - Trade additional startup CPU and memory for smaller server binaries. CLI archives may be slightly larger than the previous compression settings.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

@@ -88,7 +88,7 @@ Authorization:  Bearer agenterm:...
 <details>
 <summary>邀请与下载</summary>
 
-发布版 Server 内置六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，首先提示远程控制警告并请求授权；确认后检查邀请有效性、版本兼容性和 `/agenterm/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI 并自动连接，不再重复确认。取消则立即结束，不进行探测或下载客户端。探测不会消耗邀请，也不会使客户端上线。授权确认后，安装过程显示 4 个连接阶段：连通性检查、准备客户端、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
+发布版 Server 提供六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，首先提示远程控制警告并请求授权；确认后检查邀请有效性、版本兼容性和 `/agenterm/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI 并自动连接，不再重复确认。取消则立即结束，不进行探测或下载客户端。探测不会消耗邀请，也不会使客户端上线。授权确认后，安装过程显示 4 个连接阶段：连通性检查、准备客户端、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
 
 命令使用 `/agenterm/c/<22位邀请ID>` 短入口，Windows 入口带 `.ps1` 后缀。Server 动态返回带好邀请、版本和下载地址的安装脚本。入口 ID 复用原有 128 位随机邀请凭证；获取脚本不会消耗邀请，响应禁止缓存。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
 
@@ -102,7 +102,7 @@ Authorization:  Bearer agenterm:...
 | Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
 | Windows | `%LOCALAPPDATA%\Agenterm\cache` |
 
-断开后缓存保留，可手动删除；每次连接仍需授权。安装脚本和下载资源使用 Server 的 HTTP(S) 地址，不校验脚本的固定哈希；公网部署请使用 HTTPS。校验和用于发现下载损坏，不能替代代码签名，也不能防御 Server 或发布包本身被篡改。macOS/Linux 使用 gzip 压缩包，Windows 使用 zip；Server 直接提供内嵌压缩包，由目标电脑解压。
+断开后缓存保留，可手动删除；每次连接仍需授权。安装脚本和下载资源使用 Server 的 HTTP(S) 地址，不校验脚本的固定哈希；公网部署请使用 HTTPS。校验和用于发现下载损坏，不能替代代码签名，也不能防御 Server 或发布包本身被篡改。macOS/Linux 使用 gzip 压缩包，Windows 使用 zip；Server 在接受连接前于内存中准备好下载包，仍由目标电脑解压。
 
 </details>
 
@@ -191,6 +191,8 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Agenterm.exe
 ```
 
 Windows 打包需要可用的 Windows C 编译器。打包会递增 `FyneApp.toml` 的构建号。
+
+发布 CI 将六个平台的原始 CLI 程序合并为一个 XZ 压缩的 tar 包并内嵌到 Server。Server 启动时通过纯 Go 解码器，在打印邀请和开始监听前，于内存中重建标准 gzip／ZIP 下载包和 SHA256SUMS。这以启动时的 CPU 和内存开销换取更小的 Server 程序，服务端和目标电脑均无需额外工具。发布打包工具与 Server 共用确定性的归档生成逻辑，并使用同一固定版本的 Go 工具链；CI 逐字节比对重建的全部下载包和校验清单，禁止单独重压缩发布的 CLI 包。工作流摘要会报告产物大小。GUI 图标采用无损重压缩，尺寸、像素和元数据保持一致。
 
 </details>
 

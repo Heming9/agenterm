@@ -1,12 +1,61 @@
 package main
 
 import (
+	"agenterm/internal/installer"
+	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+func installerFixture(t *testing.T, client []byte) installer.DownloadFiles {
+	t.Helper()
+	source := make(fstest.MapFS)
+	for _, platform := range []string{"macos", "linux", "windows"} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			name := fmt.Sprintf("agenterm-cli-%s-%s", platform, arch)
+			if platform == "windows" {
+				name += ".exe"
+			}
+			source[name] = &fstest.MapFile{Data: client}
+		}
+	}
+	assets, err := installer.BuildDownloads(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return assets
+}
+
+func TestGeneratedReleaseDownloads(t *testing.T) {
+	assets := installerFixture(t, []byte(strings.Repeat("client output\n", 100)))
+	h := downloadHandler("v1.2.3", assets)
+	for name, data := range assets {
+		t.Run(name, func(t *testing.T) {
+			for _, method := range []string{"GET", "HEAD"} {
+				r := httptest.NewRequest(method, "/downloads/v1.2.3/"+name, nil)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if w.Code != 200 || w.Header().Get("Content-Length") != fmt.Sprint(len(data)) {
+					t.Fatalf("%s: status %d, headers %v", method, w.Code, w.Header())
+				}
+				if method == "GET" && !bytes.Equal(w.Body.Bytes(), data) || method == "HEAD" && w.Body.Len() != 0 {
+					t.Fatalf("incorrect %s body", method)
+				}
+			}
+			r := httptest.NewRequest("GET", "/downloads/v1.2.3/"+name, nil)
+			r.Header.Set("Range", "bytes=1-4")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusPartialContent || !bytes.Equal(w.Body.Bytes(), data[1:5]) {
+				t.Fatalf("Range: status %d, body %q", w.Code, w.Body.Bytes())
+			}
+		})
+	}
+}
 
 func TestReleaseDownloads(t *testing.T) {
 	assets := fstest.MapFS{

@@ -2,11 +2,7 @@ package main
 
 import (
 	"agenterm/internal/protocol"
-	"archive/zip"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,25 +36,11 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	if err != nil {
 		t.Fatal(err)
 	}
-	var data bytes.Buffer
-	zw := zip.NewWriter(&data)
-	f, err := zw.Create(name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.Write(client); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
 	archive := strings.TrimSuffix(name, ".exe") + ".zip"
-	if err := os.WriteFile(filepath.Join(root, archive), data.Bytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	manifest := fmt.Sprintf("%x  %s\n%x  %s\n", sha256.Sum256(data.Bytes()), archive, sha256.Sum256(client), name)
-	if err := os.WriteFile(filepath.Join(root, "SHA256SUMS"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
+	for filename, data := range installerFixture(t, client) {
+		if err := os.WriteFile(filepath.Join(root, filename), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	state := &server{}
 	var archiveRequests, manifestRequests, probeRequests atomic.Int32

@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.10.1
 	github.com/muesli/termenv v0.16.0
+	github.com/ulikunitz/xz v0.5.17
 	golang.org/x/term v0.34.0
 	golang.org/x/text v0.28.0
 )

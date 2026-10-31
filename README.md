@@ -88,7 +88,7 @@ Under the same OS account, CLI and GUI share an exclusive local connection lock 
 <details>
 <summary>Invitations & downloads</summary>
 
-Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server and first show a remote control warning and request authorization. After confirmation, they validate the invitation and version compatibility, probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and connect without another prompt. Cancelling stops immediately without probing or downloading the client. Probes do not redeem invitations or register clients. After authorization, installation shows four connection stages: connectivity check, client preparation, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
+Release servers provide CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server and first show a remote control warning and request authorization. After confirmation, they validate the invitation and version compatibility, probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and connect without another prompt. Cancelling stops immediately without probing or downloading the client. Probes do not redeem invitations or register clients. After authorization, installation shows four connection stages: connectivity check, client preparation, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
 
 Commands use a short `/agenterm/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
@@ -102,7 +102,7 @@ The target only needs access to `-public-url`; installation and connection do no
 | Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
 | Windows | `%LOCALAPPDATA%\Agenterm\cache` |
 
-The cache remains after disconnecting; delete it manually to remove it. Each connection still requires authorization. Scripts and assets use the server’s HTTP(S) origin without a pinned script hash; use HTTPS for public deployments. Checksums detect corruption; they do not replace code signing or protect against a compromised server or release. macOS/Linux use gzip archives and Windows uses zip. The server serves embedded archives directly; extraction happens on the target computer.
+The cache remains after disconnecting; delete it manually to remove it. Each connection still requires authorization. Scripts and assets use the server’s HTTP(S) origin without a pinned script hash; use HTTPS for public deployments. Checksums detect corruption; they do not replace code signing or protect against a compromised server or release. macOS/Linux use gzip archives and Windows uses zip. The server prepares the download archives in memory before accepting connections; extraction still happens on the target computer.
 
 </details>
 
@@ -191,6 +191,8 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Agenterm.exe
 ```
 
 Windows packaging requires a working Windows C compiler. Packaging increments the build number in `FyneApp.toml`.
+
+Release CI embeds the six uncompressed CLI binaries together in a single XZ-compressed tar archive. At startup, a pure Go decoder reconstructs standard gzip/ZIP downloads and SHA256SUMS in memory before the server prints invitations or starts listening. This reduces the server executable at the cost of startup CPU and memory, without requiring extra tools on the server or target computers. The release packer and server share deterministic archive generation and use the same pinned Go toolchain; CI compares every reconstructed download and its manifest with the release files. Do not recompress the published CLI archives independently. Artifact sizes appear in the workflow summary. GUI icons are losslessly recompressed without resizing or changing their pixels or metadata.
 
 </details>
 
