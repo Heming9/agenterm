@@ -169,8 +169,8 @@ func TestStatusColors(t *testing.T) {
 	m.width = 80
 	for _, tc := range []struct{ state, label, color string }{
 		{"connected", "已连接", "38;2;133;201;155"},
-		{"connecting", "Connecting", "38;2;230;190;105"},
-		{"disconnected", "Disconnected", "38;2;163;163;163"},
+		{"connecting", "正在连接", "38;2;230;190;105"},
+		{"disconnected", "已断开", "38;2;163;163;163"},
 	} {
 		m.state = tc.state
 		header := strings.Split(m.View(), "\n")[0]

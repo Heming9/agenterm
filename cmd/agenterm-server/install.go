@@ -18,12 +18,12 @@ var validReleaseTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 
 func printInstallCommands(index int, invitation string) {
 	if !validReleaseTag.MatchString(releaseTag) {
-		fmt.Printf("Invitation %d (expires in 15 minutes):\n%s\nInstaller commands are available in release builds.\n\n", index, invitation)
+		fmt.Printf(serverText("Invitation %d (expires in 15 minutes):\n%s\nInstaller commands are available in release builds.\n\n", "邀请 %d（15 分钟后过期）：\n%s\n发布版提供安装命令。\n\n"), index, invitation)
 		return
 	}
 	shell, powershell := installCommands(invitation)
-	fmt.Printf("Invitation %d (expires in 15 minutes; share privately):\n", index)
-	fmt.Printf("macOS / Linux:\n%s\nWindows PowerShell:\n%s\n\n", shell, powershell)
+	fmt.Printf(serverText("Invitation %d (expires in 15 minutes; share privately):\n", "邀请 %d（15 分钟后过期；请私密分享）：\n"), index)
+	fmt.Printf(serverText("macOS / Linux:\n%s\nWindows PowerShell:\n%s\n\n", "macOS / Linux：\n%s\nWindows PowerShell：\n%s\n\n"), shell, powershell)
 }
 
 func installCommands(invitation string) (string, string) {

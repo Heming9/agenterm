@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agenterm/internal/i18n"
 	"bufio"
 	"context"
 	"crypto/rand"
@@ -149,7 +150,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		close(ch)
 	}
 	delete(s.waiters, secret)
-	log.Println("client connected")
+	log.Println(serverText("client connected", "客户端已连接"))
 	go func() {
 		defer func() {
 			conn.Close()
@@ -165,7 +166,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			c.pending = make(map[string]chan protocol.Message)
 			c.mu.Unlock()
-			log.Println("client disconnected")
+			log.Println(serverText("client disconnected", "客户端已断开"))
 		}()
 		conn.SetReadLimit(2 << 20)
 		for {
@@ -179,7 +180,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 				select {
 				case ch <- m:
 				default:
-					log.Printf("output queue full for %s; closing connection", m.ID)
+					log.Printf(serverText("output queue full for %s; closing connection", "%s 的输出队列已满，正在关闭连接"), m.ID)
 					c.mu.Unlock()
 					return
 				}
@@ -473,12 +474,14 @@ func stringField(description string) map[string]any {
 func tool(name, description string, properties map[string]any, required []string) map[string]any {
 	return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required}}
 }
+func serverText(en, zh string) string { return i18n.Text(i18n.Terminal(), en, zh) }
+
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
-	passwordFlag := flag.String("passwd", "", "MCP management key (generated when omitted)")
-	noPassword := flag.Bool("no-password", false, "allow MCP management access without a password")
-	autoCreate := flag.Bool("generate", false, "generate a client token and invitation at startup")
-	public := flag.String("public-url", "http://127.0.0.1:8080", "Public Server URL (optional /agenterm suffix)")
+	listen := flag.String("listen", "127.0.0.1:8080", serverText("HTTP listen address", "HTTP 监听地址"))
+	passwordFlag := flag.String("passwd", "", serverText("MCP management key (generated when omitted)", "MCP 管理密钥（省略时自动生成）"))
+	noPassword := flag.Bool("no-password", false, serverText("allow MCP management access without a password", "允许无需密码访问 MCP 管理接口"))
+	autoCreate := flag.Bool("generate", false, serverText("generate a client token and invitation at startup", "启动时生成客户端 Token 和邀请"))
+	public := flag.String("public-url", "http://127.0.0.1:8080", serverText("Public Server URL (optional /agenterm suffix)", "公开的 Server URL（可带 /agenterm 后缀）"))
 	flag.Parse()
 	u, err := parsePublicURL(*public)
 	if err != nil {
@@ -499,16 +502,16 @@ func main() {
 		}
 	})
 	if keySpecified && (*passwordFlag == "" || *noPassword) {
-		log.Fatal("passwd must be nonempty and cannot be combined with no-password")
+		log.Fatal(serverText("passwd must be nonempty and cannot be combined with no-password", "passwd 不能为空，也不能与 no-password 同时使用"))
 	}
 	adminKey := *passwordFlag
 	if !*noPassword && !keySpecified {
 		adminKey = randomManagementKey()
-		fmt.Printf("MCP management key (save securely):\n%s\n\n", adminKey)
+		fmt.Printf(serverText("MCP management key (save securely):\n%s\n\n", "MCP 管理密钥（请妥善保存）：\n%s\n\n"), adminKey)
 	}
 	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation)}
 	if *noPassword {
-		log.Print("WARNING: MCP management access has no password; anyone who can reach the MCP endpoint can control the service.")
+		log.Print(serverText("WARNING: MCP management access has no password; anyone who can reach the MCP endpoint can control the service.", "警告：MCP 管理接口未设置密码；任何可访问该接口的人都能控制服务。"))
 	}
 	var issuedTokens []string
 	if *autoCreate {
@@ -519,7 +522,7 @@ func main() {
 		}
 		s.tokens[token] = secret
 		issuedTokens = append(issuedTokens, token)
-		fmt.Printf("Agenterm token 1:\n%s\n\n", token)
+		fmt.Printf(serverText("Agenterm token 1:\n%s\n\n", "Agenterm Token 1：\n%s\n\n"), token)
 	}
 	issueInvitations := func() {
 		type output struct {
@@ -550,7 +553,7 @@ func main() {
 		for _, out := range outputs {
 			printInstallCommands(out.index, out.value)
 		}
-		fmt.Println("Press Enter to replace unredeemed startup invitations with fresh ones.")
+		fmt.Println(serverText("Press Enter to replace unredeemed startup invitations with fresh ones.", "按 Enter 替换尚未使用的启动邀请。"))
 	}
 	if *autoCreate {
 		issueInvitations()
@@ -563,9 +566,9 @@ func main() {
 			}
 		}
 	}()
-	fmt.Printf("MCP endpoint: %s/mcp\n", publicBase)
+	fmt.Printf(serverText("MCP endpoint: %s/mcp\n", "MCP 接口：%s/mcp\n"), publicBase)
 	if !securePublicURL {
-		log.Print("WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.")
+		log.Print(serverText("WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.", "警告：HTTP 和 WebSocket 流量未加密，Token、命令和输出可能被截获。请通过反向代理使用 HTTPS 或使用可信网络。"))
 	}
 	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, installer.Assets()), ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())

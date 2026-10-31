@@ -1,21 +1,24 @@
 param([Parameter(Mandatory=$true)][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base)
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
+$language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
+$chinese = $language -match '^(zh-CN|zh-SG|zh-Hans)(-|$)' -or $language -eq 'zh'
+function Say([string]$English, [string]$Chinese) { if ($chinese) { Write-Host $Chinese } else { Write-Host $English } }
 $origin = $Base -replace '/downloads/[^/]+$', ''
-Write-Host "`n连接进度"
-Write-Host '[1/5] 等待连接授权'
-Write-Host '⚠️ 远程控制授权'
-Write-Host "`n服务器：$origin"
-Write-Host '连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。'
-Write-Host "`n是否允许连接？[y/N] " -NoNewline
+Say "`nConnection progress" "`n连接进度"
+Say '[1/5] Awaiting authorization' '[1/5] 等待连接授权'
+Say '⚠️ Remote control authorization' '⚠️ 远程控制授权'
+Say "`nServer: $origin" "`n服务器：$origin"
+Say 'The server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.' '连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。'
+if ($chinese) { Write-Host "`n是否允许连接？[y/N] " -NoNewline } else { Write-Host "`nAllow connection? [y/N] " -NoNewline }
 $answer = [Console]::ReadLine()
 if ($null -eq $answer -or $answer.Trim() -ine 'y') {
-  Write-Host '已取消连接。'
+  Say 'Connection cancelled.' '已取消连接。'
   return
 }
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw 'Unsupported architecture' } }
-Write-Host '[2/5] 检查连通性与版本…'
+Say '[2/5] Checking connectivity and version…' '[2/5] 检查连通性与版本…'
 $probe = [System.Net.WebSockets.ClientWebSocket]::new()
 $timeout = [System.Threading.CancellationTokenSource]::new(10000)
 try {
@@ -25,15 +28,15 @@ try {
   $null = $probe.ConnectAsync([Uri]$endpoint, $timeout.Token).GetAwaiter().GetResult()
 } catch {
   if ($_.Exception.ToString() -match '426') {
-    throw "版本不兼容：安装器 $Version 与 Server 不兼容。请将 Server 和 Client 更新到兼容版本。"
+    if ($chinese) { throw "版本不兼容：安装器 $Version 与 Server 不兼容。请将 Server 和 Client 更新到兼容版本。" } else { throw "Incompatible versions: installer $Version is incompatible with the server. Update server and client to compatible versions." }
   }
   throw "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. $($_.Exception.Message)"
 } finally {
   $probe.Dispose()
   $timeout.Dispose()
 }
-Write-Host '      服务可达，邀请和版本校验通过。'
-Write-Host '[3/5] 准备客户端…'
+Say '      Server reachable; invitation and version verified.' '      服务可达，邀请和版本校验通过。'
+Say '[3/5] Preparing client…' '[3/5] 准备客户端…'
 if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is not set' }
 $cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
 New-Item -ItemType Directory -Path $cache -Force | Out-Null
@@ -60,13 +63,13 @@ try {
     }
   }
   if ($valid) {
-    Write-Host '      本地客户端校验通过，跳过下载。'
+    Say '      Cached client verified; skipping download.' '      本地客户端校验通过，跳过下载。'
   } else {
-    Write-Host '      正在下载客户端…'
+    Say '      Downloading client…' '      正在下载客户端…'
     $expectedAsset = Get-ExpectedHash $asset
     $ProgressPreference = 'Continue'
     Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 "$base/$asset" -OutFile $file
-    Write-Host '      下载完成，正在校验并解压…'
+    Say '      Download complete; verifying and extracting…' '      下载完成，正在校验并解压…'
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash -ne $expectedAsset) { throw 'Archive checksum mismatch' }
     Expand-Archive -LiteralPath $file -DestinationPath $work
     $staged = Join-Path $work $binary
@@ -79,7 +82,7 @@ try {
       # The independently verified staged client remains usable for this session.
       $program = $staged
     }
-    Write-Host '      客户端校验通过。'
+    Say '      Client verified.' '      客户端校验通过。'
   }
   & $program -invite $Invitation -consent-confirmed
 } finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }

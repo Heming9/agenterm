@@ -4,14 +4,26 @@ version='@RELEASE_TAG@'
 invitation=${1:?missing invitation}
 base=${2:?missing download URL}
 origin=${base%/downloads/*}
-printf '\n连接进度\n[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] ' "$origin"
+locale=${AGENTERM_LANG:-}
+if [ -z "$locale" ] || [ "$locale" = auto ]; then
+  locale=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
+  case "$locale" in C|POSIX|'') ;; *) if [ -n "${LANGUAGE:-}" ]; then locale=${LANGUAGE%%:*}; fi;; esac
+fi
+case "$locale" in '') if [ "$(uname -s)" = Darwin ]; then locale=$(defaults read -g AppleLanguages 2>/dev/null | tr -d '"(), ' | head -n 1 || true); fi;; esac
+case "$locale" in zh_CN*|zh-SG*|zh_SG*|zh-CN*|zh-Hans*|zh_Hans*|zh|zh.*) chinese=1;; *) chinese=0;; esac
+say() { if [ "$chinese" = 1 ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
+if [ "$chinese" = 1 ]; then
+  printf '\n连接进度\n[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] ' "$origin"
+else
+  printf '\nConnection progress\n[1/5] Awaiting authorization\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ' "$origin"
+fi
 if ! read -r answer; then
-  echo '已取消连接。'
+  say 'Connection cancelled.' '已取消连接。'
   exit 0
 fi
 case "$answer" in
   y|Y) ;;
-  *) echo '已取消连接。'; exit 0 ;;
+  *) say 'Connection cancelled.' '已取消连接。'; exit 0 ;;
 esac
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) echo 'Unsupported system' >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo 'Unsupported architecture' >&2; exit 1;; esac
@@ -24,7 +36,7 @@ cache="$cache_root/$version/$os-$arch"
 mkdir -p "$cache"
 work=$(mktemp -d "$cache/.tmp.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-printf '[2/5] 检查连通性与版本…\n'
+say '[2/5] Checking connectivity and version…' '[2/5] 检查连通性与版本…'
 if ! status=$(curl --http1.1 -sS --connect-timeout 5 --max-time 10 \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
   -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
@@ -39,14 +51,14 @@ case "$status" in
   429) echo 'Too many authentication failures. Try again later.' >&2; exit 1 ;;
   426)
     server_version=$(awk '{ sub(/\r$/, ""); if (tolower($1) == "x-agenterm-version:") print $2 }' "$work/probe.headers")
-    echo "版本不兼容：安装器 ${version}，Server ${server_version:-未知}。请将 Server 和 Client 更新到兼容版本。" >&2; exit 1 ;;
+    say "Incompatible versions: installer ${version}, server ${server_version:-unknown}. Update server and client to compatible versions." "版本不兼容：安装器 ${version}，Server ${server_version:-未知}。请将 Server 和 Client 更新到兼容版本。" >&2; exit 1 ;;
   *) echo "WebSocket connectivity check failed (HTTP $status). Check the server and reverse proxy configuration." >&2; exit 1 ;;
 esac
 awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") ok=1 } END { exit !ok }' "$work/probe.headers" || {
   echo 'Invalid WebSocket handshake response.' >&2; exit 1
 }
-echo '      服务可达，邀请和版本校验通过。'
-echo '[3/5] 准备客户端…'
+say '      Server reachable; invitation and version verified.' '      服务可达，邀请和版本校验通过。'
+say '[3/5] Preparing client…' '[3/5] 准备客户端…'
 asset="agenterm-cli-$os-$arch.tar.gz"
 name="agenterm-cli-$os-$arch"
 binary="$cache/$name"
@@ -60,9 +72,9 @@ expected() {
 expected_binary=$(expected "$name")
 [ -n "$expected_binary" ] || { echo 'Missing client checksum' >&2; exit 1; }
 if [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] && [ "$(checksum "$binary")" = "$expected_binary" ]; then
-  echo '      本地客户端校验通过，跳过下载。'
+  say '      Cached client verified; skipping download.' '      本地客户端校验通过，跳过下载。'
 else
-  echo '      正在下载客户端…'
+  say '      Downloading client…' '      正在下载客户端…'
   expected_asset=$(expected "$asset")
   [ -n "$expected_asset" ] || { echo 'Missing archive checksum' >&2; exit 1; }
   if [ -t 2 ]; then
@@ -70,7 +82,7 @@ else
   else
     curl -fsS --connect-timeout 5 --max-time 180 "$base/$asset" -o "$work/$asset"
   fi
-  echo '      下载完成，正在校验并解压…'
+  say '      Download complete; verifying and extracting…' '      下载完成，正在校验并解压…'
   [ "$(checksum "$work/$asset")" = "$expected_asset" ] || { echo 'Archive checksum mismatch' >&2; exit 1; }
   tar -xzf "$work/$asset" -C "$work"
   [ -f "$work/$name" ] && [ ! -L "$work/$name" ] || { echo 'Invalid client archive' >&2; exit 1; }
@@ -78,6 +90,6 @@ else
   chmod 700 "$work/$name"
   [ ! -d "$binary" ] || { echo 'Client cache path is a directory' >&2; exit 1; }
   mv -f "$work/$name" "$binary"
-  echo '      客户端校验通过。'
+  say '      Client verified.' '      客户端校验通过。'
 fi
 "$binary" -invite "$invitation" -consent-confirmed

@@ -64,7 +64,7 @@ type tuiModel struct {
 func newTUI(token string) *tuiModel {
 	ctx, cancel := context.WithCancel(context.Background())
 	input := textinput.New()
-	input.Placeholder = "Paste connection token"
+	input.Placeholder = tr("Paste connection token", "粘贴连接 Token")
 	input.CharLimit = 4096
 	input.SetValue(token)
 	input.Focus()
@@ -273,7 +273,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				m.message = cleanText(msg.err.Error())
 			} else {
-				m.message = "Disconnected"
+				m.message = tr("Disconnected", "已断开")
 			}
 			return m, textinput.Blink
 		}
@@ -307,17 +307,17 @@ func (m *tuiModel) View() string {
 	return strings.Join(lines, "\n")
 }
 func (m *tuiModel) view() string {
-	status := "Disconnected"
+	status := tr("Disconnected", "已断开")
 	if m.state == "connecting" {
-		status = "Connecting"
+		status = tr("Connecting", "正在连接")
 	}
 	if m.state == "connected" {
-		status = "已连接"
+		status = tr("Connected", "已连接")
 	}
 	if m.connectionProgress {
 		switch m.state {
 		case "connecting":
-			status = "[4/5] 正在连接…"
+			status = tr("[4/5] Connecting…", "[4/5] 正在连接…")
 		}
 	}
 	if style, ok := statusStyles[m.state]; ok {
@@ -325,10 +325,10 @@ func (m *tuiModel) view() string {
 	}
 	header := m.header(status)
 	if m.state == "disconnected" {
-		return header + "\n\n Connection token:\n " + m.input.View() + "\n\n " + m.message + "\n\n Enter connect  ·  Ctrl+C quit"
+		return header + "\n\n " + tr("Connection token:", "连接 Token：") + "\n " + m.input.View() + "\n\n " + m.message + "\n\n " + tr("Enter connect  ·  Ctrl+C quit", "Enter 连接  ·  Ctrl+C 退出")
 	}
 	line := strings.Repeat("─", max(1, m.width-2))
-	return header + "\n " + line + "\n" + m.viewport.View() + "\n " + line + fmt.Sprintf("\n %d commands  ·  ↑↓ scroll  ·  c clear  ·  q quit", m.completed)
+	return header + "\n " + line + "\n" + m.viewport.View() + "\n " + line + fmt.Sprintf(tr("\n %d commands  ·  ↑↓ scroll  ·  c clear  ·  q quit", "\n %d 条命令  ·  ↑↓ 滚动  ·  c 清空  ·  q 退出"), m.completed)
 }
 func (m *tuiModel) header(status string) string {
 	width := m.width

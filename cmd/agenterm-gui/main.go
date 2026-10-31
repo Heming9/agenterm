@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"net/url"
 	"os"
 
@@ -28,6 +29,7 @@ func main() {
 	a.SetIcon(fyne.NewStaticResource("app-icon.png", appIcon))
 	a.Settings().SetTheme(newMonochromeTheme(false))
 	win := a.NewWindow("Agenterm")
+	configureLanguage(a, win)
 	win.SetPadded(false)
 	view := newClientView(win)
 	win.SetContent(view.content)
@@ -43,7 +45,7 @@ func main() {
 			dialog.ShowError(err, win)
 		} else {
 			u, _ := url.Parse(endpoint)
-			dialog.ShowConfirm("连接授权", "允许服务器 "+u.Host+" 使用当前用户权限执行命令？\n关闭窗口或点击断开连接可结束会话。", func(allowed bool) {
+			dialog.ShowConfirm(tr("Connection authorization", "连接授权"), fmt.Sprintf(tr("Allow server %s to execute commands with your current user permissions?\nClose the window or disconnect to end the session.", "允许服务器 %s 使用当前用户权限执行命令？\n关闭窗口或点击断开连接可结束会话。"), u.Host), func(allowed bool) {
 				if !allowed {
 					return
 				}
