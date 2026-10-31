@@ -3,6 +3,7 @@ package main
 import (
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +40,7 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 	waiter := make(chan struct{})
 	s.waiters = map[string]map[chan struct{}]struct{}{token.Secret: {waiter: {}}}
 	for i := 0; i < 2; i++ {
-		ws, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{"Authorization": {"Bearer " + value}})
+		ws, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + value}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +67,7 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 	if err != nil || got != issued["client_token"] {
 		t.Fatalf("redeem after probing: %q %v", got, err)
 	}
-	if ws, response, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{"Authorization": {"Bearer " + value}}); err == nil {
+	if ws, response, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + value}}); err == nil {
 		ws.Close()
 		t.Fatal("redeemed invitation accepted")
 	} else {
@@ -76,7 +77,7 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 		}
 	}
 	// A genuine connection still registers and wakes the waiter after a probe.
-	ws, _, err := websocket.DefaultDialer.Dial(s.clientURL, http.Header{"Authorization": {"Bearer " + token.Secret}})
+	ws, _, err := websocket.DefaultDialer.Dial(s.clientURL, http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + token.Secret}})
 	if err != nil {
 		t.Fatal(err)
 	}

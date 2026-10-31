@@ -15,11 +15,12 @@ cache="$cache_root/$version/$os-$arch"
 mkdir -p "$cache"
 work=$(mktemp -d "$cache/.tmp.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-printf '\n连接进度\n[1/5] 检查服务连通性…\n'
+printf '\n连接进度\n[1/5] 检查连通性与版本…\n'
 if ! status=$(curl --http1.1 -sS --connect-timeout 5 --max-time 10 \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
   -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
   -H "Authorization: Bearer $invitation" \
+  -H "X-Agenterm-Version: $version" \
   -D "$work/probe.headers" -o /dev/null -w '%{http_code}' "$origin/client?probe=1"); then
   echo 'Cannot reach the server WebSocket endpoint. Check the address, network, and proxy configuration.' >&2; exit 1
 fi
@@ -27,12 +28,15 @@ case "$status" in
   101) ;;
   401) echo 'Invitation invalid, expired, or already used. Request a new invitation.' >&2; exit 1 ;;
   429) echo 'Too many authentication failures. Try again later.' >&2; exit 1 ;;
+  426)
+    server_version=$(awk '{ sub(/\r$/, ""); if (tolower($1) == "x-agenterm-version:") print $2 }' "$work/probe.headers")
+    echo "版本不兼容：安装器 ${version}，Server ${server_version:-未知}。请将 Server 和 Client 更新到兼容版本。" >&2; exit 1 ;;
   *) echo "WebSocket connectivity check failed (HTTP $status). Check the server and reverse proxy configuration." >&2; exit 1 ;;
 esac
 awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") ok=1 } END { exit !ok }' "$work/probe.headers" || {
   echo 'Invalid WebSocket handshake response.' >&2; exit 1
 }
-echo '      服务可达，邀请有效。'
+echo '      服务可达，邀请和版本校验通过。'
 echo '[2/5] 准备客户端…'
 asset="agenterm-cli-$os-$arch.tar.gz"
 name="agenterm-cli-$os-$arch"

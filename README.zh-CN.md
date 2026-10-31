@@ -86,7 +86,7 @@ Authorization:  Bearer agenterm:...
 <details>
 <summary>邀请与下载</summary>
 
-发布版 Server 内置六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，先检查邀请有效性和 `/agenterm/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI，确认授权后连接。探测不会消耗邀请，也不会使客户端上线。安装过程显示 5 个连接阶段：连通性检查、准备客户端、等待授权、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
+发布版 Server 内置六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，先检查邀请有效性、版本兼容性和 `/agenterm/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI，确认授权后连接。探测不会消耗邀请，也不会使客户端上线。安装过程显示 5 个连接阶段：连通性检查、准备客户端、等待授权、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
 
 命令使用 `/agenterm/c/<22位邀请ID>` 短入口，Windows 入口带 `.ps1` 后缀。Server 动态返回带好邀请、版本和下载地址的安装脚本。入口 ID 复用原有 128 位随机邀请凭证；获取脚本不会消耗邀请，响应禁止缓存。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
 
@@ -122,6 +122,15 @@ MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Cl
 `create_client` 返回 `client_token`、`invitation`、`expires_at` 和 `display_text`。发布版还返回 `macos_linux_command` 与 `windows_powershell_command`，两条命令共用同一个邀请，任选其一。Server 最多创建 1000 个 Client token；即使管理密钥固定，所有 token 和邀请仍在重启后失效。
 
 `-no-password` 关闭 MCP 管理认证，任何能访问接口的人都能创建和控制连接，仅限私有环境。不能与 `--passwd` 同用。
+
+版本号遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)，连接时双向校验，并采用以下兼容策略：
+
+- `1.0.0` 及以后的稳定版本：主版本相同即可连接，次版本和补丁版本可以不同。同一主版本内，新增功能必须保留旧通信行为。
+- `0.x`：SemVer 不承诺开发阶段的 API 稳定性，因此 Agenterm 约定主、次版本必须一致；`0.0.x` 还要求补丁号一致。
+- 预发布版本（`alpha/beta/rc` 等）：只有版本核心及预发布标识完全相同才允许连接，不与稳定版互通。
+- 构建元数据（`+build` 等）不影响兼容性；版本信息缺失或格式错误会被拒绝。
+
+这些检查覆盖安装探测、邀请兑换、CLI 和 GUI 正式连接，失败不会消耗邀请或登记客户端上线。
 
 Client token 包含 Server 地址和 128 位随机凭证。所有接口统一使用 `/agenterm/` 前缀，旧根路径接口和旧 token 不再支持。Server 和 Client（包括 GUI）需一起更新，并将 MCP 地址改为 `/agenterm/mcp`。
 

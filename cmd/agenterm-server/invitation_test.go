@@ -3,6 +3,7 @@ package main
 import (
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,7 @@ func TestInvitationSingleUseConcurrent(t *testing.T) {
 			defer wg.Done()
 			r := httptest.NewRequest(http.MethodPost, "/agenterm/invite/redeem", nil)
 			r.Header.Set("Authorization", "Bearer secret")
+			r.Header.Set(version.Header, version.Current)
 			w := httptest.NewRecorder()
 			s.redeemInvitation(w, r)
 			statuses <- w.Code
@@ -46,6 +48,7 @@ func TestInvitationExpired(t *testing.T) {
 	s := &server{invitations: map[string]invitation{"secret": {token: "connection-token", expires: time.Now().Add(-time.Second)}}}
 	r := httptest.NewRequest(http.MethodPost, "/agenterm/invite/redeem", nil)
 	r.Header.Set("Authorization", "Bearer secret")
+	r.Header.Set(version.Header, version.Current)
 	w := httptest.NewRecorder()
 	s.redeemInvitation(w, r)
 	if w.Code != http.StatusUnauthorized {

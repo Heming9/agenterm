@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agenterm/internal/version"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -64,7 +65,7 @@ func TestWaitForClientMCP(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	header := http.Header{"Authorization": []string{"Bearer secret-b"}}
+	header := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer secret-b"}}
 	other, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", header)
 	if err != nil {
 		t.Fatal(err)

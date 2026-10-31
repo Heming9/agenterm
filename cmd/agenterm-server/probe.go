@@ -27,8 +27,11 @@ func (s *server) probeConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	if !acceptClientVersion(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, nil)
+	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
 	if err != nil {
 		return
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agenterm/internal/version"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -32,7 +33,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	}
 	for i, token := range tokens {
 		secret := s.tokens[token]
-		h := http.Header{"Authorization": []string{"Bearer " + secret}}
+		h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}}
 		ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
 		if err != nil {
 			t.Fatal(err)
@@ -104,7 +105,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 		t.Fatalf("owner cannot read: %#v", allowed)
 	}
 	secret := s.tokens[tokens[0]]
-	h := http.Header{"Authorization": []string{"Bearer " + secret}}
+	h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}}
 	_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
 	if err == nil || resp == nil || resp.StatusCode != http.StatusConflict {
 		t.Fatalf("duplicate connection accepted: %v", err)

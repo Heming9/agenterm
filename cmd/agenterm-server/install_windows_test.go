@@ -62,7 +62,7 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 	}
 	state := &server{}
 	var archiveRequests, manifestRequests atomic.Int32
-	mux := state.routes("v0.1.8", os.DirFS(root))
+	mux := state.routes(installerTestTag, os.DirFS(root))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/"+archive) {
 			archiveRequests.Add(1)
@@ -106,7 +106,7 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 	if archiveRequests.Load() != 1 {
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())
 	}
-	cached := filepath.Join(root, "local", "Agenterm", "cache", "v0.1.8", "windows-"+runtime.GOARCH, name)
+	cached := filepath.Join(root, "local", "Agenterm", "cache", installerTestTag, "windows-"+runtime.GOARCH, name)
 	if err := os.WriteFile(cached, []byte("corrupted"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -125,5 +125,30 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 	}
 	if manifestRequests.Load() != before || archiveRequests.Load() != 2 {
 		t.Fatal("installer downloaded resources after a failed probe")
+	}
+	// A script from an incompatible release must fail before any downloads.
+	incompatible := &server{}
+	var unexpectedDownloads atomic.Int32
+	incompatibleRoutes := incompatible.routes("v9.9.9", nil)
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/downloads/") {
+			unexpectedDownloads.Add(1)
+		}
+		incompatibleRoutes.ServeHTTP(w, r)
+	}))
+	defer other.Close()
+	incompatible.clientURL = "ws" + strings.TrimPrefix(other.URL, "http") + protocol.ClientPath
+	invitation, err := incompatible.createClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, command = installCommands(invitation["invitation"].(string))
+	if out, err := run(); err == nil || !strings.Contains(out, "版本不兼容") {
+		t.Fatalf("incompatible installer: %v\n%s", err, out)
+	}
+	incompatible.mu.Lock()
+	defer incompatible.mu.Unlock()
+	if unexpectedDownloads.Load() != 0 || len(incompatible.invitations) != 1 || len(incompatible.clients) != 0 {
+		t.Fatal("incompatible installer downloaded files, redeemed an invitation, or registered a client")
 	}
 }

@@ -19,6 +19,7 @@ import (
 
 	"agenterm/internal/installer"
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"github.com/gorilla/websocket"
 )
 
@@ -69,6 +70,10 @@ func (s *server) redeemInvitation(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Retry-After", "300")
 		}
 		http.Error(w, err.Error(), status)
+		return
+	}
+	if !acceptClientVersion(w, r) {
+		s.mu.Unlock()
 		return
 	}
 	delete(s.invitations, secret)
@@ -125,13 +130,16 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	if !acceptClientVersion(w, r) {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.clients[secret] != nil {
 		http.Error(w, "a client is already connected with this token", http.StatusConflict)
 		return
 	}
-	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, nil)
+	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
 	if err != nil {
 		return
 	}
@@ -328,11 +336,11 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
 		_ = json.Unmarshal(req.Params, &p)
-		version := p.ProtocolVersion
-		if version != "2025-03-26" && version != "2025-06-18" {
-			version = "2025-03-26"
+		mcpVersion := p.ProtocolVersion
+		if mcpVersion != "2025-03-26" && mcpVersion != "2025-06-18" {
+			mcpVersion = "2025-03-26"
 		}
-		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.13"}}, nil)
+		respond(w, req.ID, map[string]any{"protocolVersion": mcpVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": version.Current}}, nil)
 	case "ping":
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":

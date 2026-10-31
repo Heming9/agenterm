@@ -2,6 +2,7 @@ package client
 
 import (
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"context"
 	"errors"
 	"fmt"
@@ -184,14 +185,23 @@ func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, ca
 	}
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+t.Secret)
+	headers.Set(version.Header, version.Current)
 	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, t.URL, headers)
 	if err != nil {
 		if resp != nil {
+			if resp.StatusCode == http.StatusUpgradeRequired {
+				if versionErr := version.Check(version.Current, resp.Header.Get(version.Header)); versionErr != nil {
+					return versionErr
+				}
+			}
 			return fmt.Errorf("connect: %w (HTTP %d)", err, resp.StatusCode)
 		}
 		return err
 	}
 	defer ws.Close()
+	if err := version.Check(version.Current, resp.Header.Get(version.Header)); err != nil {
+		return err
+	}
 	c := &connection{ws: ws, running: make(map[string]*process), log: logWriter, command: callbacks.Command, output: callbacks.Output}
 	defer func() {
 		c.mu.Lock()

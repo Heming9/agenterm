@@ -86,7 +86,7 @@ Both clients keep recent logs in memory (~64 KiB), never save tokens, and requir
 <details>
 <summary>Invitations & downloads</summary>
 
-Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server, validate the invitation and probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and ask for authorization before connecting. Probes do not redeem invitations or register clients. Installation shows five connection stages: connectivity check, client preparation, authorization, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
+Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server, validate the invitation and version compatibility, and probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and ask for authorization before connecting. Probes do not redeem invitations or register clients. Installation shows five connection stages: connectivity check, client preparation, authorization, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
 
 Commands use a short `/agenterm/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
@@ -122,6 +122,15 @@ MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <
 `create_client` returns `client_token`, `invitation`, `expires_at`, and `display_text`. Release builds also return `macos_linux_command` and `windows_powershell_command`; both redeem the same invitation, so use one. The server allows up to 1000 client tokens. All tokens and invitations expire on restart, even with a fixed management key.
 
 `-no-password` disables MCP management authentication: anyone who can reach the endpoint can create and control connections. Keep this mode private. It cannot be combined with `--passwd`.
+
+Versions follow [SemVer 2.0.0](https://semver.org/). Connections validate versions in both directions using this policy:
+
+- Stable versions at or above `1.0.0`: matching major numbers are compatible; minor and patch numbers may differ. New features within a major version must preserve existing wire behavior.
+- `0.x`: SemVer does not guarantee API stability during development. Agenterm requires matching major and minor numbers; `0.0.x` also requires matching patch numbers.
+- Prereleases (`alpha/beta/rc`, etc.): the version core and prerelease identifiers must match exactly. They cannot connect to stable releases.
+- Build metadata (`+build`, etc.) does not affect compatibility. Missing or malformed version information is rejected.
+
+Checks cover installation probes, invitation redemption, and CLI/GUI WebSocket connections. Rejection does not consume the invitation or register a client.
 
 Client tokens contain the server address and a 128-bit random credential. All endpoints use the `/agenterm/` prefix. Previous root routes and token formats are unsupported. Update Server and Client (including the GUI) together and change the MCP URL to `/agenterm/mcp`.
 

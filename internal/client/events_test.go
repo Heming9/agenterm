@@ -1,6 +1,7 @@
 package client
 
 import (
+	"agenterm/internal/version"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -26,7 +27,7 @@ func TestCommandLifecycleEvents(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			peers := make(chan *websocket.Conn, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				ws, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+				ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}})
 				if err == nil {
 					peers <- ws
 				}

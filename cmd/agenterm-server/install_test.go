@@ -64,7 +64,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	log := filepath.Join(root, "downloads")
 	state := &server{}
 	var blockWebSocket atomic.Bool
-	mux := state.routes("v0.1.8", os.DirFS(assets))
+	mux := state.routes(installerTestTag, os.DirFS(assets))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f, err := os.OpenFile(log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
@@ -127,7 +127,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	if count := strings.Count(string(logContent), archive+"\n"); count != 1 {
 		t.Fatalf("archive downloaded %d times", count)
 	}
-	cached := filepath.Join(cache, "agenterm", "v0.1.8", "linux-amd64", name)
+	cached := filepath.Join(cache, "agenterm", installerTestTag, "linux-amd64", name)
 	write(cached, []byte("corrupted"), 0o700)
 	if output := run(); !strings.Contains(output, "正在下载客户端") {
 		t.Fatalf("corrupted cache: %s", output)
@@ -185,5 +185,39 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	after, _ = os.ReadFile(log)
 	if strings.Contains(string(after[len(before):]), "SHA256SUMS") || strings.Contains(string(after[len(before):]), archive) {
 		t.Fatalf("download continued after blocked WebSocket: %s", after[len(before):])
+	}
+}
+
+func TestShellInstallerVersionMismatchStopsDownload(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	state := &server{}
+	var downloads atomic.Int32
+	routes := state.routes("v9.9.9", nil)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/downloads/") {
+			downloads.Add(1)
+		}
+		routes.ServeHTTP(w, r)
+	}))
+	defer ts.Close()
+	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
+	issued, err := state.createClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, _ := installCommands(issued["invitation"].(string))
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CACHE_HOME="+t.TempDir())
+	cmd.Stdin = strings.NewReader("y\n")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "版本不兼容") || !strings.Contains(string(out), "v9.9.9") {
+		t.Fatalf("incompatible installer: %v\n%s", err, out)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if downloads.Load() != 0 || len(state.invitations) != 1 || len(state.clients) != 0 {
+		t.Fatal("incompatible installer downloaded files, redeemed the invitation, or registered a client")
 	}
 }

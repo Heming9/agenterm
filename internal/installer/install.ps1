@@ -5,20 +5,24 @@ $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitect
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw 'Unsupported architecture' } }
 $origin = $Base -replace '/downloads/[^/]+$', ''
 Write-Host "`n连接进度"
-Write-Host '[1/5] 检查服务连通性…'
+Write-Host '[1/5] 检查连通性与版本…'
 $probe = [System.Net.WebSockets.ClientWebSocket]::new()
 $timeout = [System.Threading.CancellationTokenSource]::new(10000)
 try {
   $probe.Options.SetRequestHeader('Authorization', "Bearer $Invitation")
+  $probe.Options.SetRequestHeader('X-Agenterm-Version', $Version)
   $endpoint = ($origin -replace '^http', 'ws') + '/client?probe=1'
   $null = $probe.ConnectAsync([Uri]$endpoint, $timeout.Token).GetAwaiter().GetResult()
 } catch {
+  if ($_.Exception.ToString() -match '426') {
+    throw "版本不兼容：安装器 $Version 与 Server 不兼容。请将 Server 和 Client 更新到兼容版本。"
+  }
   throw "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. $($_.Exception.Message)"
 } finally {
   $probe.Dispose()
   $timeout.Dispose()
 }
-Write-Host '      服务可达，邀请有效。'
+Write-Host '      服务可达，邀请和版本校验通过。'
 Write-Host '[2/5] 准备客户端…'
 if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is not set' }
 $cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"

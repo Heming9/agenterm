@@ -3,6 +3,7 @@ package invite
 
 import (
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -41,12 +42,18 @@ func Redeem(ctx context.Context, value string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+secret)
+	req.Header.Set(version.Header, version.Current)
 	hc := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := hc.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("redeem invitation: %w", err)
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusUpgradeRequired || res.StatusCode == http.StatusOK {
+		if err := version.Check(version.Current, res.Header.Get(version.Header)); err != nil {
+			return "", err
+		}
+	}
 	if res.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("invitation invalid, expired, or already used (HTTP %d)", res.StatusCode)
 	}

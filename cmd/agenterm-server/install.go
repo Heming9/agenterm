@@ -14,7 +14,7 @@ import (
 
 // Set by the release workflow to keep the installer and binaries on the same tag.
 var releaseTag = ""
-var validReleaseTag = regexp.MustCompile(`^v[0-9A-Za-z._-]+$`)
+var validReleaseTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 
 func printInstallCommands(index int, invitation string) {
 	if !validReleaseTag.MatchString(releaseTag) {
