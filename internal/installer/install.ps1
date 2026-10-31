@@ -11,7 +11,7 @@ $timeout = [System.Threading.CancellationTokenSource]::new(10000)
 try {
   $probe.Options.SetRequestHeader('Authorization', "Bearer $Invitation")
   $endpoint = ($origin -replace '^http', 'ws') + '/client?probe=1'
-  $probe.ConnectAsync([Uri]$endpoint, $timeout.Token).GetAwaiter().GetResult()
+  $null = $probe.ConnectAsync([Uri]$endpoint, $timeout.Token).GetAwaiter().GetResult()
 } catch {
   throw "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. $($_.Exception.Message)"
 } finally {

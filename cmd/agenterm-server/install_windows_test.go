@@ -88,7 +88,14 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+command)
-		cmd.Env = append(os.Environ(), "LOCALAPPDATA="+filepath.Join(root, "local"))
+		// CI runs under PowerShell 7. Let Windows PowerShell construct its own
+		// module path instead of trying to load the inherited PowerShell 7 modules.
+		for _, value := range os.Environ() {
+			if !strings.HasPrefix(strings.ToUpper(value), "PSMODULEPATH=") {
+				cmd.Env = append(cmd.Env, value)
+			}
+		}
+		cmd.Env = append(cmd.Env, "LOCALAPPDATA="+filepath.Join(root, "local"))
 		cmd.Stdin = strings.NewReader("y\n")
 		out, err := cmd.CombinedOutput()
 		return string(out), err
