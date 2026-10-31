@@ -84,6 +84,8 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 
 使用发布版 Server 时，每个连接 token 同时生成一组安装命令，分别供 macOS/Linux 和 Windows PowerShell 使用。将适合对方系统的命令私下发送给对方；命令从该 Server 对应版本的 GitHub Release 下载脚本和命令行客户端，自动检测架构。终端中展示服务器地址与权限说明，对方确认后才会连接。关闭客户端即可断开；不会设置开机自启。图形客户端仍可从 Release 单独下载并使用 token 连接。
 
+客户端按版本、系统和架构缓存在当前用户目录中：macOS 为 `~/Library/Caches/Agenterm`，Linux 为 `${XDG_CACHE_HOME:-~/.cache}/agenterm`，Windows 为 `%LOCALAPPDATA%\Agenterm\cache`。每次执行会先从 GitHub 获取版本校验清单；缓存客户端校验通过时不重复下载，缺失或损坏时自动下载。关闭客户端后缓存会保留；如需清理可删除该缓存目录。每次连接仍需确认授权。
+
 邀请有效期为 15 分钟、只能兑换一次。过期后在 Server 控制台按回车，可为所有 token 重新生成邀请，并作废尚未兑换的旧邀请；已有连接不受影响。每个 token 仍只能同时连接一个客户端，兑换后的连接 token 原有的有效期规则不变。邀请命令及 token 都是凭证，应私下发送，避免粘贴到公开场所；命令可能保存在终端历史中，完成后应清理。
 
 对方需要访问 GitHub 和 Server 的 `-public-url`；默认的 `127.0.0.1` 只适用于同机。生产环境应通过支持 WebSocket 的 HTTPS 反向代理提供 Server，防止邀请及连接凭证被窃听。安装脚本通过 HTTPS 从 GitHub 下载，不再单独校验脚本本身的固定哈希；脚本使用 Release 的校验清单检查客户端文件，可发现下载损坏，但不代替代码签名或保护已被篡改的 Release。源码本地构建不会生成下载命令，请使用发布版。

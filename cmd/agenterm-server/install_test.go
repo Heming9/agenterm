@@ -56,7 +56,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	}
 	archive := name + ".tar.gz"
 	write(filepath.Join(assets, archive), data.Bytes(), 0o600)
-	write(filepath.Join(assets, "SHA256SUMS"), []byte(fmt.Sprintf("%x  %s\n", sha256.Sum256(data.Bytes()), archive)), 0o600)
+	write(filepath.Join(assets, "SHA256SUMS"), []byte(fmt.Sprintf("%x  %s\n%x  %s\n", sha256.Sum256(data.Bytes()), archive, sha256.Sum256(client), name)), 0o600)
 	write(filepath.Join(bin, "uname"), []byte("#!/bin/sh\ncase $1 in -s) echo Linux;; -m) echo x86_64;; esac\n"), 0o755)
 	write(filepath.Join(bin, "curl"), []byte(`#!/bin/sh
 while [ "$#" -gt 0 ]; do
@@ -67,17 +67,59 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 [ -n "${src:-}" ] || exit 1
+printf '%s\n' "$src" >> "$TEST_DOWNLOAD_LOG"
 if [ -n "${dst:-}" ]; then cp "$TEST_ASSETS/$src" "$dst"; else cat "$TEST_ASSETS/$src"; fi
 `), 0o755)
 	command, _ := installCommands("v0.1.8", "agenterm:test")
+	log := filepath.Join(root, "downloads")
+	cache := filepath.Join(root, "cache")
+	run := func() string {
+		t.Helper()
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache, "TEST_ASSETS="+assets, "TEST_DOWNLOAD_LOG="+log)
+		cmd.Stdin = strings.NewReader("y\n")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("command failed: %v\n%s", err, out)
+		}
+		if !strings.Contains(string(out), "consent=y arg=-invite invitation=agenterm:test") {
+			t.Fatalf("unexpected client output: %s", out)
+		}
+		return string(out)
+	}
+	if output := run(); !strings.Contains(output, "Downloading client.") {
+		t.Fatalf("first run: %s", output)
+	}
+	if output := run(); !strings.Contains(output, "Using verified cached client.") {
+		t.Fatalf("second run: %s", output)
+	}
+	logContent, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(logContent), archive+"\n"); count != 1 {
+		t.Fatalf("archive downloaded %d times", count)
+	}
+	cached := filepath.Join(cache, "agenterm", "v0.1.8", "linux-amd64", name)
+	write(cached, []byte("corrupted"), 0o700)
+	if output := run(); !strings.Contains(output, "Downloading client.") {
+		t.Fatalf("corrupted cache: %s", output)
+	}
+	logContent, err = os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(logContent), archive+"\n"); count != 2 {
+		t.Fatalf("archive downloaded %d times after corruption", count)
+	}
+	// A bad download must never be run or replace the existing cache.
+	write(cached, []byte("corrupted"), 0o700)
+	write(filepath.Join(assets, archive), []byte("corrupted archive"), 0o600)
 	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "TEST_ASSETS="+assets)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache, "TEST_ASSETS="+assets, "TEST_DOWNLOAD_LOG="+log)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("command failed: %v\n%s", err, out)
-	}
-	if !strings.Contains(string(out), "consent=y arg=-invite invitation=agenterm:test") {
-		t.Fatalf("unexpected client output: %s", out)
+	if err == nil || !strings.Contains(string(out), "Archive checksum mismatch") || strings.Contains(string(out), "consent=y") {
+		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
 	}
 }
