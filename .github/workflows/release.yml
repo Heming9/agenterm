@@ -119,7 +119,7 @@ jobs:
 
           - Client: graphical application for the computer where commands run (macOS arm64 and Windows amd64).
           - Server: MCP endpoint for macOS, Linux, and Windows (amd64 and arm64).
-          - CLI client: macOS, Linux, and Windows (amd64 and arm64). The one-time invitation installer uses the CLI.
+          - CLI client: macOS, Linux, and Windows (amd64 and arm64). Interactive terminals now show a TUI with connection status and command logs. Use -plain for text output; redirected output remains plain text. The one-time invitation installer uses the CLI.
 
           Server and client must use the same token format; this release is incompatible with the older format. Update both together.
 

@@ -11,10 +11,13 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 func main() {
 	tokenFlag := flag.String("token", "", "connection token (omit to enter interactively)")
+	plainFlag := flag.Bool("plain", false, "use plain text output")
 	inviteFlag := flag.String("invite", "", "one-time invitation")
 	flag.Parse()
 	token := strings.TrimSpace(*tokenFlag)
@@ -33,6 +36,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+	if !*plainFlag && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
+		if err := runTUI(token); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	if token == "" {
 		fmt.Print("Connection token: ")

@@ -155,3 +155,7 @@ go test ./...
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
+
+### Client terminal interface
+
+When both input and output are terminals, `agenterm-client` opens a terminal interface. Enter a connection token (or pass `-token`); use the arrow keys to scroll, `c` to clear the displayed log, and `q` or Ctrl+C to disconnect and exit. After a connection is lost, enter a token to reconnect. The display keeps up to 64 KiB of recent output and strips terminal control sequences; it is a log viewer, not a terminal emulator. Use `-plain` for the original text output, which is also selected automatically when input or output is redirected. Invitation confirmation remains in the terminal before the interface starts.

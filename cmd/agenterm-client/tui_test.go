@@ -1,0 +1,127 @@
+package main
+
+import (
+	"agenterm/internal/client"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf8"
+)
+
+func TestDisplayDecoderSplitSequences(t *testing.T) {
+	d := &displayDecoder{}
+	got := d.text("A\x1b[3") + d.text("1m红\x1b]0;bad") + d.text("\aB")
+	if got != "A红B" {
+		t.Fatalf("got %q", got)
+	}
+}
+func TestTUIEventsAndBoundedLog(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.generation = 1
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	m.Update(tuiEvent{generation: 1, connected: true})
+	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "one", Command: "echo hi"}})
+	m.Update(tuiEvent{generation: 1, id: "one", output: []byte("\x1b[2Jhello")})
+	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "one", Done: true}})
+	if m.completed != 1 || !strings.Contains(m.logs, "hello") || strings.Contains(m.logs, "\x1b") {
+		t.Fatalf("invalid log: %q", m.logs)
+	}
+	m.Update(tuiEvent{generation: 0, connected: true})
+	if m.completed != 1 {
+		t.Fatal("stale event reset state")
+	}
+	m.appendLog("output", strings.Repeat("界", maxTUILog))
+	if len(m.logs) > maxTUILog || !utf8.ValidString(m.logs) {
+		t.Fatal("invalid bounded log")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if m.logs != "" {
+		t.Fatal("clear failed")
+	}
+}
+
+func TestGUILogFormatAndColors(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetHasDarkBackground(true)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	m := newTUI("")
+	defer m.cancel()
+	m.generation = 1
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
+	m.Update(tuiEvent{generation: 1, connected: true})
+	started := time.Date(2026, 1, 1, 14, 32, 8, 0, time.UTC)
+	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "first", Command: "echo hello", StartedAt: started}})
+	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "second", Command: "pwd", StartedAt: started}})
+	m.Update(tuiEvent{generation: 1, id: "first", output: []byte("hello\n")})
+	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "first", Done: true, Error: "failed"}})
+	want := "\ns1  14:32:08  $ echo hello\n\ns2  14:32:08  $ pwd\n\ns1\nhello\n\nfailed\n"
+	if m.logs != want {
+		t.Fatalf("log = %q, want %q", m.logs, want)
+	}
+	view := m.View()
+	for _, color := range []string{"38;2;153;177;195", "38;2;133;201;155", "38;2;255;138;138"} {
+		if !strings.Contains(view, color) {
+			t.Errorf("missing color %s in %q", color, view)
+		}
+	}
+	lipgloss.SetHasDarkBackground(false)
+	m.refreshLog()
+	view = m.View()
+	for _, color := range []string{"38;2;75;103;121", "38;2;36;116;69", "38;2;197;48;48"} {
+		if !strings.Contains(view, color) {
+			t.Errorf("missing light color %s in %q", color, view)
+		}
+	}
+	m.Update(tea.WindowSizeMsg{Width: 18, Height: 15})
+	if !strings.Contains(strings.ReplaceAll(ansi.Strip(m.View()), "\n", ""), "echo hello") {
+		t.Error("wrapped command missing")
+	}
+	if strings.Contains(view, "Finished") {
+		t.Error("completion footer should not be shown in log")
+	}
+}
+
+func TestHeaderRightAlignmentAndNarrowWidth(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.state = "connected"
+	m.address = "ws://127.0.0.1:18743/client"
+	for _, width := range []int{80, 40, 25} {
+		m.width = width
+		header := ansi.Strip(strings.Split(m.View(), "\n")[0])
+		if ansi.StringWidth(header) > width {
+			t.Errorf("width %d: %q overflows", width, header)
+		}
+		if !strings.HasSuffix(header, "Connected ") {
+			t.Errorf("width %d: status not right aligned: %q", width, header)
+		}
+		if width == 80 && !strings.Contains(header, m.address+"  ·  Connected") {
+			t.Errorf("address and status order: %q", header)
+		}
+	}
+}
+
+func TestStatusColors(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetHasDarkBackground(true)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	m := newTUI("")
+	defer m.cancel()
+	m.width = 80
+	for _, tc := range []struct{ state, label, color string }{
+		{"connected", "Connected", "38;2;133;201;155"},
+		{"connecting", "Connecting", "38;2;230;190;105"},
+		{"disconnected", "Disconnected", "38;2;163;163;163"},
+	} {
+		m.state = tc.state
+		header := strings.Split(m.View(), "\n")[0]
+		if !strings.Contains(header, tc.color) || !strings.Contains(header, tc.label) {
+			t.Errorf("%s: %q", tc.state, header)
+		}
+	}
+}
