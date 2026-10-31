@@ -123,7 +123,7 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 	state.invitations[decoded.Secret] = entry
 	state.mu.Unlock()
 	before := manifestRequests.Load()
-	if out, err := run(); err == nil || !strings.Contains(out, "401") {
+	if out, err := run(); err == nil || !strings.Contains(out, "invitation invalid, expired, or already used") {
 		t.Fatalf("expired invitation: %v\n%s", err, out)
 	}
 	if manifestRequests.Load() != before || archiveRequests.Load() != 2 {
