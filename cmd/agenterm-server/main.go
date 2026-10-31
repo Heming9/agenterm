@@ -403,7 +403,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 				result, err = s.createClient()
 
 			case "wait_for_client":
-				timeout := 30000
+				timeout := 90000
 				if a.TimeoutMS != nil {
 					timeout = *a.TimeoutMS
 				}

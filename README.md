@@ -69,7 +69,7 @@ Use the same full token as the client. Then call `execute_command`:
 For multiple targets, connect MCP with the server’s printed **management key**. Call `create_client` with `{}`, show its `display_text` to the target user, then pass the returned `client_token` in subsequent tool calls:
 
 ```json
-{"client_token":"agenterm:...","timeout_ms":30000}
+{"client_token":"agenterm:...","timeout_ms":90000}
 ```
 
 Without `--generate`, the server creates connections only on demand. A client token controls one target; the management key controls all targets.
@@ -139,7 +139,7 @@ Client tokens contain the server address and a 128-bit random credential. All en
 <details>
 <summary>Session behavior & platform limits</summary>
 
-- `wait_for_client` returns `{"status":"connected"}` or `{"status":"timeout"}`. `timeout_ms`: default 30000, range 0–300000; 0 checks immediately. Show the invitation before waiting. The agent host must allow the chosen duration; call again after a timeout if needed.
+- After `create_client` succeeds, the agent must first show `display_text`, then call `wait_for_client` with the returned `client_token`. Only execute commands or start sessions after it returns `{"status":"connected"}`. `wait_for_client` may also return `{"status":"timeout"}`. `timeout_ms`: default 90000 (90 seconds), range 0–300000; 0 checks immediately. The agent host must allow the chosen duration; call again after a timeout if needed. This sequence is instructed through tool descriptions, not enforced by the server.
 - `session_read` polls for output. `wait_ms` waits up to 20000 ms; `done: true` includes `exit_code`. Each session retains the latest 1 MiB; lagging readers receive `truncated: true`. Finished sessions remain for at least 30 minutes and are cleaned up when a new session starts.
 - macOS/Linux sessions use a PTY. Windows uses pipes: simple prompts work, programs requiring a real terminal do not. Remote graphical interfaces are unsupported.
 - Full-screen terminal apps emit control sequences the agent may not understand. The CLI strips these from its local log; it is a log viewer. Input may be echoed, so avoid entering secrets through the agent.

@@ -21,9 +21,13 @@ func TestWaitForClientMCP(t *testing.T) {
 	mux.HandleFunc("/agenterm/client", s.connect)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
-	call := func(token string, timeout int) string {
+	call := func(token string, timeout ...int) string {
 		t.Helper()
-		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "wait_for_client", "arguments": map[string]any{"timeout_ms": timeout}}})
+		args := map[string]any{}
+		if len(timeout) > 0 {
+			args["timeout_ms"] = timeout[0]
+		}
+		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "wait_for_client", "arguments": args}})
 		req, _ := http.NewRequest("POST", ts.URL+"/agenterm/mcp", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
@@ -51,7 +55,7 @@ func TestWaitForClientMCP(t *testing.T) {
 		t.Fatalf("immediate check: %s", got)
 	}
 	result := make(chan string, 1)
-	go func() { result <- call("token-a", 2000) }()
+	go func() { result <- call("token-a") }()
 	deadline := time.Now().Add(time.Second)
 	for {
 		s.mu.Lock()

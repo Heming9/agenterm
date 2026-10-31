@@ -69,7 +69,7 @@ Authorization:  Bearer agenterm:...
 管理多台电脑时，用 Server 输出的**管理密钥**接入 MCP。调用 `create_client`（参数 `{}`），向对方展示返回的 `display_text`，后续工具调用通过 `client_token` 选择目标：
 
 ```json
-{"client_token":"agenterm:...","timeout_ms":30000}
+{"client_token":"agenterm:...","timeout_ms":90000}
 ```
 
 不加 `--generate` 时，Server 只按需创建连接。Client token 控制单个目标，管理密钥控制所有目标。
@@ -139,7 +139,7 @@ Client token 包含 Server 地址和 128 位随机凭证。所有接口统一使
 <details>
 <summary>会话行为与平台限制</summary>
 
-- `wait_for_client` 返回 `{"status":"connected"}` 或 `{"status":"timeout"}`。`timeout_ms` 默认 30000，范围 0–300000，0 表示立即检查。先展示邀请再等待，Agent 宿主需允许对应时长，超时后可再次调用。
+- `create_client` 成功后，Agent 必须先展示 `display_text`，再使用返回的 `client_token` 调用 `wait_for_client`；仅在返回 `{"status":"connected"}` 后执行命令或启动会话。`wait_for_client` 也可能返回 `{"status":"timeout"}`。`timeout_ms` 默认 90000（90 秒），范围 0–300000，0 表示立即检查。Agent 宿主需允许对应时长，超时后可按需再次调用。调用顺序通过工具描述提示，不由服务端强制校验。
 - `session_read` 通过轮询获取输出，`wait_ms` 最多等待 20000 毫秒；`done: true` 时返回 `exit_code`。每个会话保留最近 1 MiB 输出，读取落后时返回 `truncated: true`。已结束会话保留至少 30 分钟，新建会话时清理。
 - macOS/Linux 会话使用 PTY。Windows 使用管道，支持简单提示交互，不支持要求真实终端的程序。暂不支持远程图形界面。
 - 全屏终端程序输出的控制序列可能无法被 Agent 正确理解。CLI 会过滤本地日志中的控制序列，它是日志查看器。输入可能被回显，避免通过 Agent 输入敏感信息。
