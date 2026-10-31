@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
-version=${1:?missing release version}
-invitation=${2:?missing invitation}
+version='@RELEASE_TAG@'
+invitation=${1:?missing invitation}
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) echo 'Unsupported system' >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo 'Unsupported architecture' >&2; exit 1;; esac
 base="https://github.com/Heming9/agenterm/releases/download/$version"

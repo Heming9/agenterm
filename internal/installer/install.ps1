@@ -1,5 +1,6 @@
-param([Parameter(Mandatory=$true)][string]$Version, [Parameter(Mandatory=$true)][string]$Invitation)
+param([Parameter(Mandatory=$true)][string]$Invitation)
 $ErrorActionPreference = 'Stop'
+$Version = '@RELEASE_TAG@'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw 'Unsupported architecture' } }
 $base = "https://github.com/Heming9/agenterm/releases/download/$Version"

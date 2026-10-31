@@ -86,7 +86,7 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 
 邀请有效期为 15 分钟、只能兑换一次。过期后在 Server 控制台按回车，可为所有 token 重新生成邀请，并作废尚未兑换的旧邀请；已有连接不受影响。每个 token 仍只能同时连接一个客户端，兑换后的连接 token 原有的有效期规则不变。邀请命令及 token 都是凭证，应私下发送，避免粘贴到公开场所；命令可能保存在终端历史中，完成后应清理。
 
-对方需要访问 GitHub 和 Server 的 `-public-url`；默认的 `127.0.0.1` 只适用于同机。生产环境应通过支持 WebSocket 的 HTTPS 反向代理提供 Server，防止邀请及连接凭证被窃听。脚本使用 Server 内嵌的脚本 SHA-256 和 Release 的校验清单检查下载；后者用于发现下载损坏，不代替代码签名或保护已被篡改的 Release。源码本地构建不会生成下载命令，请使用发布版。
+对方需要访问 GitHub 和 Server 的 `-public-url`；默认的 `127.0.0.1` 只适用于同机。生产环境应通过支持 WebSocket 的 HTTPS 反向代理提供 Server，防止邀请及连接凭证被窃听。安装脚本通过 HTTPS 从 GitHub 下载，不再单独校验脚本本身的固定哈希；脚本使用 Release 的校验清单检查客户端文件，可发现下载损坏，但不代替代码签名或保护已被篡改的 Release。源码本地构建不会生成下载命令，请使用发布版。
 
 在支持 Streamable HTTP 和自定义请求头的 Agent 中添加远程 MCP 服务，地址为 `http://SERVER_IP:8080/mcp`。将请求头 `Authorization` 设置为 `Bearer <token>`，其中 token 是目标 Client 使用的完整 `agenterm:` token。需要操作多个 Client 时，可分别配置 MCP 服务；不同 Agent 对自定义请求头的支持可能不同。连接后调用 `execute_command`，传入 `command` 参数。例如：
 

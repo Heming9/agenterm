@@ -71,6 +71,7 @@ jobs:
           CGO_ENABLED: '0'
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._-]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
           mkdir -p dist
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
@@ -88,7 +89,8 @@ jobs:
               fi
             done
           done
-          cp internal/installer/install.sh internal/installer/install.ps1 dist/
+          sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.sh > dist/install.sh
+          sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.ps1 > dist/install.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: server
