@@ -72,7 +72,7 @@ Start the server on a machine reachable by both the client and agent:
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-Replace `SERVER_IP` with the reachable address. The server prints five `agenterm:` connection tokens and the MCP endpoint by default; use `-clients N` to issue a different number (1–1000). Each token selects one client and can have only one client connected at a time. The default listen address and public URL use `127.0.0.1:8080`, suitable for local testing. Treat the token as a password: it contains the server address and a 128-bit random credential. It expires when the server restarts. Server and client must use the same token format; the current format is incompatible with the older format.
+Replace `SERVER_IP` with the reachable address. The server prints the MCP endpoint by default. Pass `--generate` to issue one `agenterm:` connection token and invitation at startup. Each token selects one client and can have only one client connected at a time. The default listen address and public URL use `127.0.0.1:8080`, suitable for local testing. Treat the token as a password: it contains the server address and a 128-bit random credential. It expires when the server restarts. Server and client must use the same token format; the current format is incompatible with the older format.
 
 Run the client on the target computer:
 
@@ -88,11 +88,27 @@ A release build of the server prints installer commands for macOS/Linux and Wind
 
 The client is cached per version, OS, and architecture under `~/Library/Caches/Agenterm` on macOS, `${XDG_CACHE_HOME:-~/.cache}/agenterm` on Linux, or `%LOCALAPPDATA%\Agenterm\cache` on Windows. Each invocation retrieves the release checksum manifest from GitHub and reuses the client only if it passes verification; missing or damaged clients are downloaded again. The cache remains after the session and can be removed manually. Each connection still requires authorization.
 
-Each invitation expires after 15 minutes and can be redeemed once. Press Enter in the server console to replace all unused invitations with fresh ones; existing connections are unaffected. The connection token retains its existing lifetime and each token supports one connected client at a time. Treat invitation commands and tokens as credentials; commands may remain in shell history.
+Each invitation expires after 15 minutes and can be redeemed once. Press Enter in the server console to replace unused startup invitations with fresh ones; existing connections are unaffected. The connection token retains its existing lifetime and each token supports one connected client at a time. Treat invitation commands and tokens as credentials; commands may remain in shell history.
 
 The other computer must be able to reach GitHub and the server's `-public-url`; the default `127.0.0.1` only works locally. Use an HTTPS reverse proxy with WebSocket support to protect invitations and credentials in transit. The installer script is fetched over HTTPS from GitHub without a separate pinned hash. It checks client downloads against the release checksum manifest, which detects download corruption but does not replace code signing or protect against a compromised release. Locally built servers do not print download commands; use a release build.
 
-After sharing the corresponding invitation or token, the agent can call `wait_for_client` to wait for that target to connect and then continue. It returns `{"status":"connected"}` or `{"status":"timeout"}`. `timeout_ms` defaults to 30000 and accepts 0–300000; 0 checks immediately. The agent may call it again after a timeout. The agent host must display the invitation before waiting and allow the tool call to run for the chosen duration; the server does not provide invitations through MCP.
+After sharing the corresponding invitation or token, the agent can call `wait_for_client` to wait for that target to connect and then continue. It returns `{"status":"connected"}` or `{"status":"timeout"}`. `timeout_ms` defaults to 30000 and accepts 0–300000; 0 checks immediately. The agent may call it again after a timeout. The agent host must display the invitation before waiting and allow the tool call to run for the chosen duration; a management-key connection can also create invitations through MCP.
+
+### Create connections through MCP
+
+By default the server does not create client tokens or invitations at startup; an agent can create them on demand. Pass `--generate` to generate them at startup. The server generates and prints a 10-character MCP management key using lowercase letters and digits; alternatively, set a fixed key with `--passwd`:
+
+```sh
+./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --passwd 'replace-with-a-secure-random-key'
+```
+
+Connect to `/mcp` with `Authorization: Bearer <management key>` and call `create_client` with no arguments. It returns `client_token`, a one-time `invitation`, and `expires_at`. Release builds also return `macos_linux_command` and `windows_powershell_command` to share privately with the target user; locally built servers do not return download commands. When using the management key, pass the returned `client_token` to `wait_for_client`, `execute_command`, or session tools to select the target, for example:
+
+```json
+{"client_token":"agenterm:...","timeout_ms":30000}
+```
+
+The management key can create and operate all connections. Keep it secret and protect it with HTTPS. The default 10-character key has limited strength; use `--passwd` with a longer random value for public deployments. Use `-no-password` to allow MCP management access without an Authorization header; anyone who can reach the endpoint can create and control connections, so do not expose this mode publicly. `--passwd` and `-no-password` cannot be combined. If `--passwd` is omitted, a new management key is generated on each restart. Even with a fixed key, client tokens and invitations expire when the server restarts. Each `create_client` call creates a new connection and invitation, up to a total of 1000 client tokens. Ordinary client tokens cannot create connections. Pressing Enter in the server console only refreshes startup invitations and does not affect MCP-created invitations.
 
 Add `http://SERVER_IP:8080/mcp` as a remote MCP server in an agent that supports Streamable HTTP and custom headers. Set the header `Authorization: Bearer <token>` to the same full `agenterm:` token used by the target client. Configure a separate MCP entry for each target if needed; support for custom headers varies by agent. For a non-interactive command, call `execute_command` with a `command` argument, for example:
 

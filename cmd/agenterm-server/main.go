@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +37,9 @@ func (c *client) send(m protocol.Message) error {
 }
 
 type server struct {
+	adminKey    string
+	noPassword  bool
+	clientURL   string
 	tokens      map[string]string  // full token -> client credential
 	clients     map[string]*client // client credential -> connection
 	waiters     map[string]map[chan struct{}]struct{}
@@ -84,7 +89,21 @@ func randomBytes(size int) string {
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
+func randomManagementKey() string {
+	const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+	var key strings.Builder
+	for i := 0; i < 10; i++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			log.Fatal(err)
+		}
+		key.WriteByte(alphabet[n.Int64()])
+	}
+	return key.String()
+}
 func (s *server) validSecret(secret string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, candidate := range s.tokens {
 		if candidate == secret {
 			return true
@@ -269,6 +288,7 @@ func respond(w http.ResponseWriter, id json.RawMessage, result any, rpcErr any) 
 	_ = json.NewEncoder(w).Encode(payload)
 }
 func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -276,8 +296,11 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 	}
 	header := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(header, "Bearer ")
+	s.mu.Lock()
 	secret, ok := s.tokens[token]
-	if status, err := s.authorize(r.RemoteAddr, header == "Bearer "+token && ok); err != nil {
+	s.mu.Unlock()
+	admin := (s.noPassword && header == "") || (s.adminKey != "" && header == "Bearer "+token && subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) == 1)
+	if status, err := s.authorize(r.RemoteAddr, admin || (header == "Bearer "+token && ok)); err != nil {
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "300")
 		} else {
@@ -317,6 +340,15 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			tool("session_write", "Send input to a running session. Include a newline to answer a prompt; input may be echoed in the terminal output.", map[string]any{"session_id": stringField("Session identifier"), "input": stringField("Input bytes as text, e.g. yes\\n")}, []string{"session_id", "input"}),
 			tool("session_stop", "Stop a running session.", map[string]any{"session_id": stringField("Session identifier")}, []string{"session_id"}),
 		}
+		if admin {
+			tools = append(tools, tool("create_client", "Create a client connection token and a one-time invitation. Use client_token with client tools to select this client. Treat all returned values as credentials.", map[string]any{}, []string{}))
+			for _, item := range tools[:len(tools)-1] {
+				t := item.(map[string]any)
+				schema := t["inputSchema"].(map[string]any)
+				schema["properties"].(map[string]any)["client_token"] = stringField("Target client connection token (required when authenticated with the management key)")
+				schema["required"] = append(schema["required"].([]string), "client_token")
+			}
+		}
 		respond(w, req.ID, map[string]any{"tools": tools}, nil)
 	case "tools/call":
 		var p struct {
@@ -328,12 +360,13 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var a struct {
-			Command   string `json:"command"`
-			SessionID string `json:"session_id"`
-			Input     string `json:"input"`
-			Cursor    int64  `json:"cursor"`
-			WaitMS    int    `json:"wait_ms"`
-			TimeoutMS *int   `json:"timeout_ms"`
+			ClientToken string `json:"client_token"`
+			Command     string `json:"command"`
+			SessionID   string `json:"session_id"`
+			Input       string `json:"input"`
+			Cursor      int64  `json:"cursor"`
+			WaitMS      int    `json:"wait_ms"`
+			TimeoutMS   *int   `json:"timeout_ms"`
 		}
 		if err := json.Unmarshal(p.Arguments, &a); err != nil {
 			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": "invalid arguments"})
@@ -341,62 +374,77 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		}
 		var result any
 		var err error
-		switch p.Name {
-		case "wait_for_client":
-			timeout := 30000
-			if a.TimeoutMS != nil {
-				timeout = *a.TimeoutMS
+		if p.Name == "create_client" && !admin {
+			err = fmt.Errorf("management key required")
+		} else if admin && p.Name != "create_client" {
+			s.mu.Lock()
+			secret, ok = s.tokens[a.ClientToken]
+			s.mu.Unlock()
+			if !ok {
+				err = fmt.Errorf("valid client_token is required")
 			}
-			if timeout < 0 || timeout > 300000 {
-				err = fmt.Errorf("timeout_ms must be between 0 and 300000")
-			} else {
-				var status string
-				status, err = s.waitForClient(r.Context(), secret, time.Duration(timeout)*time.Millisecond)
-				if err == nil {
-					result = map[string]any{"status": status}
+		}
+		if err == nil {
+			switch p.Name {
+			case "create_client":
+				result, err = s.createClient()
+
+			case "wait_for_client":
+				timeout := 30000
+				if a.TimeoutMS != nil {
+					timeout = *a.TimeoutMS
 				}
-			}
-		case "execute_command":
-			if strings.TrimSpace(a.Command) == "" {
-				err = fmt.Errorf("command is required")
-			} else {
-				result, err = s.execute(r.Context(), secret, a.Command)
-			}
-		case "session_start":
-			if strings.TrimSpace(a.Command) == "" {
-				err = fmt.Errorf("command is required")
-			} else {
-				var sess *session
-				sess, err = s.startSession(secret, a.Command)
-				if err == nil {
-					result = map[string]any{"session_id": sess.id, "cursor": 0}
+				if timeout < 0 || timeout > 300000 {
+					err = fmt.Errorf("timeout_ms must be between 0 and 300000")
+				} else {
+					var status string
+					status, err = s.waitForClient(r.Context(), secret, time.Duration(timeout)*time.Millisecond)
+					if err == nil {
+						result = map[string]any{"status": status}
+					}
 				}
-			}
-		case "session_read":
-			if a.Cursor < 0 || a.WaitMS < 0 || a.WaitMS > 20000 {
-				err = fmt.Errorf("invalid cursor or wait_ms")
-			} else {
+			case "execute_command":
+				if strings.TrimSpace(a.Command) == "" {
+					err = fmt.Errorf("command is required")
+				} else {
+					result, err = s.execute(r.Context(), secret, a.Command)
+				}
+			case "session_start":
+				if strings.TrimSpace(a.Command) == "" {
+					err = fmt.Errorf("command is required")
+				} else {
+					var sess *session
+					sess, err = s.startSession(secret, a.Command)
+					if err == nil {
+						result = map[string]any{"session_id": sess.id, "cursor": 0}
+					}
+				}
+			case "session_read":
+				if a.Cursor < 0 || a.WaitMS < 0 || a.WaitMS > 20000 {
+					err = fmt.Errorf("invalid cursor or wait_ms")
+				} else {
+					var sess *session
+					sess, err = s.getSession(secret, a.SessionID)
+					if err == nil {
+						result, err = sess.read(r.Context(), a.Cursor, time.Duration(a.WaitMS)*time.Millisecond)
+					}
+				}
+			case "session_write", "session_stop":
 				var sess *session
 				sess, err = s.getSession(secret, a.SessionID)
 				if err == nil {
-					result, err = sess.read(r.Context(), a.Cursor, time.Duration(a.WaitMS)*time.Millisecond)
+					typ := "input"
+					if p.Name == "session_stop" {
+						typ = "cancel"
+					}
+					err = sess.send(typ, a.Input)
+					if err == nil {
+						result = map[string]any{"accepted": true}
+					}
 				}
+			default:
+				err = fmt.Errorf("unknown tool: %s", p.Name)
 			}
-		case "session_write", "session_stop":
-			var sess *session
-			sess, err = s.getSession(secret, a.SessionID)
-			if err == nil {
-				typ := "input"
-				if p.Name == "session_stop" {
-					typ = "cancel"
-				}
-				err = sess.send(typ, a.Input)
-				if err == nil {
-					result = map[string]any{"accepted": true}
-				}
-			}
-		default:
-			err = fmt.Errorf("unknown tool: %s", p.Name)
 		}
 		if err != nil {
 			result = map[string]any{"error": err.Error()}
@@ -415,7 +463,9 @@ func tool(name, description string, properties map[string]any, required []string
 }
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
-	count := flag.Int("clients", 5, "number of client connection tokens to issue")
+	passwordFlag := flag.String("passwd", "", "MCP management key (generated when omitted)")
+	noPassword := flag.Bool("no-password", false, "allow MCP management access without a password")
+	autoCreate := flag.Bool("generate", false, "generate a client token and invitation at startup")
 	public := flag.String("public-url", "http://127.0.0.1:8080", "Server base URL reachable by client")
 	flag.Parse()
 	u, err := url.Parse(*public)
@@ -429,12 +479,26 @@ func main() {
 		u.Scheme = "ws"
 	}
 	u.Path = "/client"
-	if *count < 1 || *count > 1000 {
-		log.Fatal("clients must be between 1 and 1000")
+	keySpecified := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "passwd" {
+			keySpecified = true
+		}
+	})
+	if keySpecified && (*passwordFlag == "" || *noPassword) {
+		log.Fatal("passwd must be nonempty and cannot be combined with no-password")
 	}
-	s := &server{tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation)}
+	adminKey := *passwordFlag
+	if !*noPassword && !keySpecified {
+		adminKey = randomManagementKey()
+		fmt.Printf("MCP management key (save securely):\n%s\n\n", adminKey)
+	}
+	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation)}
+	if *noPassword {
+		log.Print("WARNING: MCP management access has no password; anyone who can reach the MCP endpoint can control the service.")
+	}
 	var issuedTokens []string
-	for i := 1; i <= *count; i++ {
+	if *autoCreate {
 		secret := randomBytes(protocol.TokenSecretSize)
 		token, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: secret})
 		if err != nil {
@@ -442,7 +506,7 @@ func main() {
 		}
 		s.tokens[token] = secret
 		issuedTokens = append(issuedTokens, token)
-		fmt.Printf("Agenterm token %d:\n%s\n\n", i, token)
+		fmt.Printf("Agenterm token 1:\n%s\n\n", token)
 	}
 	issueInvitations := func() {
 		type output struct {
@@ -451,7 +515,14 @@ func main() {
 		}
 		var outputs []output
 		s.mu.Lock()
-		s.invitations = make(map[string]invitation)
+		for key, entry := range s.invitations {
+			for _, token := range issuedTokens {
+				if entry.token == token {
+					delete(s.invitations, key)
+					break
+				}
+			}
+		}
 		for i, token := range issuedTokens {
 			secret := randomBytes(protocol.TokenSecretSize)
 			value, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: secret})
@@ -466,13 +537,17 @@ func main() {
 		for _, out := range outputs {
 			printInstallCommands(out.index, out.value)
 		}
-		fmt.Println("Press Enter to replace all unredeemed invitations with fresh ones.")
+		fmt.Println("Press Enter to replace unredeemed startup invitations with fresh ones.")
 	}
-	issueInvitations()
+	if *autoCreate {
+		issueInvitations()
+	}
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
-			issueInvitations()
+			if *autoCreate {
+				issueInvitations()
+			}
 		}
 	}()
 	fmt.Printf("MCP endpoint: %s/mcp\n", strings.TrimRight(*public, "/"))

@@ -70,7 +70,7 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 默认输出 5 个 `agenterm:<编码内容>` 格式的连接 token 和 MCP 地址；可用 `-clients N` 设置签发数量（1–1000）。每个 token 对应一条 Client 链路，同一个 token 同时只能连接一个 Client。编码内容采用紧凑二进制结构，包含连接协议、16 字节（128 位）随机凭证和主机地址（含可选端口），使用无填充的 Base64 URL-safe 编码；连接路径固定为 `/client`。IPv4/IPv6 地址及其端口使用二进制存储，域名保留为文本。默认本机地址的 token 为 40 个字符。此格式不兼容旧版 token，Server 与 Client 需同时更新。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
+将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 默认输出 MCP 地址，不在启动时生成连接 token。指定 `--generate` 时会输出一组 `agenterm:<编码内容>` 格式的连接 token 和邀请。每个 token 对应一条 Client 链路，同一个 token 同时只能连接一个 Client。编码内容采用紧凑二进制结构，包含连接协议、16 字节（128 位）随机凭证和主机地址（含可选端口），使用无填充的 Base64 URL-safe 编码；连接路径固定为 `/client`。IPv4/IPv6 地址及其端口使用二进制存储，域名保留为文本。默认本机地址的 token 为 40 个字符。此格式不兼容旧版 token，Server 与 Client 需同时更新。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
 
 在被控电脑运行：
 
@@ -86,11 +86,27 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 
 客户端按版本、系统和架构缓存在当前用户目录中：macOS 为 `~/Library/Caches/Agenterm`，Linux 为 `${XDG_CACHE_HOME:-~/.cache}/agenterm`，Windows 为 `%LOCALAPPDATA%\Agenterm\cache`。每次执行会先从 GitHub 获取版本校验清单；缓存客户端校验通过时不重复下载，缺失或损坏时自动下载。关闭客户端后缓存会保留；如需清理可删除该缓存目录。每次连接仍需确认授权。
 
-邀请有效期为 15 分钟、只能兑换一次。过期后在 Server 控制台按回车，可为所有 token 重新生成邀请，并作废尚未兑换的旧邀请；已有连接不受影响。每个 token 仍只能同时连接一个客户端，兑换后的连接 token 原有的有效期规则不变。邀请命令及 token 都是凭证，应私下发送，避免粘贴到公开场所；命令可能保存在终端历史中，完成后应清理。
+邀请有效期为 15 分钟、只能兑换一次。过期后在 Server 控制台按回车，可为启动时生成的 token 重新生成邀请，并作废其尚未兑换的旧邀请；已有连接不受影响。每个 token 仍只能同时连接一个客户端，兑换后的连接 token 原有的有效期规则不变。邀请命令及 token 都是凭证，应私下发送，避免粘贴到公开场所；命令可能保存在终端历史中，完成后应清理。
 
 对方需要访问 GitHub 和 Server 的 `-public-url`；默认的 `127.0.0.1` 只适用于同机。生产环境应通过支持 WebSocket 的 HTTPS 反向代理提供 Server，防止邀请及连接凭证被窃听。安装脚本通过 HTTPS 从 GitHub 下载，不再单独校验脚本本身的固定哈希；脚本使用 Release 的校验清单检查客户端文件，可发现下载损坏，但不代替代码签名或保护已被篡改的 Release。源码本地构建不会生成下载命令，请使用发布版。
 
-分享对应的邀请或 token 后，Agent 可以调用 `wait_for_client` 等待该目标 Client 连接，然后继续执行。返回值为 `{"status":"connected"}` 或 `{"status":"timeout"}`。`timeout_ms` 默认为 30000，允许 0–300000；设为 0 立即检查。超时后 Agent 可以再次调用。Agent 宿主需要在等待前展示邀请，并允许工具调用运行足够长的时间；Server 不通过 MCP 提供邀请。
+分享对应的邀请或 token 后，Agent 可以调用 `wait_for_client` 等待该目标 Client 连接，然后继续执行。返回值为 `{"status":"connected"}` 或 `{"status":"timeout"}`。`timeout_ms` 默认为 30000，允许 0–300000；设为 0 立即检查。超时后 Agent 可以再次调用。Agent 宿主需要在等待前展示邀请，并允许工具调用运行足够长的时间；使用管理密钥时，也可以通过 MCP 创建新的 token 和邀请。
+
+### 通过 MCP 运行时创建连接
+
+默认启动时不生成 token 和邀请，由 Agent 按需创建。指定 `--generate` 可在启动时生成。服务端默认生成并输出 10 位数字和小写字母组成的 MCP 管理密钥；也可通过 `--passwd` 参数设置固定密钥，例如：
+
+```sh
+./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --passwd '替换为安全的随机密钥'
+```
+
+以 `Authorization: Bearer <管理密钥>` 连接 `/mcp`，调用 `create_client`（无需参数）。结果包含 `client_token`、一次性 `invitation` 和 `expires_at`；发布版还会返回 `macos_linux_command` 和 `windows_powershell_command`，可私下发给对应设备的使用者。源码构建不返回下载命令。管理密钥下调用 `wait_for_client`、`execute_command` 或会话工具时，需要在参数中提供返回的 `client_token` 来选择目标，例如：
+
+```json
+{"client_token":"agenterm:...","timeout_ms":30000}
+```
+
+管理密钥可以创建和操作所有连接，应妥善保管并通过 HTTPS 传输。默认 10 位密钥强度有限，公网部署应使用 `--passwd` 设置更长的随机密钥。使用 `-no-password` 可关闭 MCP 管理认证，此时无需 Authorization 请求头，任何能访问 MCP 的人都能创建和控制连接；不要将此模式暴露到公网。`--passwd` 和 `-no-password` 不能同时使用。未指定 `--passwd` 时，每次重启生成新的管理密钥；即使固定管理密钥，Client token 和邀请仍在服务端重启后失效。每次 `create_client` 都创建新的连接和邀请，服务端总连接 token 数上限为 1000；普通 Client token 无权创建连接。控制台回车只刷新启动时生成的邀请，不影响 MCP 创建的邀请。
 
 在支持 Streamable HTTP 和自定义请求头的 Agent 中添加远程 MCP 服务，地址为 `http://SERVER_IP:8080/mcp`。将请求头 `Authorization` 设置为 `Bearer <token>`，其中 token 是目标 Client 使用的完整 `agenterm:` token。需要操作多个 Client 时，可分别配置 MCP 服务；不同 Agent 对自定义请求头的支持可能不同。连接后调用 `execute_command`，传入 `command` 参数。例如：
 
