@@ -1,16 +1,11 @@
-# Agenterm
-
-<img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm app icon" width="128">
-
-English | [简体中文](README.zh-CN.md)
-
-**Let agents control any remote computer, anytime, anywhere.**
-
-```text
-Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> shell
-```
-
-macOS / Linux / Windows · CLI / GUI · Multiple clients · Interactive sessions · No SSH daemon
+<div align="center">
+  <h1>Agenterm</h1>
+  <img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm app icon" width="128">
+  <p>English | <a href="README.zh-CN.md">简体中文</a></p>
+  <p><strong>Let agents control any remote computer, anytime, anywhere.</strong></p>
+  <p><code>Agent ── HTTP / MCP ──&gt; Server &lt;── WebSocket ── Client ──&gt; shell</code></p>
+  <p>macOS / Linux / Windows · CLI / GUI · Multiple clients · Interactive sessions · No SSH daemon</p>
+</div>
 
 ## Quick start
 
