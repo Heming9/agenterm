@@ -1,0 +1,52 @@
+package client
+
+import (
+	"agenterm/internal/i18n"
+	"crypto/sha256"
+	"encoding/hex"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// All client versions and frontends share this directory. Keep it outside the
+// download cache, which can be deleted while a connection is still running.
+func acquireConnectionLock(serverURL string) (*os.File, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, i18n.NewError("client.connection.lock.failed", err)
+	}
+	directory := filepath.Join(home, ".agenterm", "locks")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return nil, i18n.NewError("client.connection.lock.failed", err)
+	}
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		return nil, err
+	}
+	port := u.Port()
+	if port == "" {
+		port = "80"
+		if u.Scheme == "wss" {
+			port = "443"
+		}
+	}
+	address := u.Scheme + "://" + net.JoinHostPort(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), port)
+	key := sha256.Sum256([]byte(address))
+	file, err := os.OpenFile(filepath.Join(directory, hex.EncodeToString(key[:])+".lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, i18n.NewError("client.connection.lock.failed", err)
+	}
+	if err := tryConnectionLock(file); err != nil {
+		file.Close()
+		if connectionLockBusy(err) {
+			return nil, i18n.NewError("client.already.connected.to.server")
+		}
+		return nil, i18n.NewError("client.connection.lock.failed", err)
+	}
+	// Closing the handle releases the OS lock, including on process termination.
+	// Never unlink the file: another process could still hold its inode open.
+	return file, nil
+}

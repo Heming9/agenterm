@@ -107,7 +107,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 		cmd.Stdin = strings.NewReader(answer)
 		out, err := cmd.CombinedOutput()
-		if err != nil || !strings.Contains(string(out), "已取消连接。") || strings.Contains(string(out), "[2/5]") {
+		if err != nil || !strings.Contains(string(out), "已取消连接。") || strings.Contains(string(out), "连接进度") {
 			t.Fatalf("cancel with %q: %v\n%s", answer, err, out)
 		}
 		after, _ := os.ReadFile(log)
@@ -136,7 +136,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 			t.Fatalf("missing or duplicate consent prompt: %s", output)
 		}
 		previous := -1
-		for _, stage := range []string{"[1/5]", "[2/5]", "[3/5]", "arg=-invite"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[1/4]", "[2/4]", "arg=-invite"} {
 			index := strings.Index(output, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", output)

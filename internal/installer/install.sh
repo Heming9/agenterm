@@ -15,7 +15,7 @@ case "$locale" in zh_CN*|zh-SG*|zh_SG*|zh-CN*|zh-Hans*|zh_Hans*|zh|zh.*) chinese
 say() { format=$(text "$1"); shift; printf "$format\n" "$@"; }
 [ -n "$invitation" ] || { say installer.missing.invitation >&2; exit 1; }
 [ -n "$base" ] || { say installer.missing.download.url >&2; exit 1; }
-printf "$(text installer.connection.progress.1.5.awaiting.authorization.remote)" "$origin"
+printf "$(text installer.remote.control.authorization.prompt)" "$origin"
 if ! read -r answer; then
   say installer.connection.cancelled
   exit 0
@@ -24,6 +24,7 @@ case "$answer" in
   y|Y) ;;
   *) say installer.connection.cancelled; exit 0 ;;
 esac
+say installer.connection.progress
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) say installer.unsupported.system >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) say installer.unsupported.architecture >&2; exit 1;; esac
 [ -n "${HOME:-}" ] || { say installer.missing.home >&2; exit 1; }
@@ -36,7 +37,7 @@ cache="$cache_root/$version/$os-$arch"
 mkdir -p "$cache"
 work=$(mktemp -d "$cache/.tmp.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-say installer.2.5.checking.connectivity.and.version
+say installer.1.4.checking.connectivity.and.version
 if ! status=$(curl --http1.1 -sS --connect-timeout 5 --max-time 10 \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
   -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
@@ -58,7 +59,7 @@ awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pP
   say installer.invalid.websocket.handshake.response >&2; exit 1
 }
 say installer.server.reachable.invitation.and.version.verified
-say installer.3.5.preparing.client
+say installer.2.4.preparing.client
 asset="agenterm-cli-$os-$arch.tar.gz"
 name="agenterm-cli-$os-$arch"
 binary="$cache/$name"

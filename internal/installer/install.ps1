@@ -6,8 +6,6 @@ $chinese = $language -match '^(zh-CN|zh-SG|zh-Hans)(-|$)' -or $language -eq 'zh'
 @TRANSLATIONS@
 function Say([string]$Key) { Write-Host (Text $Key) }
 $origin = $Base -replace '/downloads/[^/]+$', ''
-Say 'installer.connection.progress'
-Say 'installer.1.5.awaiting.authorization'
 Say 'installer.remote.control.authorization'
 Write-Host (Text 'installer.server.s' @($origin))
 Say 'installer.the.server.can.control.this.computer.with'
@@ -17,9 +15,10 @@ if ($null -eq $answer -or $answer.Trim() -ine 'y') {
   Say 'installer.connection.cancelled'
   return
 }
+Say 'installer.connection.progress'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
-Say 'installer.2.5.checking.connectivity.and.version'
+Say 'installer.1.4.checking.connectivity.and.version'
 $probe = [System.Net.WebSockets.ClientWebSocket]::new()
 $timeout = [System.Threading.CancellationTokenSource]::new(10000)
 try {
@@ -37,7 +36,7 @@ try {
   $timeout.Dispose()
 }
 Say 'installer.server.reachable.invitation.and.version.verified'
-Say 'installer.3.5.preparing.client'
+Say 'installer.2.4.preparing.client'
 if (-not $env:LOCALAPPDATA) { throw (Text 'installer.localappdata.is.not.set') }
 $cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
 New-Item -ItemType Directory -Path $cache -Force | Out-Null

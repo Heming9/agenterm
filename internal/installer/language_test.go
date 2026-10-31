@@ -30,6 +30,9 @@ func TestShellAuthorizationLanguage(t *testing.T) {
 			if err != nil || !strings.Contains(string(out), tc.want) {
 				t.Fatalf("output %q, error %v", out, err)
 			}
+			if strings.Contains(string(out), "Connection progress") || strings.Contains(string(out), "连接进度") || regexp.MustCompile(`\[[0-9]+/[0-9]+\]`).Match(out) {
+				t.Fatalf("authorization is included in connection progress: %s", out)
+			}
 		})
 	}
 }

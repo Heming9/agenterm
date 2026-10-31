@@ -20,7 +20,7 @@ var cliLanguage = i18n.Terminal()
 
 func tr(key string) string { return i18n.Text(cliLanguage, key) }
 
-var progressConnected = tr("5.5.connected")
+var progressConnected = tr("4.4.connected")
 
 func main() {
 	tokenFlag := flag.String("token", "", tr("connection.token.omit.to.enter.interactively"))
@@ -35,18 +35,15 @@ func main() {
 			log.Fatal(err)
 		}
 		if !*consentConfirmedFlag {
-			fmt.Printf(tr("1.5.awaiting.authorization.remote.control.authorization"), strings.TrimSuffix(endpoint, "/invite/redeem"))
+			fmt.Printf(tr("remote.control.authorization.prompt"), strings.TrimSuffix(endpoint, "/invite/redeem"))
 			answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 			if strings.ToLower(strings.TrimSpace(answer)) != "y" {
 				fmt.Println(tr("connection.cancelled"))
 				return
 			}
 		}
-		fmt.Println(tr("4.5.verifying.invitation.and.connecting"))
-		token, err = invite.Redeem(context.Background(), *inviteFlag)
-		if err != nil {
-			log.Fatalf(tr("connection.failed.invitation.verification.v"), err)
-		}
+		fmt.Println(tr("3.4.verifying.invitation.and.connecting"))
+		token = *inviteFlag
 	}
 	if !*plainFlag && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
 		if err := runTUI(token, *inviteFlag != ""); err != nil {
@@ -65,13 +62,17 @@ func main() {
 	if *inviteFlag == "" {
 		fmt.Println(tr("connecting.once.connected.the.server.can.execute"))
 	}
-	if err := client.Run(context.Background(), token, os.Stdout, func() {
+	run := client.RunWithCallbacks
+	if *inviteFlag != "" {
+		run = client.RunInvitationWithCallbacks
+	}
+	if err := run(context.Background(), token, os.Stdout, client.Callbacks{Connected: func() {
 		if *inviteFlag != "" {
 			fmt.Println(progressConnected + tr("close.the.client.to.disconnect"))
 		} else {
 			fmt.Println(tr("agenterm.connected.commands.from.the.server.will"))
 		}
-	}); err != nil {
+	}}); err != nil {
 		log.Fatal(err)
 	}
 }

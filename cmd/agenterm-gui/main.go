@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	_ "embed"
 	"fmt"
 	"net/url"
@@ -49,17 +48,8 @@ func main() {
 				if !allowed {
 					return
 				}
-				go func() {
-					token, err := invite.Redeem(context.Background(), invitation)
-					fyne.Do(func() {
-						if err != nil {
-							showLocalizedError(err, win)
-							return
-						}
-						view.token.SetText(token)
-						view.connect()
-					})
-				}()
+				view.token.SetText(invitation)
+				view.connectValue(invitation, true)
 			}, win)
 			confirmation.SetConfirmText(tr("dialog.allow"))
 			confirmation.SetDismissText(tr("dialog.cancel"))

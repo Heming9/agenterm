@@ -179,9 +179,9 @@
     "en": "Connected",
     "zh-CN": "已连接"
   },
-  "4.5.connecting": {
-    "en": "[4/5] Connecting…",
-    "zh-CN": "[4/5] 正在连接…"
+  "3.4.connecting": {
+    "en": "[3/4] Connecting…",
+    "zh-CN": "[3/4] 正在连接…"
   },
   "connection.token": {
     "en": "Connection token:",
@@ -195,9 +195,9 @@
     "en": "\n %d commands  ·  ↑↓ scroll  ·  c clear  ·  q quit",
     "zh-CN": "\n %d 条命令  ·  ↑↓ 滚动  ·  c 清空  ·  q 退出"
   },
-  "5.5.connected": {
-    "en": "[5/5] Connected",
-    "zh-CN": "[5/5] 连接成功"
+  "4.4.connected": {
+    "en": "[4/4] Connected",
+    "zh-CN": "[4/4] 连接成功"
   },
   "connection.token.omit.to.enter.interactively": {
     "en": "connection token (omit to enter interactively)",
@@ -215,17 +215,17 @@
     "en": "connection consent already obtained by the installer",
     "zh-CN": "安装器已取得连接授权"
   },
-  "1.5.awaiting.authorization.remote.control.authorization": {
-    "en": "[1/5] Awaiting authorization\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
-    "zh-CN": "[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
+  "remote.control.authorization.prompt": {
+    "en": "⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
+    "zh-CN": "⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
   },
   "connection.cancelled": {
     "en": "Connection cancelled.",
     "zh-CN": "已取消连接。"
   },
-  "4.5.verifying.invitation.and.connecting": {
-    "en": "[4/5] Verifying invitation and connecting…",
-    "zh-CN": "[4/5] 正在验证邀请并连接服务器…"
+  "3.4.verifying.invitation.and.connecting": {
+    "en": "[3/4] Verifying invitation and connecting…",
+    "zh-CN": "[3/4] 正在验证邀请并连接服务器…"
   },
   "connection.failed.invitation.verification.v": {
     "en": "Connection failed (invitation verification): %v",
@@ -435,25 +435,25 @@
     "en": "Incompatible versions: local %s, peer %s. Update Server and Client to compatible versions",
     "zh-CN": "版本不兼容：本地 %s，对端 %s。请将 Server 和 Client 更新到兼容版本"
   },
-  "installer.connection.progress.1.5.awaiting.authorization.remote": {
-    "en": "\nConnection progress\n[1/5] Awaiting authorization\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
-    "zh-CN": "\n连接进度\n[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
+  "installer.remote.control.authorization.prompt": {
+    "en": "\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
+    "zh-CN": "\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
   },
   "installer.connection.cancelled": {
     "en": "Connection cancelled.",
     "zh-CN": "已取消连接。"
   },
-  "installer.2.5.checking.connectivity.and.version": {
-    "en": "[2/5] Checking connectivity and version…",
-    "zh-CN": "[2/5] 检查连通性与版本…"
+  "installer.1.4.checking.connectivity.and.version": {
+    "en": "[1/4] Checking connectivity and version…",
+    "zh-CN": "[1/4] 检查连通性与版本…"
   },
   "installer.server.reachable.invitation.and.version.verified": {
     "en": "      Server reachable; invitation and version verified.",
     "zh-CN": "      服务可达，邀请和版本校验通过。"
   },
-  "installer.3.5.preparing.client": {
-    "en": "[3/5] Preparing client…",
-    "zh-CN": "[3/5] 准备客户端…"
+  "installer.2.4.preparing.client": {
+    "en": "[2/4] Preparing client…",
+    "zh-CN": "[2/4] 准备客户端…"
   },
   "installer.cached.client.verified.skipping.download": {
     "en": "      Cached client verified; skipping download.",
@@ -530,10 +530,6 @@
   "installer.websocket.connectivity.check.failed.http.s.check": {
     "en": "WebSocket connectivity check failed (HTTP %s). Check the server and reverse proxy configuration.",
     "zh-CN": "WebSocket 连通性检查失败（HTTP %s），请检查服务器和反向代理配置。"
-  },
-  "installer.1.5.awaiting.authorization": {
-    "en": "[1/5] Awaiting authorization",
-    "zh-CN": "[1/5] 等待连接授权"
   },
   "installer.remote.control.authorization": {
     "en": "⚠️ Remote control authorization",
@@ -674,5 +670,13 @@
   "dialog.error": {
     "en": "Error",
     "zh-CN": "错误"
+  },
+  "client.already.connected.to.server": {
+    "en": "This account already has a connection to this server on this computer. Disconnect the existing client before reconnecting.",
+    "zh-CN": "当前账户在本机已有到此服务器的连接，请先断开已有客户端，再重新连接。"
+  },
+  "client.connection.lock.failed": {
+    "en": "Cannot reserve the local connection: %v",
+    "zh-CN": "无法获取本机连接锁：%v"
   }
 }

@@ -2,6 +2,7 @@ package client
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
@@ -33,6 +34,8 @@ type CommandEvent struct {
 // Output, when supplied, receives process output with its command ID; otherwise
 // process output is written to logWriter as it arrives.
 type Callbacks struct {
+	// Redeemed receives the reusable token after an invitation is exchanged.
+	Redeemed  func(token string)
 	Connected func()
 	Command   func(CommandEvent)
 	Output    func(id string, data []byte)
@@ -180,9 +183,41 @@ func Run(ctx context.Context, token string, logWriter io.Writer, onConnected fun
 // RunWithCallbacks runs a connection with structured lifecycle notifications for
 // consumers such as the desktop UI. A lost connection still requires reconnecting.
 func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, callbacks Callbacks) error {
+	return runWithCallbacks(ctx, token, false, logWriter, callbacks)
+}
+
+// RunInvitationWithCallbacks reserves this user's connection to the server
+// before redeeming the invitation, holding the reservation until disconnection.
+// The caller must obtain user consent before calling this function.
+func RunInvitationWithCallbacks(ctx context.Context, invitation string, logWriter io.Writer, callbacks Callbacks) error {
+	return runWithCallbacks(ctx, invitation, true, logWriter, callbacks)
+}
+
+func runWithCallbacks(ctx context.Context, token string, invitation bool, logWriter io.Writer, callbacks Callbacks) error {
 	t, err := protocol.Decode(token)
 	if err != nil {
 		return err
+	}
+	lock, err := acquireConnectionLock(t.URL)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if invitation {
+		token, err = invite.Redeem(ctx, token)
+		if err != nil {
+			return err
+		}
+		if callbacks.Redeemed != nil {
+			callbacks.Redeemed(token)
+		}
+		t, err = protocol.Decode(token)
+		if err != nil {
+			return err
+		}
 	}
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+t.Secret)

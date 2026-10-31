@@ -88,6 +88,7 @@ type clientView struct {
 	generation uint64
 	ticker     *time.Ticker
 	done       chan struct{}
+	invitation string
 }
 
 func padded(object fyne.CanvasObject, top, bottom, left, right float32) *fyne.Container {
@@ -193,10 +194,17 @@ func newClientView(win fyne.Window) *clientView {
 }
 
 func (v *clientView) connect() {
+	value := strings.TrimSpace(v.token.Text)
+	v.connectValue(value, value != "" && value == v.invitation)
+}
+
+func (v *clientView) connectValue(value string, invitation bool) {
 	if v.closed || v.connecting || v.connected {
 		return
 	}
-	value := strings.TrimSpace(v.token.Text)
+	if invitation {
+		v.invitation = value
+	}
 	decoded, err := protocol.Decode(value)
 	if err != nil {
 		message := tr("invalid.token.paste.the.complete.token.from")
@@ -224,9 +232,21 @@ func (v *clientView) connect() {
 	v.buffer = buffer
 	v.decoder = displayDecoder{}
 	v.content.Refresh()
+	run := client.RunWithCallbacks
+	if invitation {
+		run = client.RunInvitationWithCallbacks
+	}
 	go func() {
 		defer stop()
-		err := client.RunWithCallbacks(ctx, value, buffer, client.Callbacks{
+		err := run(ctx, value, buffer, client.Callbacks{
+			Redeemed: func(token string) {
+				fyne.Do(func() {
+					if !v.closed && current == v.generation {
+						v.invitation = ""
+						v.token.SetText(token)
+					}
+				})
+			},
 			Connected: func() {
 				fyne.Do(func() {
 					if v.closed || current != v.generation || ctx.Err() != nil {

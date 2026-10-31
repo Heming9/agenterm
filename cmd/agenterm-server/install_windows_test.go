@@ -102,7 +102,7 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	}
 	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
 		out, err := runWithInput(answer)
-		if err != nil || !strings.Contains(out, "已取消连接。") || strings.Contains(out, "[2/5]") {
+		if err != nil || !strings.Contains(out, "已取消连接。") || strings.Contains(out, "连接进度") {
 			t.Fatalf("cancel with %q: %v\n%s", answer, err, out)
 		}
 		if probeRequests.Load() != 0 || manifestRequests.Load() != 0 || archiveRequests.Load() != 0 {
@@ -122,7 +122,7 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 			t.Fatalf("missing or duplicate consent prompt: %s", out)
 		}
 		previous := -1
-		for _, stage := range []string{"[1/5]", "[2/5]", "[3/5]", "arg=-invite"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[1/4]", "[2/4]", "arg=-invite"} {
 			index := strings.Index(out, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", out)

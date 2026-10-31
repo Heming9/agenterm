@@ -81,12 +81,14 @@ Without `--generate`, the server creates connections only on demand. A client to
 
 Both clients keep recent logs in memory (~64 KiB), never save tokens, and require manual reconnection. Closing the client disconnects it.
 
+Under the same OS account, CLI and GUI share an exclusive local connection lock for each server address, including different invitations. A duplicate attempt exits before redeeming its invitation; disconnecting or exiting the process releases the lock. Different server addresses can connect independently. Lock files live in `~/.agenterm/locks`, contain no credentials, and are separate from the download cache. Do not delete them while a client is running; their existence alone does not block a connection. This check requires updated clients and does not merge different DNS aliases for a server.
+
 ## Details
 
 <details>
 <summary>Invitations & downloads</summary>
 
-Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server and first show a remote control warning and request authorization. After confirmation, they validate the invitation and version compatibility, probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and connect without another prompt. Cancelling stops immediately without probing or downloading the client. Probes do not redeem invitations or register clients. Installation shows five connection stages: authorization, connectivity check, client preparation, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
+Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server and first show a remote control warning and request authorization. After confirmation, they validate the invitation and version compatibility, probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and connect without another prompt. Cancelling stops immediately without probing or downloading the client. Probes do not redeem invitations or register clients. After authorization, installation shows four connection stages: connectivity check, client preparation, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
 
 Commands use a short `/agenterm/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 

@@ -39,6 +39,7 @@ type tuiEvent struct {
 	id         string
 	output     []byte
 	connected  bool
+	redeemed   string
 	err        error
 	finished   bool
 }
@@ -58,6 +59,7 @@ type tuiModel struct {
 	lastID                        string
 	width, height                 int
 	connectionProgress            bool
+	invitation                    string
 	spacing                       logview.Spacing
 }
 
@@ -73,6 +75,9 @@ func newTUI(token string) *tuiModel {
 func runTUI(token string, connectionProgress bool) error {
 	m := newTUI(token)
 	m.connectionProgress = connectionProgress
+	if connectionProgress {
+		m.invitation = token
+	}
 	defer m.cancel()
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
@@ -103,8 +108,13 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.state = "connecting"
 	m.input.Blur()
 	token := strings.TrimSpace(m.input.Value())
+	run := client.RunWithCallbacks
+	if token != "" && token == m.invitation {
+		run = client.RunInvitationWithCallbacks
+	}
 	go func() {
-		err := client.RunWithCallbacks(m.ctx, token, io.Discard, client.Callbacks{
+		err := run(m.ctx, token, io.Discard, client.Callbacks{
+			Redeemed:  func(token string) { m.send(generation, tuiEvent{redeemed: token}) },
 			Connected: func() { m.send(generation, tuiEvent{connected: true}) },
 			Command:   func(e client.CommandEvent) { m.send(generation, tuiEvent{command: &e}) },
 			Output: func(id string, data []byte) {
@@ -222,6 +232,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.generation {
 			return m, m.waitEvent()
 		}
+		if msg.redeemed != "" {
+			m.input.SetValue(msg.redeemed)
+			m.invitation = ""
+		}
 		if msg.connected {
 			m.state = "connected"
 			m.logs = ""
@@ -317,7 +331,7 @@ func (m *tuiModel) view() string {
 	if m.connectionProgress {
 		switch m.state {
 		case "connecting":
-			status = tr("4.5.connecting")
+			status = tr("3.4.connecting")
 		}
 	}
 	if style, ok := statusStyles[m.state]; ok {

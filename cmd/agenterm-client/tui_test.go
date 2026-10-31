@@ -20,7 +20,7 @@ func TestInvitationProgressRequiresConnectedEvent(t *testing.T) {
 	m.generation = 1
 	m.state = "connecting"
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
-	if !strings.Contains(m.View(), "[4/5]") || strings.Contains(m.View(), progressConnected) {
+	if !strings.Contains(m.View(), "[3/4]") || strings.Contains(m.View(), progressConnected) {
 		t.Fatalf("premature connection success: %s", m.View())
 	}
 	m.Update(tuiEvent{generation: 1, finished: true, err: errors.New("handshake rejected")})
@@ -38,8 +38,23 @@ func TestInvitationProgressRequiresConnectedEvent(t *testing.T) {
 		t.Fatalf("successful handshake missing progress: %s", m.View())
 	}
 	header := ansi.Strip(strings.Split(m.View(), "\n")[0])
-	if !strings.HasSuffix(header, "已连接 ") || strings.Contains(header, "[5/5]") {
+	if !strings.HasSuffix(header, "已连接 ") || strings.Contains(header, "[4/4]") {
 		t.Fatalf("connected header still shows progress: %q", header)
+	}
+}
+
+func TestRedeemedInvitationUsesReusableTokenOnRetry(t *testing.T) {
+	m := newTUI("invitation")
+	defer m.cancel()
+	m.invitation = "invitation"
+	m.generation = 1
+	m.Update(tuiEvent{generation: 0, redeemed: "stale"})
+	if m.invitation != "invitation" || m.input.Value() != "invitation" {
+		t.Fatal("stale redemption replaced the current credential")
+	}
+	m.Update(tuiEvent{generation: 1, redeemed: "reusable-token"})
+	if m.invitation != "" || m.input.Value() != "reusable-token" {
+		t.Fatal("retry would redeem the consumed invitation again")
 	}
 }
 
