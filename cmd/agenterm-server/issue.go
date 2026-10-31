@@ -39,10 +39,12 @@ func (s *server) createClient() (map[string]any, error) {
 	s.tokens[token] = secret
 	s.invitations[inviteSecret] = invitation{token: token, expires: expires}
 	result := map[string]any{"client_token": token, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
+	shell, powershell := "不可用：请使用发布版服务端", "不可用：请使用发布版服务端"
 	if validReleaseTag.MatchString(releaseTag) {
-		shell, powershell := installCommands(releaseTag, value)
+		shell, powershell = installCommands(releaseTag, value)
 		result["macos_linux_command"] = shell
 		result["windows_powershell_command"] = powershell
 	}
+	result["display_text"] = fmt.Sprintf("连接 token：\n%s\n\n无客户端\nmacOS / Linux 一键连接命令：\n%s\n\nWindows 一键连接命令：\n%s", token, shell, powershell)
 	return result, nil
 }

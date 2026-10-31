@@ -341,7 +341,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			tool("session_stop", "Stop a running session.", map[string]any{"session_id": stringField("Session identifier")}, []string{"session_id"}),
 		}
 		if admin {
-			tools = append(tools, tool("create_client", "Create a client connection token and a one-time invitation. Use client_token with client tools to select this client. Treat all returned values as credentials.", map[string]any{}, []string{}))
+			tools = append(tools, tool("create_client", "Create a client connection token and a one-time invitation. Present display_text to the user before waiting for a connection, preserving its token and both platform commands. The commands are alternative ways to redeem the same single-use invitation; expires_at is its expiration time. If commands are unavailable, explain that a release build is required. Use client_token with client tools to select this client. Treat tokens and commands as credentials and share privately.", map[string]any{}, []string{}))
 			for _, item := range tools[:len(tools)-1] {
 				t := item.(map[string]any)
 				schema := t["inputSchema"].(map[string]any)

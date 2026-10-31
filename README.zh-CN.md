@@ -100,7 +100,7 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --passwd '替换为安全的随机密钥'
 ```
 
-以 `Authorization: Bearer <管理密钥>` 连接 `/mcp`，调用 `create_client`（无需参数）。结果包含 `client_token`、一次性 `invitation` 和 `expires_at`；发布版还会返回 `macos_linux_command` 和 `windows_powershell_command`，可私下发给对应设备的使用者。源码构建不返回下载命令。管理密钥下调用 `wait_for_client`、`execute_command` 或会话工具时，需要在参数中提供返回的 `client_token` 来选择目标，例如：
+以 `Authorization: Bearer <管理密钥>` 连接 `/mcp`，调用 `create_client`（无需参数）。结果包含 `client_token`、一次性 `invitation` 和 `expires_at`，以及供 Agent 展示的 `display_text`：连接 token、无客户端时的 macOS / Linux 和 Windows 一键连接命令。发布版还会分别返回 `macos_linux_command` 和 `windows_powershell_command`；源码构建会说明命令不可用。两条命令使用同一个一次性邀请，任选其一，并私下发给对应设备的使用者。管理密钥下调用 `wait_for_client`、`execute_command` 或会话工具时，需要在参数中提供返回的 `client_token` 来选择目标，例如：
 
 ```json
 {"client_token":"agenterm:...","timeout_ms":30000}

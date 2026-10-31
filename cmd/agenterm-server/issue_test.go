@@ -5,11 +5,45 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"agenterm/internal/invite"
 	"context"
 )
+
+func TestCreateClientDisplayText(t *testing.T) {
+	originalTag := releaseTag
+	t.Cleanup(func() { releaseTag = originalTag })
+	for _, tag := range []string{"v1.2.3", ""} {
+		t.Run(tag, func(t *testing.T) {
+			releaseTag = tag
+			s := &server{clientURL: "wss://example.com/client"}
+			result, err := s.createClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			display := result["display_text"].(string)
+			for _, part := range []string{"连接 token：\n" + result["client_token"].(string), "无客户端", "macOS / Linux 一键连接命令：", "Windows 一键连接命令："} {
+				if !strings.Contains(display, part) {
+					t.Fatalf("display missing %q: %s", part, display)
+				}
+			}
+			if tag == "" {
+				if !strings.Contains(display, "不可用：请使用发布版服务端") {
+					t.Fatalf("missing unavailable explanation: %s", display)
+				}
+			} else {
+				for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
+					command := result[key].(string)
+					if !strings.Contains(display, command) || !strings.Contains(command, result["invitation"].(string)) {
+						t.Fatalf("invalid %s in display: %s", key, display)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestManagementCreatesAndUsesClient(t *testing.T) {
 	s := &server{adminKey: "admin-test", tokens: map[string]string{}, clients: map[string]*client{}, invitations: map[string]invitation{}}

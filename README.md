@@ -102,7 +102,7 @@ By default the server does not create client tokens or invitations at startup; a
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --passwd 'replace-with-a-secure-random-key'
 ```
 
-Connect to `/mcp` with `Authorization: Bearer <management key>` and call `create_client` with no arguments. It returns `client_token`, a one-time `invitation`, and `expires_at`. Release builds also return `macos_linux_command` and `windows_powershell_command` to share privately with the target user; locally built servers do not return download commands. When using the management key, pass the returned `client_token` to `wait_for_client`, `execute_command`, or session tools to select the target, for example:
+Connect to `/mcp` with `Authorization: Bearer <management key>` and call `create_client` with no arguments. It returns `client_token`, a one-time `invitation`, `expires_at`, and `display_text` for the agent to show the token and macOS / Linux and Windows one-command connection options. Release builds also return the commands separately as `macos_linux_command` and `windows_powershell_command`; locally built servers indicate that the commands are unavailable. The commands redeem the same single-use invitation, so choose one and share it privately with the target user. When using the management key, pass the returned `client_token` to `wait_for_client`, `execute_command`, or session tools to select the target, for example:
 
 ```json
 {"client_token":"agenterm:...","timeout_ms":30000}
