@@ -4,7 +4,7 @@
 
 [English](README.md) | 简体中文
 
-**给 Agent 接一台远程电脑的 shell，走 MCP。**
+**让Agents随时随地控制任意远程电脑**
 
 ```text
 Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> shell

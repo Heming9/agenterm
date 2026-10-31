@@ -4,7 +4,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Give your agent a shell on another machine. Over MCP.**
+**Let agents control any remote computer, anytime, anywhere.**
 
 ```text
 Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> shell
