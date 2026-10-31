@@ -27,8 +27,8 @@ func TestPowerShellInvitationInstaller(t *testing.T) {
 	name := "agenterm-cli-windows-" + runtime.GOARCH + ".exe"
 	source := filepath.Join(root, "main.go")
 	if err := os.WriteFile(source, []byte(`package main
-import ("bufio"; "fmt"; "os"; "strings")
-func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Printf("consent=%s arg=%s invitation=%s\n", strings.TrimSpace(answer), os.Args[1], os.Args[2]) }
+import ("fmt"; "os")
+func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Args[2], os.Args[3]) }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -61,9 +61,12 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 		t.Fatal(err)
 	}
 	state := &server{}
-	var archiveRequests, manifestRequests atomic.Int32
+	var archiveRequests, manifestRequests, probeRequests atomic.Int32
 	mux := state.routes(installerTestTag, os.DirFS(root))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == protocol.ClientPath {
+			probeRequests.Add(1)
+		}
 		if strings.HasSuffix(r.URL.Path, "/"+archive) {
 			archiveRequests.Add(1)
 		}
@@ -80,7 +83,7 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 	}
 	value := issued["invitation"].(string)
 	_, command := installCommands(value)
-	run := func() (string, error) {
+	runWithInput := func(input string) (string, error) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -93,14 +96,38 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 			}
 		}
 		cmd.Env = append(cmd.Env, "LOCALAPPDATA="+filepath.Join(root, "local"))
-		cmd.Stdin = strings.NewReader("y\n")
+		cmd.Stdin = strings.NewReader(input)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
+	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
+		out, err := runWithInput(answer)
+		if err != nil || !strings.Contains(out, "已取消连接。") || strings.Contains(out, "[2/5]") {
+			t.Fatalf("cancel with %q: %v\n%s", answer, err, out)
+		}
+		if probeRequests.Load() != 0 || manifestRequests.Load() != 0 || archiveRequests.Load() != 0 {
+			t.Fatal("installer probed or downloaded before consent")
+		}
+		if _, err := os.Stat(filepath.Join(root, "local")); !os.IsNotExist(err) {
+			t.Fatalf("cache created before consent: %v", err)
+		}
+	}
+	run := func() (string, error) { return runWithInput("y\n") }
 	for i, message := range []string{"正在下载客户端", "本地客户端校验通过，跳过下载"} {
 		out, err := run()
-		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "consent=y arg=-invite invitation="+value) {
+		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-invite invitation="+value+" consent=-consent-confirmed") {
 			t.Fatalf("run %d: %v\n%s", i, err, out)
+		}
+		if strings.Count(out, "是否允许连接？[y/N]") != 1 || !strings.Contains(out, "请确保你信任对方") {
+			t.Fatalf("missing or duplicate consent prompt: %s", out)
+		}
+		previous := -1
+		for _, stage := range []string{"[1/5]", "[2/5]", "[3/5]", "arg=-invite"} {
+			index := strings.Index(out, stage)
+			if index <= previous {
+				t.Fatalf("unexpected stage order: %s", out)
+			}
+			previous = index
 		}
 	}
 	if archiveRequests.Load() != 1 {

@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-func TestShellInvitationPreservesConsentInput(t *testing.T) {
+func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires a POSIX shell")
 	}
@@ -41,7 +41,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 		}
 	}
 	name := "agenterm-cli-linux-amd64"
-	client := []byte("#!/bin/sh\nread -r answer\nprintf 'consent=%s arg=%s invitation=%s\\n' \"$answer\" \"$1\" \"$2\"\n")
+	client := []byte("#!/bin/sh\nprintf 'arg=%s invitation=%s consent=%s\\n' \"$1\" \"$2\" \"$3\"\n")
 	var data bytes.Buffer
 	gz := gzip.NewWriter(&data)
 	tarball := tar.NewWriter(gz)
@@ -100,6 +100,25 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	invitation := issued["invitation"].(string)
 	command, _ := installCommands(invitation)
 	cache := filepath.Join(root, "cache")
+	// Cancellation must happen before probing, creating a cache, or downloading.
+	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
+		before, _ := os.ReadFile(log)
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+		cmd.Stdin = strings.NewReader(answer)
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), "已取消连接。") || strings.Contains(string(out), "[2/5]") {
+			t.Fatalf("cancel with %q: %v\n%s", answer, err, out)
+		}
+		after, _ := os.ReadFile(log)
+		requests := string(after[len(before):])
+		if strings.Contains(requests, "/client") || strings.Contains(requests, "/downloads/") {
+			t.Fatalf("requests after cancellation: %s", requests)
+		}
+		if _, err := os.Stat(cache); !os.IsNotExist(err) {
+			t.Fatalf("cache created before consent: %v", err)
+		}
+	}
 	run := func() string {
 		t.Helper()
 		cmd := exec.Command("sh", "-c", command)
@@ -109,10 +128,22 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command failed: %v\n%s", err, out)
 		}
-		if !strings.Contains(string(out), "consent=y arg=-invite invitation="+invitation) {
+		if !strings.Contains(string(out), "arg=-invite invitation="+invitation+" consent=-consent-confirmed") {
 			t.Fatalf("unexpected client output: %s", out)
 		}
-		return string(out)
+		output := string(out)
+		if strings.Count(output, "是否允许连接？[y/N]") != 1 || !strings.Contains(output, "请确保你信任对方") {
+			t.Fatalf("missing or duplicate consent prompt: %s", output)
+		}
+		previous := -1
+		for _, stage := range []string{"[1/5]", "[2/5]", "[3/5]", "arg=-invite"} {
+			index := strings.Index(output, stage)
+			if index <= previous {
+				t.Fatalf("unexpected stage order: %s", output)
+			}
+			previous = index
+		}
+		return output
 	}
 	if output := run(); !strings.Contains(output, "正在下载客户端") {
 		t.Fatalf("first run: %s", output)
@@ -146,7 +177,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "Archive checksum mismatch") || strings.Contains(string(out), "consent=y") {
+	if err == nil || !strings.Contains(string(out), "Archive checksum mismatch") || strings.Contains(string(out), "arg=-invite") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
 	}
 	// Invalid/expired invitations must fail before fetching the manifest or archive,
@@ -178,6 +209,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	before = after
 	cmd = exec.Command("sh", "-c", command)
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+	cmd.Stdin = strings.NewReader("y\n")
 	out, err = cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "WebSocket connectivity check failed (HTTP 403)") {
 		t.Fatalf("blocked WebSocket: err=%v output=%s", err, out)

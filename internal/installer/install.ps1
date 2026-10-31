@@ -1,11 +1,21 @@
 param([Parameter(Mandatory=$true)][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base)
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw 'Unsupported architecture' } }
 $origin = $Base -replace '/downloads/[^/]+$', ''
 Write-Host "`n连接进度"
-Write-Host '[1/5] 检查连通性与版本…'
+Write-Host '[1/5] 等待连接授权'
+Write-Host '⚠️ 远程控制授权'
+Write-Host "`n服务器：$origin"
+Write-Host '连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。'
+Write-Host "`n是否允许连接？[y/N] " -NoNewline
+$answer = [Console]::ReadLine()
+if ($null -eq $answer -or $answer.Trim() -ine 'y') {
+  Write-Host '已取消连接。'
+  return
+}
+$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw 'Unsupported architecture' } }
+Write-Host '[2/5] 检查连通性与版本…'
 $probe = [System.Net.WebSockets.ClientWebSocket]::new()
 $timeout = [System.Threading.CancellationTokenSource]::new(10000)
 try {
@@ -23,7 +33,7 @@ try {
   $timeout.Dispose()
 }
 Write-Host '      服务可达，邀请和版本校验通过。'
-Write-Host '[2/5] 准备客户端…'
+Write-Host '[3/5] 准备客户端…'
 if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is not set' }
 $cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
 New-Item -ItemType Directory -Path $cache -Force | Out-Null
@@ -71,5 +81,5 @@ try {
     }
     Write-Host '      客户端校验通过。'
   }
-  & $program -invite $Invitation
+  & $program -invite $Invitation -consent-confirmed
 } finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }

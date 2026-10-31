@@ -4,6 +4,15 @@ version='@RELEASE_TAG@'
 invitation=${1:?missing invitation}
 base=${2:?missing download URL}
 origin=${base%/downloads/*}
+printf '\n连接进度\n[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] ' "$origin"
+if ! read -r answer; then
+  echo '已取消连接。'
+  exit 0
+fi
+case "$answer" in
+  y|Y) ;;
+  *) echo '已取消连接。'; exit 0 ;;
+esac
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) echo 'Unsupported system' >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo 'Unsupported architecture' >&2; exit 1;; esac
 case "$os" in
@@ -15,7 +24,7 @@ cache="$cache_root/$version/$os-$arch"
 mkdir -p "$cache"
 work=$(mktemp -d "$cache/.tmp.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-printf '\n连接进度\n[1/5] 检查连通性与版本…\n'
+printf '[2/5] 检查连通性与版本…\n'
 if ! status=$(curl --http1.1 -sS --connect-timeout 5 --max-time 10 \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
   -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
@@ -37,7 +46,7 @@ awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pP
   echo 'Invalid WebSocket handshake response.' >&2; exit 1
 }
 echo '      服务可达，邀请和版本校验通过。'
-echo '[2/5] 准备客户端…'
+echo '[3/5] 准备客户端…'
 asset="agenterm-cli-$os-$arch.tar.gz"
 name="agenterm-cli-$os-$arch"
 binary="$cache/$name"
@@ -71,4 +80,4 @@ else
   mv -f "$work/$name" "$binary"
   echo '      客户端校验通过。'
 fi
-"$binary" -invite "$invitation"
+"$binary" -invite "$invitation" -consent-confirmed

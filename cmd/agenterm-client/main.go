@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	progressAuthorize = "[3/5] 等待连接授权"
+	progressAuthorize = "[1/5] 等待连接授权"
 	progressConnect   = "[4/5] 正在验证邀请并连接服务器…"
 	progressConnected = "[5/5] 连接成功"
 )
@@ -25,6 +25,7 @@ func main() {
 	tokenFlag := flag.String("token", "", "connection token (omit to enter interactively)")
 	plainFlag := flag.Bool("plain", false, "use plain text output")
 	inviteFlag := flag.String("invite", "", "one-time invitation")
+	consentConfirmedFlag := flag.Bool("consent-confirmed", false, "connection consent already obtained by the installer")
 	flag.Parse()
 	token := strings.TrimSpace(*tokenFlag)
 	if *inviteFlag != "" {
@@ -32,11 +33,13 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("%s\n服务器：%s\n连接后，对方可以使用当前用户权限执行命令。\n允许连接？[y/N] ", progressAuthorize, strings.TrimSuffix(endpoint, "/invite/redeem"))
-		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
-			fmt.Println("已取消连接。")
-			return
+		if !*consentConfirmedFlag {
+			fmt.Printf("%s\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] ", progressAuthorize, strings.TrimSuffix(endpoint, "/invite/redeem"))
+			answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+				fmt.Println("已取消连接。")
+				return
+			}
 		}
 		fmt.Println(progressConnect)
 		token, err = invite.Redeem(context.Background(), *inviteFlag)
