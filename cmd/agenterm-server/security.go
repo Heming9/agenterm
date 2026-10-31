@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"agenterm/internal/i18n"
 	"net"
 	"sync"
 	"time"
@@ -62,10 +62,10 @@ func (l *authLimiter) check(remote string, valid bool, now time.Time) bool {
 
 func (s *server) authorize(remote string, valid bool) (int, error) {
 	if !s.limiter.check(remote, valid, time.Now()) {
-		return 429, fmt.Errorf("too many authentication failures; try again later")
+		return 429, i18n.NewError("too.many.authentication.failures.try.again.later")
 	}
 	if !valid {
-		return 401, fmt.Errorf("unauthorized")
+		return 401, i18n.NewError("unauthorized")
 	}
 	return 0, nil
 }

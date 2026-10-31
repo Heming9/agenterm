@@ -3,11 +3,12 @@ package main
 import (
 	"agenterm/internal/i18n"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/dialog"
 )
 
 var uiLanguage = "en"
 
-func tr(en, zh string) string { return i18n.Text(uiLanguage, en, zh) }
+func tr(key string) string { return i18n.Text(uiLanguage, key) }
 
 func configureLanguage(a fyne.App, win fyne.Window) {
 	choice := a.Preferences().StringWithFallback("language", "auto")
@@ -17,10 +18,16 @@ func configureLanguage(a fyne.App, win fyne.Window) {
 	}
 	// The saved setting applies next time so an active connection is never interrupted.
 	set := func(value string) { a.Preferences().SetString("language", value) }
-	win.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("Language / 语言",
-		fyne.NewMenuItem("System / 跟随系统", func() { set("auto") }),
-		fyne.NewMenuItem("简体中文", func() { set("zh-CN") }),
-		fyne.NewMenuItem("English", func() { set("en") }),
-		fyne.NewMenuItem(tr("Restart to apply language changes", "重启后应用语言设置"), nil),
+	win.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu(tr("language.menu"),
+		fyne.NewMenuItem(tr("language.system"), func() { set("auto") }),
+		fyne.NewMenuItem(tr("language.chinese"), func() { set("zh-CN") }),
+		fyne.NewMenuItem(tr("language.english"), func() { set("en") }),
+		fyne.NewMenuItem(tr("restart.to.apply.language.changes"), nil),
 	)))
+}
+
+func showLocalizedError(err error, win fyne.Window) {
+	d := dialog.NewInformation(tr("dialog.error"), i18n.Localize(err, uiLanguage), win)
+	d.SetDismissText(tr("dialog.close"))
+	d.Show()
 }

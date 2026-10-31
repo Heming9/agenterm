@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"agenterm/internal/client"
+	"agenterm/internal/i18n"
 	"agenterm/internal/protocol"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -42,7 +43,7 @@ func (s *commandStats) text() string {
 	if s.completed > 0 {
 		average = durationText(s.total / time.Duration(s.completed))
 	}
-	return fmt.Sprintf(tr("%d commands  ·  Average %s", "已执行 %d 条  ·  平均耗时 %s"), s.completed, average)
+	return fmt.Sprintf(tr("d.commands.average.s"), s.completed, average)
 }
 
 func durationText(d time.Duration) string {
@@ -100,9 +101,9 @@ func mutedLabel(text string) *uiText {
 func newClientView(win fyne.Window) *clientView {
 	v := &clientView{window: win, buffer: &logBuffer{}, done: make(chan struct{})}
 	v.token = widget.NewEntry()
-	v.token.SetPlaceHolder(tr("Paste the connection token from the server", "粘贴 Server 生成的连接 Token"))
+	v.token.SetPlaceHolder(tr("paste.the.connection.token.from.the.server"))
 	v.token.OnSubmitted = func(string) { v.connect() }
-	v.connectButton = newButton(tr("Connect", "连接"), arrowIcon, func() {
+	v.connectButton = newButton(tr("connect"), arrowIcon, func() {
 		if v.connecting {
 			v.disconnect()
 		} else {
@@ -111,10 +112,10 @@ func newClientView(win fyne.Window) *clientView {
 	})
 	v.connectButton.IconPlacement = widget.ButtonIconTrailingText
 	v.connectButton.Importance = widget.HighImportance
-	v.disconnectButton = newButton(tr("Disconnect", "断开连接"), unplugIcon, v.disconnect)
+	v.disconnectButton = newButton(tr("disconnect"), unplugIcon, v.disconnect)
 	v.address = mutedLabel("")
 	v.address.TextStyle.Monospace = true
-	v.status = newText(tr("●  Connected", "●  已连接"), 12, colourTagText)
+	v.status = newText(tr("connected"), 12, colourTagText)
 	v.statusBadge = newSurface(padded(v.status, 4, 4, 10, 10), 6)
 	v.statusBadge.fill, v.statusBadge.border = colourTag, false
 	connectControl := container.NewThemeOverride(v.connectButton, buttonTheme{newMonochromeTheme(false)})
@@ -146,10 +147,10 @@ func newClientView(win fyne.Window) *clientView {
 	heading := container.NewVBox(padded(slot(v.header, 0, 38, false), 0, 18, 0, 0), v.connectionError, widget.NewSeparator())
 
 	v.statistics = mutedLabel(v.stats.text())
-	clearButton := newButton(tr("Clear", "清空"), trashIcon, v.clearLogs)
+	clearButton := newButton(tr("clear"), trashIcon, v.clearLogs)
 	clearButton.Importance = widget.LowImportance
 	clearControl := container.NewThemeOverride(clearButton, compactControlTheme{newMonochromeTheme(false)})
-	historyTitle := newText(tr("History", "执行记录"), 14, theme.ColorNameForeground)
+	historyTitle := newText(tr("history"), 14, theme.ColorNameForeground)
 	v.historyHeader = container.NewBorder(nil, nil, historyTitle,
 		container.New(layout.NewCustomPaddedHBoxLayout(12), v.statistics,
 			container.NewCenter(slot(widget.NewSeparator(), 1, 16, false)), clearControl), nil)
@@ -164,9 +165,9 @@ func newClientView(win fyne.Window) *clientView {
 	v.scroll = container.NewVScroll(padded(v.terminal, 20, 20, 20, 20))
 	v.scroll.SetMinSize(fyne.NewSize(0, 180))
 	v.scroll.Hide()
-	v.emptyTitle = mutedLabel(tr("Waiting for connection", "等待连接"))
+	v.emptyTitle = mutedLabel(tr("waiting.for.connection"))
 	v.emptyTitle.Alignment = fyne.TextAlignCenter
-	v.emptyDetail = mutedLabel(tr("Waiting for the next command from the agent.", "等待 Agent 执行下一个命令。"))
+	v.emptyDetail = mutedLabel(tr("waiting.for.the.next.command.from.the"))
 	v.emptyDetail.Alignment = fyne.TextAlignCenter
 	v.emptyDetail.Hide()
 	v.empty = container.NewCenter(container.New(layout.NewCustomPaddedVBoxLayout(7),
@@ -174,7 +175,7 @@ func newClientView(win fyne.Window) *clientView {
 		v.emptyTitle, v.emptyDetail))
 	viewport := container.NewStack(v.scroll, v.empty)
 	shell := client.Shell()
-	toolbarTitle := newText(tr("Commands and output", "命令与输出"), 11, theme.ColorNamePlaceHolder)
+	toolbarTitle := newText(tr("commands.and.output"), 11, theme.ColorNamePlaceHolder)
 	toolbarShell := newText(shell, 11, theme.ColorNamePlaceHolder)
 	terminalHeader := container.NewBorder(nil, nil,
 		container.New(layout.NewCustomPaddedHBoxLayout(8),
@@ -198,9 +199,9 @@ func (v *clientView) connect() {
 	value := strings.TrimSpace(v.token.Text)
 	decoded, err := protocol.Decode(value)
 	if err != nil {
-		message := tr("Invalid token. Paste the complete token from the server.", "Token 格式不正确，请粘贴 Server 生成的完整 Token。")
+		message := tr("invalid.token.paste.the.complete.token.from")
 		if value == "" {
-			message = tr("Enter a connection token.", "请先输入连接 Token。")
+			message = tr("enter.a.connection.token")
 		}
 		v.showConnectionError(message)
 		v.window.Canvas().Focus(v.token)
@@ -215,7 +216,7 @@ func (v *clientView) connect() {
 	v.cancel = stop
 	v.connecting = true
 	v.connectionError.Hide()
-	v.connectButton.SetText(tr("Cancel", "取消连接"))
+	v.connectButton.SetText(tr("cancel"))
 	v.connectButton.SetIcon(theme.CancelIcon())
 	v.connectButton.Importance = widget.MediumImportance
 	v.token.Disable()
@@ -235,7 +236,7 @@ func (v *clientView) connect() {
 					v.stats = commandStats{}
 					v.statistics.SetText(v.stats.text())
 					v.address.SetText(host)
-					v.status.SetText(tr("●  Connected", "●  已连接"))
+					v.status.SetText(tr("connected"))
 					v.disconnectButton.Enable()
 					v.token.SetText("")
 					v.inputRow.Hide()
@@ -244,7 +245,7 @@ func (v *clientView) connect() {
 					v.logSpans = nil
 					v.logColors.Segments = nil
 					v.logSelection.SetText("")
-					v.emptyTitle.SetText(tr("No commands yet", "暂无执行记录"))
+					v.emptyTitle.SetText(tr("no.commands.yet"))
 					v.emptyDetail.Show()
 					v.empty.Show()
 					v.scroll.Hide()
@@ -273,7 +274,7 @@ func (v *clientView) connect() {
 			wasConnected := v.connected
 			v.connected, v.connecting = false, false
 			v.cancel = nil
-			v.connectButton.SetText(tr("Connect", "连接"))
+			v.connectButton.SetText(tr("connect"))
 			v.connectButton.SetIcon(arrowIcon)
 			v.connectButton.Importance = widget.HighImportance
 			v.connectButton.Enable()
@@ -281,10 +282,10 @@ func (v *clientView) connect() {
 			v.connectedRow.Hide()
 			v.inputRow.Show()
 			if err != nil {
-				v.showConnectionError(tr("Connection ended: ", "连接已结束：") + err.Error())
-				fmt.Fprintf(buffer, "\n%s%v\n", tr("Connection ended: ", "连接已结束："), err)
+				v.showConnectionError(tr("connection.ended") + i18n.Localize(err, uiLanguage))
+				fmt.Fprintf(buffer, "\n%s%v\n", tr("connection.ended"), i18n.Localize(err, uiLanguage))
 			} else if wasConnected {
-				fmt.Fprintln(buffer, "\n"+tr("Disconnected.", "连接已断开。"))
+				fmt.Fprintln(buffer, "\n"+tr("disconnected"))
 			}
 			v.refreshTerminalTheme()
 			v.flushLogs()
@@ -301,9 +302,9 @@ func (v *clientView) showConnectionError(message string) {
 
 func (v *clientView) disconnect() {
 	if v.cancel != nil {
-		v.status.SetText(tr("●  Disconnecting", "●  正在断开"))
+		v.status.SetText(tr("disconnecting"))
 		if v.connecting {
-			v.connectButton.SetText(tr("Cancelling…", "正在取消…"))
+			v.connectButton.SetText(tr("cancelling"))
 			v.connectButton.Disable()
 		}
 		v.disconnectButton.Disable()
@@ -328,10 +329,10 @@ func (v *clientView) clearLogs() {
 	v.logColors.Refresh()
 	v.logSelection.SetText("")
 	v.scroll.Hide()
-	v.emptyTitle.SetText(tr("No commands yet", "暂无执行记录"))
+	v.emptyTitle.SetText(tr("no.commands.yet"))
 	v.emptyDetail.Show()
 	if !v.connected {
-		v.emptyTitle.SetText(tr("Waiting for connection", "等待连接"))
+		v.emptyTitle.SetText(tr("waiting.for.connection"))
 		v.emptyDetail.Hide()
 	}
 	v.empty.Show()

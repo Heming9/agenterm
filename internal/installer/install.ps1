@@ -3,22 +3,23 @@ $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
 $chinese = $language -match '^(zh-CN|zh-SG|zh-Hans)(-|$)' -or $language -eq 'zh'
-function Say([string]$English, [string]$Chinese) { if ($chinese) { Write-Host $Chinese } else { Write-Host $English } }
+@TRANSLATIONS@
+function Say([string]$Key) { Write-Host (Text $Key) }
 $origin = $Base -replace '/downloads/[^/]+$', ''
-Say "`nConnection progress" "`n连接进度"
-Say '[1/5] Awaiting authorization' '[1/5] 等待连接授权'
-Say '⚠️ Remote control authorization' '⚠️ 远程控制授权'
-Say "`nServer: $origin" "`n服务器：$origin"
-Say 'The server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.' '连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。'
-if ($chinese) { Write-Host "`n是否允许连接？[y/N] " -NoNewline } else { Write-Host "`nAllow connection? [y/N] " -NoNewline }
+Say 'installer.connection.progress'
+Say 'installer.1.5.awaiting.authorization'
+Say 'installer.remote.control.authorization'
+Write-Host (Text 'installer.server.s' @($origin))
+Say 'installer.the.server.can.control.this.computer.with'
+Write-Host (Text 'installer.allow.connection.y.n') -NoNewline
 $answer = [Console]::ReadLine()
 if ($null -eq $answer -or $answer.Trim() -ine 'y') {
-  Say 'Connection cancelled.' '已取消连接。'
+  Say 'installer.connection.cancelled'
   return
 }
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw 'Unsupported architecture' } }
-Say '[2/5] Checking connectivity and version…' '[2/5] 检查连通性与版本…'
+switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
+Say 'installer.2.5.checking.connectivity.and.version'
 $probe = [System.Net.WebSockets.ClientWebSocket]::new()
 $timeout = [System.Threading.CancellationTokenSource]::new(10000)
 try {
@@ -28,16 +29,16 @@ try {
   $null = $probe.ConnectAsync([Uri]$endpoint, $timeout.Token).GetAwaiter().GetResult()
 } catch {
   if ($_.Exception.ToString() -match '426') {
-    if ($chinese) { throw "版本不兼容：安装器 $Version 与 Server 不兼容。请将 Server 和 Client 更新到兼容版本。" } else { throw "Incompatible versions: installer $Version is incompatible with the server. Update server and client to compatible versions." }
+    throw (Text 'installer.incompatible.versions.installer.s.is.incompatible.with' @($Version))
   }
-  throw "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. $($_.Exception.Message)"
+  throw (Text 'installer.websocket.connectivity.check.failed.check.the.server' @($_.Exception.Message))
 } finally {
   $probe.Dispose()
   $timeout.Dispose()
 }
-Say '      Server reachable; invitation and version verified.' '      服务可达，邀请和版本校验通过。'
-Say '[3/5] Preparing client…' '[3/5] 准备客户端…'
-if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is not set' }
+Say 'installer.server.reachable.invitation.and.version.verified'
+Say 'installer.3.5.preparing.client'
+if (-not $env:LOCALAPPDATA) { throw (Text 'installer.localappdata.is.not.set') }
 $cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
 New-Item -ItemType Directory -Path $cache -Force | Out-Null
 $work = Join-Path $cache ('.tmp-' + [System.Guid]::NewGuid())
@@ -51,7 +52,7 @@ try {
   $manifest = Get-Content (Join-Path $work 'SHA256SUMS')
   function Get-ExpectedHash([string]$Name) {
     $line = $manifest | Where-Object { $_ -match ('^[a-fA-F0-9]{64}  ' + [regex]::Escape($Name) + '$') } | Select-Object -First 1
-    if (-not $line) { throw "Missing checksum for $Name" }
+    if (-not $line) { throw (Text 'installer.missing.checksum.for.s' @($Name)) }
     return $line.Substring(0, 64)
   }
   $expectedBinary = Get-ExpectedHash $binary
@@ -63,18 +64,18 @@ try {
     }
   }
   if ($valid) {
-    Say '      Cached client verified; skipping download.' '      本地客户端校验通过，跳过下载。'
+    Say 'installer.cached.client.verified.skipping.download'
   } else {
-    Say '      Downloading client…' '      正在下载客户端…'
+    Say 'installer.downloading.client'
     $expectedAsset = Get-ExpectedHash $asset
     $ProgressPreference = 'Continue'
     Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 "$base/$asset" -OutFile $file
-    Say '      Download complete; verifying and extracting…' '      下载完成，正在校验并解压…'
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash -ne $expectedAsset) { throw 'Archive checksum mismatch' }
+    Say 'installer.download.complete.verifying.and.extracting'
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash -ne $expectedAsset) { throw (Text 'installer.archive.checksum.mismatch') }
     Expand-Archive -LiteralPath $file -DestinationPath $work
     $staged = Join-Path $work $binary
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $staged).Hash -ne $expectedBinary) { throw 'Client checksum mismatch' }
-    if (Test-Path -LiteralPath $program -PathType Container) { throw 'Client cache path is a directory' }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $staged).Hash -ne $expectedBinary) { throw (Text 'installer.client.checksum.mismatch') }
+    if (Test-Path -LiteralPath $program -PathType Container) { throw (Text 'installer.client.cache.path.is.a.directory') }
     try {
       Move-Item -LiteralPath $staged -Destination $program -Force -ErrorAction Stop
     } catch {
@@ -82,7 +83,7 @@ try {
       # The independently verified staged client remains usable for this session.
       $program = $staged
     }
-    Say '      Client verified.' '      客户端校验通过。'
+    Say 'installer.client.verified'
   }
   & $program -invite $Invitation -consent-confirmed
 } finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }

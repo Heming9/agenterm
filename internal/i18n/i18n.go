@@ -2,6 +2,9 @@
 package i18n
 
 import (
+	"embed"
+	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
@@ -41,13 +44,50 @@ func Current() string {
 	return Resolve(values[0])
 }
 
-// Text returns the requested translation, using English for all other locales.
-func Text(lang, en, zh string) string {
-	if Resolve(lang) == "zh-CN" {
-		return zh
+//go:embed messages.json
+var resources embed.FS
+
+var messages = func() map[string]map[string]string {
+	data, err := resources.ReadFile("messages.json")
+	if err != nil {
+		panic(err)
 	}
-	return en
+	var result map[string]map[string]string
+	if err := json.Unmarshal(data, &result); err != nil {
+		panic(err)
+	}
+	return result
+}()
+
+// Text looks up a stable resource key, falling back to English.
+func Text(lang, key string) string {
+	entry := messages[key]
+	if value := entry[Resolve(lang)]; value != "" {
+		return value
+	}
+	if value := entry["en"]; value != "" {
+		return value
+	}
+	return key
 }
+
+// Error retains the resource key so the receiving UI can choose its language.
+type Error struct {
+	Key  string
+	Args []any
+}
+
+func (e *Error) Error() string { return e.Localize(Terminal()) }
+func (e *Error) Localize(lang string) string {
+	args := append([]any(nil), e.Args...)
+	for i, arg := range args {
+		if err, ok := arg.(*Error); ok {
+			args[i] = err.Localize(lang)
+		}
+	}
+	return fmt.Sprintf(strings.ReplaceAll(Text(lang, e.Key), "%w", "%v"), args...)
+}
+func NewError(key string, args ...any) error { return &Error{Key: key, Args: args} }
 
 // Terminal respects the invoking shell's locale before the system setting.
 func Terminal() string {
@@ -63,4 +103,20 @@ func Terminal() string {
 		}
 	}
 	return Current()
+}
+
+// Localize renders an application error in the receiving interface's language.
+func Localize(err error, lang string) string {
+	if e, ok := err.(*Error); ok {
+		return e.Localize(lang)
+	}
+	return err.Error()
+}
+func (e *Error) Unwrap() error {
+	for _, arg := range e.Args {
+		if err, ok := arg.(error); ok {
+			return err
+		}
+	}
+	return nil
 }

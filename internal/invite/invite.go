@@ -2,11 +2,11 @@
 package invite
 
 import (
+	"agenterm/internal/i18n"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -46,7 +46,7 @@ func Redeem(ctx context.Context, value string) (string, error) {
 	hc := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := hc.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("redeem invitation: %w", err)
+		return "", i18n.NewError("redeem.invitation.w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUpgradeRequired || res.StatusCode == http.StatusOK {
@@ -55,7 +55,7 @@ func Redeem(ctx context.Context, value string) (string, error) {
 		}
 	}
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("invitation invalid, expired, or already used (HTTP %d)", res.StatusCode)
+		return "", i18n.NewError("invitation.invalid.expired.or.already.used.http.d", res.StatusCode)
 	}
 	var result struct {
 		Token string `json:"token"`
@@ -69,7 +69,7 @@ func Redeem(ctx context.Context, value string) (string, error) {
 	}
 	source, _ := protocol.Decode(value)
 	if decoded.URL != source.URL {
-		return "", fmt.Errorf("invitation response points to a different server")
+		return "", i18n.NewError("invitation.response.points.to.a.different.server")
 	}
 	return result.Token, nil
 }

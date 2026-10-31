@@ -42,10 +42,10 @@ func main() {
 	if invitation != "" {
 		endpoint, _, err := invite.Endpoint(invitation)
 		if err != nil {
-			dialog.ShowError(err, win)
+			showLocalizedError(err, win)
 		} else {
 			u, _ := url.Parse(endpoint)
-			dialog.ShowConfirm(tr("Connection authorization", "连接授权"), fmt.Sprintf(tr("Allow server %s to execute commands with your current user permissions?\nClose the window or disconnect to end the session.", "允许服务器 %s 使用当前用户权限执行命令？\n关闭窗口或点击断开连接可结束会话。"), u.Host), func(allowed bool) {
+			confirmation := dialog.NewConfirm(tr("connection.authorization"), fmt.Sprintf(tr("allow.server.s.to.execute.commands.with"), u.Host), func(allowed bool) {
 				if !allowed {
 					return
 				}
@@ -53,7 +53,7 @@ func main() {
 					token, err := invite.Redeem(context.Background(), invitation)
 					fyne.Do(func() {
 						if err != nil {
-							dialog.ShowError(err, win)
+							showLocalizedError(err, win)
 							return
 						}
 						view.token.SetText(token)
@@ -61,6 +61,9 @@ func main() {
 					})
 				}()
 			}, win)
+			confirmation.SetConfirmText(tr("dialog.allow"))
+			confirmation.SetDismissText(tr("dialog.cancel"))
+			confirmation.Show()
 		}
 	}
 	win.ShowAndRun()

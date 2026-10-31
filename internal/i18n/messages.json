@@ -1,0 +1,678 @@
+{
+  "client.connected": {
+    "en": "client connected",
+    "zh-CN": "客户端已连接"
+  },
+  "client.disconnected": {
+    "en": "client disconnected",
+    "zh-CN": "客户端已断开"
+  },
+  "output.queue.full.for.s.closing.connection": {
+    "en": "output queue full for %s; closing connection",
+    "zh-CN": "%s 的输出队列已满，正在关闭连接"
+  },
+  "http.listen.address": {
+    "en": "HTTP listen address",
+    "zh-CN": "HTTP 监听地址"
+  },
+  "mcp.management.key.generated.when.omitted": {
+    "en": "MCP management key (generated when omitted)",
+    "zh-CN": "MCP 管理密钥（省略时自动生成）"
+  },
+  "allow.mcp.management.access.without.a.password": {
+    "en": "allow MCP management access without a password",
+    "zh-CN": "允许无需密码访问 MCP 管理接口"
+  },
+  "generate.a.client.token.and.invitation.at": {
+    "en": "generate a client token and invitation at startup",
+    "zh-CN": "启动时生成客户端 Token 和邀请"
+  },
+  "public.server.url.optional.agenterm.suffix": {
+    "en": "Public Server URL (optional /agenterm suffix)",
+    "zh-CN": "公开的 Server URL（可带 /agenterm 后缀）"
+  },
+  "passwd.must.be.nonempty.and.cannot.be": {
+    "en": "passwd must be nonempty and cannot be combined with no-password",
+    "zh-CN": "passwd 不能为空，也不能与 no-password 同时使用"
+  },
+  "mcp.management.key.save.securely.s": {
+    "en": "MCP management key (save securely):\n%s\n\n",
+    "zh-CN": "MCP 管理密钥（请妥善保存）：\n%s\n\n"
+  },
+  "warning.mcp.management.access.has.no.password": {
+    "en": "WARNING: MCP management access has no password; anyone who can reach the MCP endpoint can control the service.",
+    "zh-CN": "警告：MCP 管理接口未设置密码；任何可访问该接口的人都能控制服务。"
+  },
+  "agenterm.token.1.s": {
+    "en": "Agenterm token 1:\n%s\n\n",
+    "zh-CN": "Agenterm Token 1：\n%s\n\n"
+  },
+  "press.enter.to.replace.unredeemed.startup.invitations": {
+    "en": "Press Enter to replace unredeemed startup invitations with fresh ones.",
+    "zh-CN": "按 Enter 替换尚未使用的启动邀请。"
+  },
+  "mcp.endpoint.s.mcp": {
+    "en": "MCP endpoint: %s/mcp\n",
+    "zh-CN": "MCP 接口：%s/mcp\n"
+  },
+  "warning.http.and.websocket.traffic.is.unencrypted": {
+    "en": "WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.",
+    "zh-CN": "警告：HTTP 和 WebSocket 流量未加密，Token、命令和输出可能被截获。请通过反向代理使用 HTTPS 或使用可信网络。"
+  },
+  "unavailable.use.a.release.build.of.the": {
+    "en": "Unavailable: use a release build of the server",
+    "zh-CN": "不可用：请使用发布版服务端"
+  },
+  "connection.token.s.without.a.client.macos": {
+    "en": "Connection token:\n%s\n\nWithout a client\nmacOS / Linux connection command:\n%s\n\nWindows connection command:\n%s",
+    "zh-CN": "连接 token：\n%s\n\n无客户端\nmacOS / Linux 一键连接命令：\n%s\n\nWindows 一键连接命令：\n%s"
+  },
+  "invitation.d.expires.in.15.minutes.s": {
+    "en": "Invitation %d (expires in 15 minutes):\n%s\nInstaller commands are available in release builds.\n\n",
+    "zh-CN": "邀请 %d（15 分钟后过期）：\n%s\n发布版提供安装命令。\n\n"
+  },
+  "invitation.d.expires.in.15.minutes.share": {
+    "en": "Invitation %d (expires in 15 minutes; share privately):\n",
+    "zh-CN": "邀请 %d（15 分钟后过期；请私密分享）：\n"
+  },
+  "macos.linux.s.windows.powershell.s": {
+    "en": "macOS / Linux:\n%s\nWindows PowerShell:\n%s\n\n",
+    "zh-CN": "macOS / Linux：\n%s\nWindows PowerShell：\n%s\n\n"
+  },
+  "restart.to.apply.language.changes": {
+    "en": "Restart to apply language changes",
+    "zh-CN": "重启后应用语言设置"
+  },
+  "d.commands.average.s": {
+    "en": "%d commands  ·  Average %s",
+    "zh-CN": "已执行 %d 条  ·  平均耗时 %s"
+  },
+  "paste.the.connection.token.from.the.server": {
+    "en": "Paste the connection token from the server",
+    "zh-CN": "粘贴 Server 生成的连接 Token"
+  },
+  "connect": {
+    "en": "Connect",
+    "zh-CN": "连接"
+  },
+  "disconnect": {
+    "en": "Disconnect",
+    "zh-CN": "断开连接"
+  },
+  "connected": {
+    "en": "●  Connected",
+    "zh-CN": "●  已连接"
+  },
+  "clear": {
+    "en": "Clear",
+    "zh-CN": "清空"
+  },
+  "history": {
+    "en": "History",
+    "zh-CN": "执行记录"
+  },
+  "waiting.for.connection": {
+    "en": "Waiting for connection",
+    "zh-CN": "等待连接"
+  },
+  "waiting.for.the.next.command.from.the": {
+    "en": "Waiting for the next command from the agent.",
+    "zh-CN": "等待 Agent 执行下一个命令。"
+  },
+  "commands.and.output": {
+    "en": "Commands and output",
+    "zh-CN": "命令与输出"
+  },
+  "invalid.token.paste.the.complete.token.from": {
+    "en": "Invalid token. Paste the complete token from the server.",
+    "zh-CN": "Token 格式不正确，请粘贴 Server 生成的完整 Token。"
+  },
+  "enter.a.connection.token": {
+    "en": "Enter a connection token.",
+    "zh-CN": "请先输入连接 Token。"
+  },
+  "cancel": {
+    "en": "Cancel",
+    "zh-CN": "取消连接"
+  },
+  "no.commands.yet": {
+    "en": "No commands yet",
+    "zh-CN": "暂无执行记录"
+  },
+  "connection.ended": {
+    "en": "Connection ended: ",
+    "zh-CN": "连接已结束："
+  },
+  "disconnected": {
+    "en": "Disconnected.",
+    "zh-CN": "连接已断开。"
+  },
+  "disconnecting": {
+    "en": "●  Disconnecting",
+    "zh-CN": "●  正在断开"
+  },
+  "cancelling": {
+    "en": "Cancelling…",
+    "zh-CN": "正在取消…"
+  },
+  "connection.authorization": {
+    "en": "Connection authorization",
+    "zh-CN": "连接授权"
+  },
+  "allow.server.s.to.execute.commands.with": {
+    "en": "Allow server %s to execute commands with your current user permissions?\nClose the window or disconnect to end the session.",
+    "zh-CN": "允许服务器 %s 使用当前用户权限执行命令？\n关闭窗口或点击断开连接可结束会话。"
+  },
+  "paste.connection.token": {
+    "en": "Paste connection token",
+    "zh-CN": "粘贴连接 Token"
+  },
+  "disconnected.2": {
+    "en": "Disconnected",
+    "zh-CN": "已断开"
+  },
+  "connecting": {
+    "en": "Connecting",
+    "zh-CN": "正在连接"
+  },
+  "connected.2": {
+    "en": "Connected",
+    "zh-CN": "已连接"
+  },
+  "4.5.connecting": {
+    "en": "[4/5] Connecting…",
+    "zh-CN": "[4/5] 正在连接…"
+  },
+  "connection.token": {
+    "en": "Connection token:",
+    "zh-CN": "连接 Token："
+  },
+  "enter.connect.ctrl.c.quit": {
+    "en": "Enter connect  ·  Ctrl+C quit",
+    "zh-CN": "Enter 连接  ·  Ctrl+C 退出"
+  },
+  "d.commands.scroll.c.clear.q.quit": {
+    "en": "\n %d commands  ·  ↑↓ scroll  ·  c clear  ·  q quit",
+    "zh-CN": "\n %d 条命令  ·  ↑↓ 滚动  ·  c 清空  ·  q 退出"
+  },
+  "5.5.connected": {
+    "en": "[5/5] Connected",
+    "zh-CN": "[5/5] 连接成功"
+  },
+  "connection.token.omit.to.enter.interactively": {
+    "en": "connection token (omit to enter interactively)",
+    "zh-CN": "连接 Token（省略则交互输入）"
+  },
+  "use.plain.text.output": {
+    "en": "use plain text output",
+    "zh-CN": "使用纯文本输出"
+  },
+  "one.time.invitation": {
+    "en": "one-time invitation",
+    "zh-CN": "一次性邀请"
+  },
+  "connection.consent.already.obtained.by.the.installer": {
+    "en": "connection consent already obtained by the installer",
+    "zh-CN": "安装器已取得连接授权"
+  },
+  "1.5.awaiting.authorization.remote.control.authorization": {
+    "en": "[1/5] Awaiting authorization\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
+    "zh-CN": "[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
+  },
+  "connection.cancelled": {
+    "en": "Connection cancelled.",
+    "zh-CN": "已取消连接。"
+  },
+  "4.5.verifying.invitation.and.connecting": {
+    "en": "[4/5] Verifying invitation and connecting…",
+    "zh-CN": "[4/5] 正在验证邀请并连接服务器…"
+  },
+  "connection.failed.invitation.verification.v": {
+    "en": "Connection failed (invitation verification): %v",
+    "zh-CN": "连接失败（邀请验证）：%v"
+  },
+  "connection.token.2": {
+    "en": "Connection token: ",
+    "zh-CN": "连接 Token："
+  },
+  "connecting.once.connected.the.server.can.execute": {
+    "en": "Connecting. Once connected, the server can execute commands with your current user permissions. Close this program to disconnect.",
+    "zh-CN": "正在连接。连接后，服务器可使用当前用户权限执行命令。关闭程序即可断开连接。"
+  },
+  "close.the.client.to.disconnect": {
+    "en": ". Close the client to disconnect.",
+    "zh-CN": "。关闭客户端即可断开连接。"
+  },
+  "agenterm.connected.commands.from.the.server.will": {
+    "en": "[Agenterm] Connected. Commands from the server will appear here.",
+    "zh-CN": "[Agenterm] 已连接。服务器的命令将显示在这里。"
+  },
+  "language.menu": {
+    "en": "Language / 语言",
+    "zh-CN": "Language / 语言"
+  },
+  "language.system": {
+    "en": "System / 跟随系统",
+    "zh-CN": "System / 跟随系统"
+  },
+  "language.chinese": {
+    "en": "简体中文",
+    "zh-CN": "简体中文"
+  },
+  "language.english": {
+    "en": "English",
+    "zh-CN": "English"
+  },
+  "invalid.token.expected.a.d.byte.secret": {
+    "en": "invalid token: expected a %d-byte secret",
+    "zh-CN": "无效 Token：密钥应为 %d 字节"
+  },
+  "invalid.token.port.must.be.between.1.and": {
+    "en": "invalid token: port must be between 1 and 65535",
+    "zh-CN": "无效 Token：端口必须在 1 到 65535 之间"
+  },
+  "invalid.token.missing.s.prefix": {
+    "en": "invalid token: missing %s prefix",
+    "zh-CN": "无效 Token：缺少 %s 前缀"
+  },
+  "invalid.token.w": {
+    "en": "invalid token: %w",
+    "zh-CN": "无效 Token：%w"
+  },
+  "invalid.token.incomplete.payload": {
+    "en": "invalid token: incomplete payload",
+    "zh-CN": "无效 Token：数据不完整"
+  },
+  "invalid.token.unsupported.format.update.server.and.client": {
+    "en": "invalid token: unsupported format; update Server and Client together",
+    "zh-CN": "无效 Token：格式不受支持，请同步升级 Server 和 Client"
+  },
+  "invalid.token.unsupported.format": {
+    "en": "invalid token: unsupported format",
+    "zh-CN": "无效 Token：格式不受支持"
+  },
+  "invalid.token.malformed.ip.address": {
+    "en": "invalid token: malformed IP address",
+    "zh-CN": "无效 Token：IP 地址格式不正确"
+  },
+  "invalid.token.unsupported.address.format": {
+    "en": "invalid token: unsupported address format",
+    "zh-CN": "无效 Token：地址格式不受支持"
+  },
+  "invalid.token.malformed.host": {
+    "en": "invalid token: malformed host",
+    "zh-CN": "无效 Token：主机名格式不正确"
+  },
+  "invalid.token.expected.a.websocket.origin.with.s": {
+    "en": "invalid token: expected a WebSocket origin with %s path",
+    "zh-CN": "无效 Token：应为路径为 %s 的 WebSocket 地址"
+  },
+  "redeem.invitation.w": {
+    "en": "redeem invitation: %w",
+    "zh-CN": "验证邀请失败：%w"
+  },
+  "invitation.invalid.expired.or.already.used.http.d": {
+    "en": "invitation invalid, expired, or already used (HTTP %d)",
+    "zh-CN": "邀请无效、已过期或已使用（HTTP %d）"
+  },
+  "invitation.response.points.to.a.different.server": {
+    "en": "invitation response points to a different server",
+    "zh-CN": "邀请响应指向了不同的服务器"
+  },
+  "connect.w.http.d": {
+    "en": "connect: %w (HTTP %d)",
+    "zh-CN": "连接失败：%w（HTTP %d）"
+  },
+  "disconnected.w": {
+    "en": "disconnected: %w",
+    "zh-CN": "连接断开：%w"
+  },
+  "cursor.is.beyond.available.output": {
+    "en": "cursor is beyond available output",
+    "zh-CN": "游标超出可用输出范围"
+  },
+  "no.client.connected": {
+    "en": "no client connected",
+    "zh-CN": "尚无客户端连接"
+  },
+  "session.limit.reached.try.again.later": {
+    "en": "session limit reached; try again later",
+    "zh-CN": "会话数已达上限，请稍后重试"
+  },
+  "unknown.session": {
+    "en": "unknown session",
+    "zh-CN": "未知会话"
+  },
+  "session.already.ended": {
+    "en": "session already ended",
+    "zh-CN": "会话已结束"
+  },
+  "client.limit.reached": {
+    "en": "client limit reached",
+    "zh-CN": "客户端数量已达上限"
+  },
+  "public.url.must.be.an.http.s.origin": {
+    "en": "public-url must be an http(s) origin, optionally ending in %s",
+    "zh-CN": "public-url 必须为 HTTP(S) 地址，可带 %s 后缀"
+  },
+  "public.url.path.must.be.s": {
+    "en": "public-url path must be %s",
+    "zh-CN": "public-url 路径必须为 %s"
+  },
+  "too.many.authentication.failures.try.again.later": {
+    "en": "too many authentication failures; try again later",
+    "zh-CN": "身份验证失败次数过多，请稍后重试"
+  },
+  "unauthorized": {
+    "en": "unauthorized",
+    "zh-CN": "未授权"
+  },
+  "management.key.required": {
+    "en": "management key required",
+    "zh-CN": "需要管理密钥"
+  },
+  "valid.client.token.is.required": {
+    "en": "valid client_token is required",
+    "zh-CN": "需要有效的 client_token"
+  },
+  "timeout.ms.must.be.between.0.and.300000": {
+    "en": "timeout_ms must be between 0 and 300000",
+    "zh-CN": "timeout_ms 必须在 0 到 300000 之间"
+  },
+  "command.is.required": {
+    "en": "command is required",
+    "zh-CN": "必须提供 command"
+  },
+  "invalid.cursor.or.wait.ms": {
+    "en": "invalid cursor or wait_ms",
+    "zh-CN": "cursor 或 wait_ms 无效"
+  },
+  "unknown.tool.s": {
+    "en": "unknown tool: %s",
+    "zh-CN": "未知工具：%s"
+  },
+  "method.not.allowed": {
+    "en": "method not allowed",
+    "zh-CN": "不允许此请求方法"
+  },
+  "invitation.invalid.expired.or.already.used": {
+    "en": "invitation invalid, expired, or already used",
+    "zh-CN": "邀请无效、已过期或已使用"
+  },
+  "invalid.invitation": {
+    "en": "invalid invitation",
+    "zh-CN": "无效邀请"
+  },
+  "installer.unavailable": {
+    "en": "installer unavailable",
+    "zh-CN": "安装器不可用"
+  },
+  "a.client.is.already.connected.with.this.token": {
+    "en": "a client is already connected with this token",
+    "zh-CN": "已有客户端使用此 Token 连接"
+  },
+  "agenterm.running.interactive.s": {
+    "en": "\n[Agenterm] Running (interactive): %s\n",
+    "zh-CN": "\n[Agenterm] 正在执行（交互）：%s\n"
+  },
+  "agenterm.running.s": {
+    "en": "\n[Agenterm] Running: %s\n",
+    "zh-CN": "\n[Agenterm] 正在执行：%s\n"
+  },
+  "agenterm.finished.exit.code.d": {
+    "en": "\n[Agenterm] Finished (exit code: %d)\n",
+    "zh-CN": "\n[Agenterm] 执行结束（退出码：%d）\n"
+  },
+  "s.exit.code.d": {
+    "en": "%s\n[exit code: %d]",
+    "zh-CN": "%s\n[退出码：%d]"
+  },
+  "version.unknown": {
+    "en": "Cannot determine version compatibility: local %s, peer %q. Update Server and Client together",
+    "zh-CN": "无法确认版本兼容性：本地 %s，对端 %q。请同步升级 Server 和 Client"
+  },
+  "version.incompatible": {
+    "en": "Incompatible versions: local %s, peer %s. Update Server and Client to compatible versions",
+    "zh-CN": "版本不兼容：本地 %s，对端 %s。请将 Server 和 Client 更新到兼容版本"
+  },
+  "installer.connection.progress.1.5.awaiting.authorization.remote": {
+    "en": "\nConnection progress\n[1/5] Awaiting authorization\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
+    "zh-CN": "\n连接进度\n[1/5] 等待连接授权\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
+  },
+  "installer.connection.cancelled": {
+    "en": "Connection cancelled.",
+    "zh-CN": "已取消连接。"
+  },
+  "installer.2.5.checking.connectivity.and.version": {
+    "en": "[2/5] Checking connectivity and version…",
+    "zh-CN": "[2/5] 检查连通性与版本…"
+  },
+  "installer.server.reachable.invitation.and.version.verified": {
+    "en": "      Server reachable; invitation and version verified.",
+    "zh-CN": "      服务可达，邀请和版本校验通过。"
+  },
+  "installer.3.5.preparing.client": {
+    "en": "[3/5] Preparing client…",
+    "zh-CN": "[3/5] 准备客户端…"
+  },
+  "installer.cached.client.verified.skipping.download": {
+    "en": "      Cached client verified; skipping download.",
+    "zh-CN": "      本地客户端校验通过，跳过下载。"
+  },
+  "installer.downloading.client": {
+    "en": "      Downloading client…",
+    "zh-CN": "      正在下载客户端…"
+  },
+  "installer.download.complete.verifying.and.extracting": {
+    "en": "      Download complete; verifying and extracting…",
+    "zh-CN": "      下载完成，正在校验并解压…"
+  },
+  "installer.client.verified": {
+    "en": "      Client verified.",
+    "zh-CN": "      客户端校验通过。"
+  },
+  "installer.incompatible.versions.installer.s.server.s.update": {
+    "en": "Incompatible versions: installer %s, server %s. Update server and client to compatible versions.",
+    "zh-CN": "版本不兼容：安装器 %s，Server %s。请将 Server 和 Client 更新到兼容版本。"
+  },
+  "installer.unsupported.system": {
+    "en": "Unsupported system",
+    "zh-CN": "不支持的系统"
+  },
+  "installer.unsupported.architecture": {
+    "en": "Unsupported architecture",
+    "zh-CN": "不支持的架构"
+  },
+  "installer.cannot.reach.the.server.websocket.endpoint.check": {
+    "en": "Cannot reach the server WebSocket endpoint. Check the address, network, and proxy configuration.",
+    "zh-CN": "无法访问服务器 WebSocket 接口，请检查地址、网络和代理配置。"
+  },
+  "installer.invitation.invalid.expired.or.already.used.request": {
+    "en": "Invitation invalid, expired, or already used. Request a new invitation.",
+    "zh-CN": "邀请无效、已过期或已使用，请申请新邀请。"
+  },
+  "installer.too.many.authentication.failures.try.again.later": {
+    "en": "Too many authentication failures. Try again later.",
+    "zh-CN": "身份验证失败次数过多，请稍后重试。"
+  },
+  "installer.invalid.websocket.handshake.response": {
+    "en": "Invalid WebSocket handshake response.",
+    "zh-CN": "WebSocket 握手响应无效。"
+  },
+  "installer.missing.client.checksum": {
+    "en": "Missing client checksum",
+    "zh-CN": "缺少客户端校验值"
+  },
+  "installer.missing.archive.checksum": {
+    "en": "Missing archive checksum",
+    "zh-CN": "缺少压缩包校验值"
+  },
+  "installer.archive.checksum.mismatch": {
+    "en": "Archive checksum mismatch",
+    "zh-CN": "压缩包校验值不匹配"
+  },
+  "installer.client.checksum.mismatch": {
+    "en": "Client checksum mismatch",
+    "zh-CN": "客户端校验值不匹配"
+  },
+  "installer.invalid.client.archive": {
+    "en": "Invalid client archive",
+    "zh-CN": "客户端压缩包无效"
+  },
+  "installer.client.cache.path.is.a.directory": {
+    "en": "Client cache path is a directory",
+    "zh-CN": "客户端缓存路径为目录"
+  },
+  "installer.localappdata.is.not.set": {
+    "en": "LOCALAPPDATA is not set",
+    "zh-CN": "未设置 LOCALAPPDATA"
+  },
+  "installer.websocket.connectivity.check.failed.http.s.check": {
+    "en": "WebSocket connectivity check failed (HTTP %s). Check the server and reverse proxy configuration.",
+    "zh-CN": "WebSocket 连通性检查失败（HTTP %s），请检查服务器和反向代理配置。"
+  },
+  "installer.1.5.awaiting.authorization": {
+    "en": "[1/5] Awaiting authorization",
+    "zh-CN": "[1/5] 等待连接授权"
+  },
+  "installer.remote.control.authorization": {
+    "en": "⚠️ Remote control authorization",
+    "zh-CN": "⚠️ 远程控制授权"
+  },
+  "installer.the.server.can.control.this.computer.with": {
+    "en": "The server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.",
+    "zh-CN": "连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。"
+  },
+  "installer.connection.progress": {
+    "en": "\nConnection progress",
+    "zh-CN": "\n连接进度"
+  },
+  "installer.server.s": {
+    "en": "\nServer: %s",
+    "zh-CN": "\n服务器：%s"
+  },
+  "installer.allow.connection.y.n": {
+    "en": "\nAllow connection? [y/N] ",
+    "zh-CN": "\n是否允许连接？[y/N] "
+  },
+  "installer.incompatible.versions.installer.s.is.incompatible.with": {
+    "en": "Incompatible versions: installer %s is incompatible with the server. Update server and client to compatible versions.",
+    "zh-CN": "版本不兼容：安装器 %s 与 Server 不兼容。请将 Server 和 Client 更新到兼容版本。"
+  },
+  "installer.missing.checksum.for.s": {
+    "en": "Missing checksum for %s",
+    "zh-CN": "缺少 %s 的校验值"
+  },
+  "installer.websocket.connectivity.check.failed.check.the.server": {
+    "en": "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. %s",
+    "zh-CN": "WebSocket 连通性检查失败，请检查服务器地址、网络、代理和邀请有效性。%s"
+  },
+  "mcp.after.sharing.the.invitation.or.token.call.this": {
+    "en": "After sharing the invitation or token, call this tool to wait for the client associated with this MCP connection. Returns connected or timeout; call again after a timeout if appropriate.",
+    "zh-CN": "分享邀请或 Token 后，调用此工具等待当前 MCP 连接对应的客户端。返回 connected 或 timeout；超时后可按需再次调用。"
+  },
+  "mcp.maximum.wait.in.milliseconds.default.30000.0.checks": {
+    "en": "Maximum wait in milliseconds (default 30000; 0 checks immediately)",
+    "zh-CN": "最长等待时间，单位毫秒（默认 30000；0 表示立即检查）"
+  },
+  "mcp.execute.a.non.interactive.command.and.return.output": {
+    "en": "Execute a non-interactive command and return output when it finishes.",
+    "zh-CN": "执行非交互命令，并在完成后返回输出。"
+  },
+  "mcp.shell.command": {
+    "en": "Shell command",
+    "zh-CN": "Shell 命令"
+  },
+  "mcp.start.an.interactive.terminal.session.then.use.session": {
+    "en": "Start an interactive terminal session. Then use session_read to see output, session_write to answer prompts, and session_stop to stop it.",
+    "zh-CN": "启动交互终端会话。使用 session_read 读取输出、session_write 回答提示、session_stop 停止会话。"
+  },
+  "mcp.shell.command.to.run": {
+    "en": "Shell command to run",
+    "zh-CN": "要执行的 Shell 命令"
+  },
+  "mcp.read.new.output.while.the.session.is.running": {
+    "en": "Read new output while the session is running. Supply next_cursor from the previous read; wait_ms can long-poll for output.",
+    "zh-CN": "读取运行中会话的新输出。传入上次读取返回的 next_cursor；wait_ms 可用于长轮询。"
+  },
+  "mcp.session.identifier": {
+    "en": "Session identifier",
+    "zh-CN": "会话标识"
+  },
+  "mcp.byte.cursor.initially.0": {
+    "en": "Byte cursor, initially 0",
+    "zh-CN": "字节游标，初始值为 0"
+  },
+  "mcp.wait.up.to.this.many.milliseconds.for.output": {
+    "en": "Wait up to this many milliseconds for output",
+    "zh-CN": "等待输出的最长时间，单位毫秒"
+  },
+  "mcp.send.input.to.a.running.session.include.a": {
+    "en": "Send input to a running session. Include a newline to answer a prompt; input may be echoed in the terminal output.",
+    "zh-CN": "向运行中的会话发送输入。回答提示时请包含换行符；输入可能回显在终端输出中。"
+  },
+  "mcp.input.bytes.as.text.e.g.yes.n": {
+    "en": "Input bytes as text, e.g. yes\\n",
+    "zh-CN": "以文本表示的输入字节，例如 yes\\n"
+  },
+  "mcp.stop.a.running.session": {
+    "en": "Stop a running session.",
+    "zh-CN": "停止运行中的会话。"
+  },
+  "mcp.create.a.client.connection.token.and.a.one": {
+    "en": "Create a client connection token and a one-time invitation. Present display_text to the user before waiting for a connection, preserving its token and both platform commands. The commands are alternative ways to redeem the same single-use invitation; expires_at is its expiration time. If commands are unavailable, explain that a release build is required. Use client_token with client tools to select this client. Treat tokens and commands as credentials and share privately.",
+    "zh-CN": "创建客户端连接 Token 和一次性邀请。等待连接前，向用户展示 display_text，完整保留 Token 和两个平台的命令。这些命令是兑换同一邀请的不同方式；expires_at 为过期时间。命令不可用时，请说明需要发布版。调用客户端工具时使用 client_token 选择此客户端。Token 和命令均为凭据，请私密分享。"
+  },
+  "mcp.target.client.connection.token.required.when.authenticated.with": {
+    "en": "Target client connection token (required when authenticated with the management key)",
+    "zh-CN": "目标客户端连接 Token（使用管理密钥认证时必填）"
+  },
+  "mcp.parse.error": {
+    "en": "parse error",
+    "zh-CN": "解析错误"
+  },
+  "mcp.invalid.arguments": {
+    "en": "invalid arguments",
+    "zh-CN": "参数无效"
+  },
+  "mcp.method.not.found": {
+    "en": "method not found",
+    "zh-CN": "方法不存在"
+  },
+  "mcp.output.truncated.at.1.mib": {
+    "en": "\n[output truncated at 1 MiB]",
+    "zh-CN": "\n[输出已在 1 MiB 处截断]"
+  },
+  "client.input.error": {
+    "en": "\n[Agenterm] input error: %s\n",
+    "zh-CN": "\n[Agenterm] 输入错误：%s\n"
+  },
+  "installer.missing.invitation": {
+    "en": "Missing invitation",
+    "zh-CN": "缺少邀请"
+  },
+  "installer.missing.download.url": {
+    "en": "Missing download URL",
+    "zh-CN": "缺少下载地址"
+  },
+  "installer.missing.home": {
+    "en": "HOME is not set",
+    "zh-CN": "未设置 HOME"
+  },
+  "dialog.allow": {
+    "en": "Allow",
+    "zh-CN": "允许"
+  },
+  "dialog.cancel": {
+    "en": "Cancel",
+    "zh-CN": "取消"
+  },
+  "dialog.close": {
+    "en": "Close",
+    "zh-CN": "关闭"
+  },
+  "dialog.error": {
+    "en": "Error",
+    "zh-CN": "错误"
+  }
+}

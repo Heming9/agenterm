@@ -1,6 +1,7 @@
 package client
 
 import (
+	"agenterm/internal/i18n"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
@@ -52,9 +53,9 @@ func (c *connection) commandStarted(m protocol.Message) CommandEvent {
 	if c.command != nil {
 		c.command(e)
 	} else if m.Interactive {
-		fmt.Fprintf(c.log, "\n[Agenterm] Running (interactive): %s\n", m.Command)
+		fmt.Fprintf(c.log, i18n.Text(i18n.Terminal(), "agenterm.running.interactive.s"), m.Command)
 	} else {
-		fmt.Fprintf(c.log, "\n[Agenterm] Running: %s\n", m.Command)
+		fmt.Fprintf(c.log, i18n.Text(i18n.Terminal(), "agenterm.running.s"), m.Command)
 	}
 	return e
 }
@@ -64,7 +65,7 @@ func (c *connection) commandFinished(e CommandEvent, code int, detail string) {
 	if c.command != nil {
 		c.command(e)
 	} else {
-		fmt.Fprintf(c.log, "\n[Agenterm] Finished (exit code: %d)\n", code)
+		fmt.Fprintf(c.log, i18n.Text(i18n.Terminal(), "agenterm.finished.exit.code.d"), code)
 	}
 }
 
@@ -194,7 +195,7 @@ func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, ca
 					return versionErr
 				}
 			}
-			return fmt.Errorf("connect: %w (HTTP %d)", err, resp.StatusCode)
+			return i18n.NewError("connect.w.http.d", err, resp.StatusCode)
 		}
 		return err
 	}
@@ -229,7 +230,7 @@ func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, ca
 			if ctx.Err() != nil {
 				return nil
 			}
-			return fmt.Errorf("disconnected: %w", err)
+			return i18n.NewError("disconnected.w", err)
 		}
 		switch m.Type {
 		case "exec":
@@ -247,7 +248,7 @@ func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, ca
 			c.mu.Unlock()
 			if p != nil && p.input != nil {
 				if _, err := io.WriteString(p.input, m.Input); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-					_ = c.send(protocol.Message{Type: "output", ID: m.ID, Output: "\n[Agenterm] input error: " + err.Error() + "\n"})
+					_ = c.send(protocol.Message{Type: "output", ID: m.ID, Output: fmt.Sprintf(i18n.Text(i18n.Terminal(), "client.input.error"), err)})
 				}
 			}
 		}

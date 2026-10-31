@@ -58,7 +58,7 @@ type invitation struct {
 
 func (s *server) redeemInvitation(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -137,7 +137,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.clients[secret] != nil {
-		http.Error(w, "a client is already connected with this token", http.StatusConflict)
+		http.Error(w, i18n.Text(i18n.Terminal(), "a.client.is.already.connected.with.this.token"), http.StatusConflict)
 		return
 	}
 	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
@@ -150,7 +150,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		close(ch)
 	}
 	delete(s.waiters, secret)
-	log.Println(serverText("client connected", "客户端已连接"))
+	log.Println(serverText("client.connected"))
 	go func() {
 		defer func() {
 			conn.Close()
@@ -166,7 +166,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			c.pending = make(map[string]chan protocol.Message)
 			c.mu.Unlock()
-			log.Println(serverText("client disconnected", "客户端已断开"))
+			log.Println(serverText("client.disconnected"))
 		}()
 		conn.SetReadLimit(2 << 20)
 		for {
@@ -180,7 +180,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 				select {
 				case ch <- m:
 				default:
-					log.Printf(serverText("output queue full for %s; closing connection", "%s 的输出队列已满，正在关闭连接"), m.ID)
+					log.Printf(serverText("output.queue.full.for.s.closing.connection"), m.ID)
 					c.mu.Unlock()
 					return
 				}
@@ -236,14 +236,14 @@ func (s *server) execute(ctx context.Context, secret, command string) (string, e
 	c := s.clients[secret]
 	s.mu.Unlock()
 	if c == nil {
-		return "", fmt.Errorf("no client connected")
+		return "", i18n.NewError("no.client.connected")
 	}
 	id := random()
 	ch := make(chan protocol.Message, 256)
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return "", fmt.Errorf("client disconnected")
+		return "", i18n.NewError("client.disconnected")
 	}
 	c.pending[id] = ch
 	c.mu.Unlock()
@@ -260,7 +260,7 @@ func (s *server) execute(ctx context.Context, secret, command string) (string, e
 			return "", ctx.Err()
 		case m, ok := <-ch:
 			if !ok {
-				return "", fmt.Errorf("client disconnected")
+				return "", i18n.NewError("client.disconnected")
 			}
 			switch m.Type {
 			case "output":
@@ -272,12 +272,12 @@ func (s *server) execute(ctx context.Context, secret, command string) (string, e
 			case "done":
 				result := out.String()
 				if truncated {
-					result += "\n[output truncated at 1 MiB]"
+					result += serverText("mcp.output.truncated.at.1.mib")
 				}
 				if m.Error != "" {
 					return result, fmt.Errorf("%s", m.Error)
 				}
-				return fmt.Sprintf("%s\n[exit code: %d]", result, m.ExitCode), nil
+				return fmt.Sprintf(i18n.Text(i18n.Terminal(), "s.exit.code.d"), result, m.ExitCode), nil
 			}
 		}
 	}
@@ -304,7 +304,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 	header := r.Header.Get("Authorization")
@@ -324,7 +324,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 	}
 	var req rpcRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		respond(w, json.RawMessage("null"), nil, map[string]any{"code": -32700, "message": "parse error"})
+		respond(w, json.RawMessage("null"), nil, map[string]any{"code": -32700, "message": serverText("mcp.parse.error")})
 		return
 	}
 	if len(req.ID) == 0 {
@@ -346,19 +346,19 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
 		tools := []any{
-			tool("wait_for_client", "After sharing the invitation or token, call this tool to wait for the client associated with this MCP connection. Returns connected or timeout; call again after a timeout if appropriate.", map[string]any{"timeout_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 300000, "description": "Maximum wait in milliseconds (default 30000; 0 checks immediately)"}}, []string{}),
-			tool("execute_command", "Execute a non-interactive command and return output when it finishes.", map[string]any{"command": stringField("Shell command")}, []string{"command"}),
-			tool("session_start", "Start an interactive terminal session. Then use session_read to see output, session_write to answer prompts, and session_stop to stop it.", map[string]any{"command": stringField("Shell command to run")}, []string{"command"}),
-			tool("session_read", "Read new output while the session is running. Supply next_cursor from the previous read; wait_ms can long-poll for output.", map[string]any{"session_id": stringField("Session identifier"), "cursor": map[string]any{"type": "integer", "minimum": 0, "description": "Byte cursor, initially 0"}, "wait_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 20000, "description": "Wait up to this many milliseconds for output"}}, []string{"session_id"}),
-			tool("session_write", "Send input to a running session. Include a newline to answer a prompt; input may be echoed in the terminal output.", map[string]any{"session_id": stringField("Session identifier"), "input": stringField("Input bytes as text, e.g. yes\\n")}, []string{"session_id", "input"}),
-			tool("session_stop", "Stop a running session.", map[string]any{"session_id": stringField("Session identifier")}, []string{"session_id"}),
+			tool("wait_for_client", serverText("mcp.after.sharing.the.invitation.or.token.call.this"), map[string]any{"timeout_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 300000, "description": serverText("mcp.maximum.wait.in.milliseconds.default.30000.0.checks")}}, []string{}),
+			tool("execute_command", serverText("mcp.execute.a.non.interactive.command.and.return.output"), map[string]any{"command": stringField(serverText("mcp.shell.command"))}, []string{"command"}),
+			tool("session_start", serverText("mcp.start.an.interactive.terminal.session.then.use.session"), map[string]any{"command": stringField(serverText("mcp.shell.command.to.run"))}, []string{"command"}),
+			tool("session_read", serverText("mcp.read.new.output.while.the.session.is.running"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier")), "cursor": map[string]any{"type": "integer", "minimum": 0, "description": serverText("mcp.byte.cursor.initially.0")}, "wait_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 20000, "description": serverText("mcp.wait.up.to.this.many.milliseconds.for.output")}}, []string{"session_id"}),
+			tool("session_write", serverText("mcp.send.input.to.a.running.session.include.a"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier")), "input": stringField(serverText("mcp.input.bytes.as.text.e.g.yes.n"))}, []string{"session_id", "input"}),
+			tool("session_stop", serverText("mcp.stop.a.running.session"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier"))}, []string{"session_id"}),
 		}
 		if admin {
-			tools = append(tools, tool("create_client", "Create a client connection token and a one-time invitation. Present display_text to the user before waiting for a connection, preserving its token and both platform commands. The commands are alternative ways to redeem the same single-use invitation; expires_at is its expiration time. If commands are unavailable, explain that a release build is required. Use client_token with client tools to select this client. Treat tokens and commands as credentials and share privately.", map[string]any{}, []string{}))
+			tools = append(tools, tool("create_client", serverText("mcp.create.a.client.connection.token.and.a.one"), map[string]any{}, []string{}))
 			for _, item := range tools[:len(tools)-1] {
 				t := item.(map[string]any)
 				schema := t["inputSchema"].(map[string]any)
-				schema["properties"].(map[string]any)["client_token"] = stringField("Target client connection token (required when authenticated with the management key)")
+				schema["properties"].(map[string]any)["client_token"] = stringField(serverText("mcp.target.client.connection.token.required.when.authenticated.with"))
 				schema["required"] = append(schema["required"].([]string), "client_token")
 			}
 		}
@@ -369,7 +369,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			Arguments json.RawMessage `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
-			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": "invalid arguments"})
+			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": serverText("mcp.invalid.arguments")})
 			return
 		}
 		var a struct {
@@ -382,19 +382,19 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 			TimeoutMS   *int   `json:"timeout_ms"`
 		}
 		if err := json.Unmarshal(p.Arguments, &a); err != nil {
-			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": "invalid arguments"})
+			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": serverText("mcp.invalid.arguments")})
 			return
 		}
 		var result any
 		var err error
 		if p.Name == "create_client" && !admin {
-			err = fmt.Errorf("management key required")
+			err = i18n.NewError("management.key.required")
 		} else if admin && p.Name != "create_client" {
 			s.mu.Lock()
 			secret, ok = s.tokens[a.ClientToken]
 			s.mu.Unlock()
 			if !ok {
-				err = fmt.Errorf("valid client_token is required")
+				err = i18n.NewError("valid.client.token.is.required")
 			}
 		}
 		if err == nil {
@@ -408,7 +408,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 					timeout = *a.TimeoutMS
 				}
 				if timeout < 0 || timeout > 300000 {
-					err = fmt.Errorf("timeout_ms must be between 0 and 300000")
+					err = i18n.NewError("timeout.ms.must.be.between.0.and.300000")
 				} else {
 					var status string
 					status, err = s.waitForClient(r.Context(), secret, time.Duration(timeout)*time.Millisecond)
@@ -418,13 +418,13 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 				}
 			case "execute_command":
 				if strings.TrimSpace(a.Command) == "" {
-					err = fmt.Errorf("command is required")
+					err = i18n.NewError("command.is.required")
 				} else {
 					result, err = s.execute(r.Context(), secret, a.Command)
 				}
 			case "session_start":
 				if strings.TrimSpace(a.Command) == "" {
-					err = fmt.Errorf("command is required")
+					err = i18n.NewError("command.is.required")
 				} else {
 					var sess *session
 					sess, err = s.startSession(secret, a.Command)
@@ -434,7 +434,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 				}
 			case "session_read":
 				if a.Cursor < 0 || a.WaitMS < 0 || a.WaitMS > 20000 {
-					err = fmt.Errorf("invalid cursor or wait_ms")
+					err = i18n.NewError("invalid.cursor.or.wait.ms")
 				} else {
 					var sess *session
 					sess, err = s.getSession(secret, a.SessionID)
@@ -456,7 +456,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			default:
-				err = fmt.Errorf("unknown tool: %s", p.Name)
+				err = i18n.NewError("unknown.tool.s", p.Name)
 			}
 		}
 		if err != nil {
@@ -465,7 +465,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(result)
 		respond(w, req.ID, map[string]any{"content": []any{map[string]string{"type": "text", "text": string(b)}}, "isError": err != nil}, nil)
 	default:
-		respond(w, req.ID, nil, map[string]any{"code": -32601, "message": "method not found"})
+		respond(w, req.ID, nil, map[string]any{"code": -32601, "message": serverText("mcp.method.not.found")})
 	}
 }
 func stringField(description string) map[string]any {
@@ -474,14 +474,14 @@ func stringField(description string) map[string]any {
 func tool(name, description string, properties map[string]any, required []string) map[string]any {
 	return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required}}
 }
-func serverText(en, zh string) string { return i18n.Text(i18n.Terminal(), en, zh) }
+func serverText(key string) string { return i18n.Text(i18n.Terminal(), key) }
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8080", serverText("HTTP listen address", "HTTP 监听地址"))
-	passwordFlag := flag.String("passwd", "", serverText("MCP management key (generated when omitted)", "MCP 管理密钥（省略时自动生成）"))
-	noPassword := flag.Bool("no-password", false, serverText("allow MCP management access without a password", "允许无需密码访问 MCP 管理接口"))
-	autoCreate := flag.Bool("generate", false, serverText("generate a client token and invitation at startup", "启动时生成客户端 Token 和邀请"))
-	public := flag.String("public-url", "http://127.0.0.1:8080", serverText("Public Server URL (optional /agenterm suffix)", "公开的 Server URL（可带 /agenterm 后缀）"))
+	listen := flag.String("listen", "127.0.0.1:8080", serverText("http.listen.address"))
+	passwordFlag := flag.String("passwd", "", serverText("mcp.management.key.generated.when.omitted"))
+	noPassword := flag.Bool("no-password", false, serverText("allow.mcp.management.access.without.a.password"))
+	autoCreate := flag.Bool("generate", false, serverText("generate.a.client.token.and.invitation.at"))
+	public := flag.String("public-url", "http://127.0.0.1:8080", serverText("public.server.url.optional.agenterm.suffix"))
 	flag.Parse()
 	u, err := parsePublicURL(*public)
 	if err != nil {
@@ -502,16 +502,16 @@ func main() {
 		}
 	})
 	if keySpecified && (*passwordFlag == "" || *noPassword) {
-		log.Fatal(serverText("passwd must be nonempty and cannot be combined with no-password", "passwd 不能为空，也不能与 no-password 同时使用"))
+		log.Fatal(serverText("passwd.must.be.nonempty.and.cannot.be"))
 	}
 	adminKey := *passwordFlag
 	if !*noPassword && !keySpecified {
 		adminKey = randomManagementKey()
-		fmt.Printf(serverText("MCP management key (save securely):\n%s\n\n", "MCP 管理密钥（请妥善保存）：\n%s\n\n"), adminKey)
+		fmt.Printf(serverText("mcp.management.key.save.securely.s"), adminKey)
 	}
 	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation)}
 	if *noPassword {
-		log.Print(serverText("WARNING: MCP management access has no password; anyone who can reach the MCP endpoint can control the service.", "警告：MCP 管理接口未设置密码；任何可访问该接口的人都能控制服务。"))
+		log.Print(serverText("warning.mcp.management.access.has.no.password"))
 	}
 	var issuedTokens []string
 	if *autoCreate {
@@ -522,7 +522,7 @@ func main() {
 		}
 		s.tokens[token] = secret
 		issuedTokens = append(issuedTokens, token)
-		fmt.Printf(serverText("Agenterm token 1:\n%s\n\n", "Agenterm Token 1：\n%s\n\n"), token)
+		fmt.Printf(serverText("agenterm.token.1.s"), token)
 	}
 	issueInvitations := func() {
 		type output struct {
@@ -553,7 +553,7 @@ func main() {
 		for _, out := range outputs {
 			printInstallCommands(out.index, out.value)
 		}
-		fmt.Println(serverText("Press Enter to replace unredeemed startup invitations with fresh ones.", "按 Enter 替换尚未使用的启动邀请。"))
+		fmt.Println(serverText("press.enter.to.replace.unredeemed.startup.invitations"))
 	}
 	if *autoCreate {
 		issueInvitations()
@@ -566,9 +566,9 @@ func main() {
 			}
 		}
 	}()
-	fmt.Printf(serverText("MCP endpoint: %s/mcp\n", "MCP 接口：%s/mcp\n"), publicBase)
+	fmt.Printf(serverText("mcp.endpoint.s.mcp"), publicBase)
 	if !securePublicURL {
-		log.Print(serverText("WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.", "警告：HTTP 和 WebSocket 流量未加密，Token、命令和输出可能被截获。请通过反向代理使用 HTTPS 或使用可信网络。"))
+		log.Print(serverText("warning.http.and.websocket.traffic.is.unencrypted"))
 	}
 	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, installer.Assets()), ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())

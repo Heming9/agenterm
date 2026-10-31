@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agenterm/internal/i18n"
 	"agenterm/internal/installer"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
@@ -18,12 +19,12 @@ var validReleaseTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 
 func printInstallCommands(index int, invitation string) {
 	if !validReleaseTag.MatchString(releaseTag) {
-		fmt.Printf(serverText("Invitation %d (expires in 15 minutes):\n%s\nInstaller commands are available in release builds.\n\n", "邀请 %d（15 分钟后过期）：\n%s\n发布版提供安装命令。\n\n"), index, invitation)
+		fmt.Printf(serverText("invitation.d.expires.in.15.minutes.s"), index, invitation)
 		return
 	}
 	shell, powershell := installCommands(invitation)
-	fmt.Printf(serverText("Invitation %d (expires in 15 minutes; share privately):\n", "邀请 %d（15 分钟后过期；请私密分享）：\n"), index)
-	fmt.Printf(serverText("macOS / Linux:\n%s\nWindows PowerShell:\n%s\n\n", "macOS / Linux：\n%s\nWindows PowerShell：\n%s\n\n"), shell, powershell)
+	fmt.Printf(serverText("invitation.d.expires.in.15.minutes.share"), index)
+	fmt.Printf(serverText("macos.linux.s.windows.powershell.s"), shell, powershell)
 }
 
 func installCommands(invitation string) (string, string) {
@@ -51,7 +52,7 @@ func (s *server) installWrapper(tag string) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
 			return
 		}
 		if !validReleaseTag.MatchString(tag) || !strings.HasPrefix(r.URL.Path, "/c/") {
@@ -68,17 +69,17 @@ func (s *server) installWrapper(tag string) http.Handler {
 				http.Error(w, err.Error(), status)
 				return
 			}
-			http.Error(w, "invitation invalid, expired, or already used", status)
+			http.Error(w, i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used"), status)
 			return
 		}
 		source, err := protocol.Decode(entry.token)
 		if err != nil {
-			http.Error(w, "invalid invitation", http.StatusInternalServerError)
+			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
 			return
 		}
 		value, err := protocol.Encode(protocol.Token{URL: source.URL, Secret: secret})
 		if err != nil {
-			http.Error(w, "invalid invitation", http.StatusInternalServerError)
+			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
 			return
 		}
 		endpoint, _, _ := invite.Endpoint(value)
@@ -89,7 +90,7 @@ func (s *server) installWrapper(tag string) http.Handler {
 		}
 		script, err := installer.Script(name)
 		if err != nil {
-			http.Error(w, "installer unavailable", http.StatusInternalServerError)
+			http.Error(w, i18n.Text(i18n.Terminal(), "installer.unavailable"), http.StatusInternalServerError)
 			return
 		}
 		body := strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)
@@ -111,7 +112,7 @@ func downloadHandler(tag string, assets fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
 			return
 		}
 		prefix := "/downloads/" + tag + "/"

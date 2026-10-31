@@ -1,8 +1,8 @@
 package main
 
 import (
+	"agenterm/internal/i18n"
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -57,7 +57,7 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (m
 		end := p.offset + int64(len(p.output))
 		if cursor > end {
 			p.mu.Unlock()
-			return nil, fmt.Errorf("cursor is beyond available output")
+			return nil, i18n.NewError("cursor.is.beyond.available.output")
 		}
 		truncated := cursor < p.offset
 		if truncated {
@@ -91,7 +91,7 @@ func (s *server) startSession(secret, command string) (*session, error) {
 	defer s.mu.Unlock()
 	c := s.clients[secret]
 	if c == nil {
-		return nil, fmt.Errorf("no client connected")
+		return nil, i18n.NewError("no.client.connected")
 	}
 	if s.sessions == nil {
 		s.sessions = make(map[string]*session)
@@ -105,14 +105,14 @@ func (s *server) startSession(secret, command string) (*session, error) {
 		}
 	}
 	if len(s.sessions) >= 100 {
-		return nil, fmt.Errorf("session limit reached; try again later")
+		return nil, i18n.NewError("session.limit.reached.try.again.later")
 	}
 	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{})}
 	ch := make(chan protocol.Message, 256)
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, fmt.Errorf("client disconnected")
+		return nil, i18n.NewError("client.disconnected")
 	}
 	c.pending[p.id] = ch
 	c.mu.Unlock()
@@ -131,7 +131,7 @@ func (s *server) startSession(secret, command string) (*session, error) {
 				return
 			}
 		}
-		p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: "client disconnected"})
+		p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: i18n.Text(i18n.Terminal(), "client.disconnected")})
 	}()
 	return p, nil
 }
@@ -140,7 +140,7 @@ func (s *server) getSession(secret, id string) (*session, error) {
 	defer s.mu.Unlock()
 	p := s.sessions[id]
 	if p == nil || p.owner != secret {
-		return nil, fmt.Errorf("unknown session")
+		return nil, i18n.NewError("unknown.session")
 	}
 	return p, nil
 }
@@ -148,7 +148,7 @@ func (p *session) send(typ, input string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.done {
-		return fmt.Errorf("session already ended")
+		return i18n.NewError("session.already.ended")
 	}
 	return p.client.send(protocol.Message{Type: typ, ID: p.id, Input: input})
 }

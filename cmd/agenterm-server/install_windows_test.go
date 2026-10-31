@@ -147,7 +147,7 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	state.invitations[decoded.Secret] = entry
 	state.mu.Unlock()
 	before := manifestRequests.Load()
-	if out, err := run(); err == nil || !strings.Contains(out, "invitation invalid, expired, or already used") {
+	if out, err := run(); err == nil || !strings.Contains(out, "邀请无效、已过期或已使用") {
 		t.Fatalf("expired invitation: %v\n%s", err, out)
 	}
 	if manifestRequests.Load() != before || archiveRequests.Load() != 2 {

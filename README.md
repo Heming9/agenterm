@@ -218,3 +218,5 @@ go test ./...
 ## Language
 
 The desktop client follows your system language by default. Use **Language / 语言** in the application menu to choose English, Simplified Chinese, or the system default; restart the application to apply the change. The terminal client and server follow the terminal locale. Unsupported languages fall back to English. Set `AGENTERM_LANG=en` or `AGENTERM_LANG=zh-CN` to override the language for a terminal process and its installer. Command output remains unchanged.
+
+Translation resources are maintained in `internal/i18n/messages.json` with stable keys and both `en` and `zh-CN` values. Go code references keys; installer scripts receive their translations from the same resource at runtime. Add new user-facing messages there, keeping format placeholders consistent across languages.

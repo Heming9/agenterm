@@ -2,7 +2,7 @@
 package version
 
 import (
-	"fmt"
+	"agenterm/internal/i18n"
 	"regexp"
 	"strings"
 )
@@ -23,7 +23,7 @@ func Check(local, peer string) error {
 	l := pattern.FindStringSubmatch(strings.TrimPrefix(local, "v"))
 	p := pattern.FindStringSubmatch(strings.TrimPrefix(peer, "v"))
 	if l == nil || p == nil {
-		return fmt.Errorf("无法确认版本兼容性：本地 %s，对端 %q。请同步升级 Server 和 Client", local, peer)
+		return i18n.NewError("version.unknown", local, peer)
 	}
 	compatible := l[1] == p[1]
 	if l[4] != "" || p[4] != "" {
@@ -32,7 +32,7 @@ func Check(local, peer string) error {
 		compatible = compatible && l[2] == p[2] && (l[2] != "0" || l[3] == p[3])
 	}
 	if !compatible {
-		return fmt.Errorf("版本不兼容：本地 %s，对端 %s。请将 Server 和 Client 更新到兼容版本", local, peer)
+		return i18n.NewError("version.incompatible", local, peer)
 	}
 	return nil
 }

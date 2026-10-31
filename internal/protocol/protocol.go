@@ -1,9 +1,9 @@
 package protocol
 
 import (
+	"agenterm/internal/i18n"
 	"encoding/base64"
 	"encoding/binary"
-	"fmt"
 	"net"
 	"net/netip"
 	"net/url"
@@ -34,7 +34,7 @@ func Encode(t Token) (string, error) {
 	}
 	secret, err := base64.RawURLEncoding.DecodeString(t.Secret)
 	if err != nil || len(secret) != TokenSecretSize {
-		return "", fmt.Errorf("invalid token: expected a %d-byte secret", TokenSecretSize)
+		return "", i18n.NewError("invalid.token.expected.a.d.byte.secret", TokenSecretSize)
 	}
 	// Payload: scheme/address flags, raw secret, then address data.
 	// IP addresses use a two-byte port (0 = absent) and 4 or 16 address bytes.
@@ -50,7 +50,7 @@ func Encode(t Token) (string, error) {
 		if u.Port() != "" {
 			port, err = strconv.ParseUint(u.Port(), 10, 16)
 			if err != nil || port == 0 {
-				return "", fmt.Errorf("invalid token: port must be between 1 and 65535")
+				return "", i18n.NewError("invalid.token.port.must.be.between.1.and")
 			}
 		}
 		if ip.Is4() {
@@ -69,17 +69,17 @@ func Decode(s string) (Token, error) {
 	var t Token
 	payload, ok := strings.CutPrefix(s, tokenPrefix)
 	if !ok {
-		return t, fmt.Errorf("invalid token: missing %s prefix", tokenPrefix)
+		return t, i18n.NewError("invalid.token.missing.s.prefix", tokenPrefix)
 	}
 	b, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
-		return t, fmt.Errorf("invalid token: %w", err)
+		return t, i18n.NewError("invalid.token.w", err)
 	}
 	if len(b) <= 1+TokenSecretSize {
-		return t, fmt.Errorf("invalid token: incomplete payload")
+		return t, i18n.NewError("invalid.token.incomplete.payload")
 	}
 	if b[0]&tokenFormat == 0 {
-		return t, fmt.Errorf("invalid token: unsupported format; update Server and Client together")
+		return t, i18n.NewError("invalid.token.unsupported.format.update.server.and.client")
 	}
 	scheme := "ws"
 	switch b[0] & 3 {
@@ -87,7 +87,7 @@ func Decode(s string) (Token, error) {
 	case 2:
 		scheme = "wss"
 	default:
-		return t, fmt.Errorf("invalid token: unsupported format")
+		return t, i18n.NewError("invalid.token.unsupported.format")
 	}
 	host := string(b[1+TokenSecretSize:])
 	address := b[1+TokenSecretSize:]
@@ -99,7 +99,7 @@ func Decode(s string) (Token, error) {
 			addressSize = 16
 		}
 		if len(address) != 2+addressSize {
-			return t, fmt.Errorf("invalid token: malformed IP address")
+			return t, i18n.NewError("invalid.token.malformed.ip.address")
 		}
 		ip, _ := netip.AddrFromSlice(address[2:])
 		port := binary.BigEndian.Uint16(address[:2])
@@ -110,7 +110,7 @@ func Decode(s string) (Token, error) {
 			host = "[" + host + "]"
 		}
 	default:
-		return t, fmt.Errorf("invalid token: unsupported address format")
+		return t, i18n.NewError("invalid.token.unsupported.address.format")
 	}
 	rawURL := (&url.URL{Scheme: scheme, Host: host, Path: ClientPath}).String()
 	u, err := parseTokenURL(rawURL)
@@ -118,7 +118,7 @@ func Decode(s string) (Token, error) {
 		return t, err
 	}
 	if u.Host != host {
-		return t, fmt.Errorf("invalid token: malformed host")
+		return t, i18n.NewError("invalid.token.malformed.host")
 	}
 	return Token{URL: rawURL, Secret: base64.RawURLEncoding.EncodeToString(b[1 : 1+TokenSecretSize])}, nil
 }
@@ -127,7 +127,7 @@ func parseTokenURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "ws" && u.Scheme != "wss") || u.Hostname() == "" ||
 		u.User != nil || u.Path != ClientPath || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return nil, fmt.Errorf("invalid token: expected a WebSocket origin with %s path", ClientPath)
+		return nil, i18n.NewError("invalid.token.expected.a.websocket.origin.with.s", ClientPath)
 	}
 	return u, nil
 }

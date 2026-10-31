@@ -177,7 +177,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "Archive checksum mismatch") || strings.Contains(string(out), "arg=-invite") {
+	if err == nil || !strings.Contains(string(out), "压缩包校验值不匹配") || strings.Contains(string(out), "arg=-invite") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
 	}
 	// Invalid/expired invitations must fail before fetching the manifest or archive,
@@ -211,7 +211,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err = cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "WebSocket connectivity check failed (HTTP 403)") {
+	if err == nil || !strings.Contains(string(out), "WebSocket 连通性检查失败（HTTP 403）") {
 		t.Fatalf("blocked WebSocket: err=%v output=%s", err, out)
 	}
 	after, _ = os.ReadFile(log)
