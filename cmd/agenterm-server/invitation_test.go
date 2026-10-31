@@ -20,7 +20,7 @@ func TestInvitationSingleUseConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r := httptest.NewRequest(http.MethodPost, "/invite/redeem", nil)
+			r := httptest.NewRequest(http.MethodPost, "/agenterm/invite/redeem", nil)
 			r.Header.Set("Authorization", "Bearer secret")
 			w := httptest.NewRecorder()
 			s.redeemInvitation(w, r)
@@ -44,7 +44,7 @@ func TestInvitationSingleUseConcurrent(t *testing.T) {
 }
 func TestInvitationExpired(t *testing.T) {
 	s := &server{invitations: map[string]invitation{"secret": {token: "connection-token", expires: time.Now().Add(-time.Second)}}}
-	r := httptest.NewRequest(http.MethodPost, "/invite/redeem", nil)
+	r := httptest.NewRequest(http.MethodPost, "/agenterm/invite/redeem", nil)
 	r.Header.Set("Authorization", "Bearer secret")
 	w := httptest.NewRecorder()
 	s.redeemInvitation(w, r)
@@ -57,7 +57,7 @@ func TestInvitationRedeemEndToEnd(t *testing.T) {
 	s := &server{invitations: make(map[string]invitation)}
 	ts := httptest.NewServer(http.HandlerFunc(s.redeemInvitation))
 	defer ts.Close()
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/agenterm/client"
 	secret := randomBytes(protocol.TokenSecretSize)
 	value, err := protocol.Encode(protocol.Token{URL: wsURL, Secret: secret})
 	if err != nil {

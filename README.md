@@ -42,7 +42,7 @@ Release servers also print one-command installers for macOS/Linux and Windows Po
 **3. Connect your agent.** Add a remote MCP server with Streamable HTTP and custom headers:
 
 ```text
-URL:            http://SERVER_IP:8080/mcp
+URL:            http://SERVER_IP:8080/agenterm/mcp
 Authorization:  Bearer agenterm:...
 ```
 
@@ -86,13 +86,13 @@ Both clients keep recent logs in memory (~64 KiB), never save tokens, and requir
 <details>
 <summary>Invitations & downloads</summary>
 
-Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server, validate the invitation and probe the WebSocket handshake on `/client`, then verify the cache or download the matching CLI and ask for authorization before connecting. Probes do not redeem invitations or register clients. Installation shows five connection stages: connectivity check, client preparation, authorization, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
+Release servers bundle CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server, validate the invitation and probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and ask for authorization before connecting. Probes do not redeem invitations or register clients. Installation shows five connection stages: connectivity check, client preparation, authorization, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
 
-Commands use a short `/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
+Commands use a short `/agenterm/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
 Invitations expire after 15 minutes and can be redeemed once. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. Redeemed client tokens remain reusable until the server restarts, with one connected client per token. Share credentials privately; invitation commands may remain in shell history.
 
-The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies must forward `/c/` and `/downloads/` and allow WebSocket upgrades and the Authorization header on `/client`. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
+The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies only need to forward `/agenterm/`, preserving the prefix and allowing WebSocket upgrades and the Authorization header. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
 
 | OS | Cache |
 | --- | --- |
@@ -115,7 +115,7 @@ The server defaults to `127.0.0.1:8080` and generates a new 10-character lowerca
   --passwd 'replace-with-a-long-random-key'
 ```
 
-Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url` advertises the address; it does not enable TLS. When the proxy is on the same machine, keep the backend bound to loopback. Public deployments also need appropriate access controls.
+Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url` accepts an origin or an address ending in `/agenterm`; advertised endpoints always use the `/agenterm/` prefix. It does not enable TLS. When the proxy is on the same machine, keep the backend bound to loopback. Public deployments also need appropriate access controls.
 
 MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <client token>`. Management calls select a target with `client_token`; ordinary client tokens cannot call `create_client`. You can also configure one MCP entry per target. Your agent must support Streamable HTTP and custom headers.
 
@@ -123,7 +123,7 @@ MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <
 
 `-no-password` disables MCP management authentication: anyone who can reach the endpoint can create and control connections. Keep this mode private. It cannot be combined with `--passwd`.
 
-Client tokens contain the server address and a 128-bit random credential. The current token format is incompatible with older versions; update server and client together.
+Client tokens contain the server address and a 128-bit random credential. All endpoints use the `/agenterm/` prefix. Previous root routes and token formats are unsupported. Update Server and Client (including the GUI) together and change the MCP URL to `/agenterm/mcp`.
 
 </details>
 
@@ -187,7 +187,7 @@ Windows packaging requires a working Windows C compiler. Packaging increments th
 <summary>Probe MCP with curl</summary>
 
 ```sh
-curl -s http://127.0.0.1:8080/mcp \
+curl -s http://127.0.0.1:8080/agenterm/mcp \
   -H 'Authorization: Bearer YOUR_AGENTERM_TOKEN' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \

@@ -62,10 +62,7 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 	}
 	state := &server{}
 	var archiveRequests, manifestRequests atomic.Int32
-	mux := http.NewServeMux()
-	mux.HandleFunc("/client", state.connect)
-	mux.Handle("/c/", state.installWrapper("v0.1.8"))
-	mux.Handle("/downloads/", downloadHandler("v0.1.8", os.DirFS(root)))
+	mux := state.routes("v0.1.8", os.DirFS(root))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/"+archive) {
 			archiveRequests.Add(1)
@@ -76,7 +73,7 @@ func main() { answer, _ := bufio.NewReader(os.Stdin).ReadString('\n'); fmt.Print
 		mux.ServeHTTP(w, r)
 	}))
 	defer ts.Close()
-	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
 	issued, err := state.createClient()
 	if err != nil {
 		t.Fatal(err)

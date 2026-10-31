@@ -42,7 +42,7 @@ go build -o agenterm-client ./cmd/agenterm-client
 **3. 接入 Agent。** 添加支持 Streamable HTTP 和自定义请求头的远程 MCP 服务：
 
 ```text
-URL:            http://SERVER_IP:8080/mcp
+URL:            http://SERVER_IP:8080/agenterm/mcp
 Authorization:  Bearer agenterm:...
 ```
 
@@ -86,13 +86,13 @@ Authorization:  Bearer agenterm:...
 <details>
 <summary>邀请与下载</summary>
 
-发布版 Server 内置六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，先检查邀请有效性和 `/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI，确认授权后连接。探测不会消耗邀请，也不会使客户端上线。安装过程显示 5 个连接阶段：连通性检查、准备客户端、等待授权、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
+发布版 Server 内置六种系统与架构的 CLI 压缩包及校验清单。一键命令从 Server 下载同版本安装脚本，先检查邀请有效性和 `/agenterm/client` 路径的 WebSocket 握手，再校验缓存或下载当前平台的 CLI，确认授权后连接。探测不会消耗邀请，也不会使客户端上线。安装过程显示 5 个连接阶段：连通性检查、准备客户端、等待授权、建立连接、连接成功；终端下载显示传输进度，命中有效缓存时跳过下载。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
 
-命令使用 `/c/<22位邀请ID>` 短入口，Windows 入口带 `.ps1` 后缀。Server 动态返回带好邀请、版本和下载地址的安装脚本。入口 ID 复用原有 128 位随机邀请凭证；获取脚本不会消耗邀请，响应禁止缓存。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
+命令使用 `/agenterm/c/<22位邀请ID>` 短入口，Windows 入口带 `.ps1` 后缀。Server 动态返回带好邀请、版本和下载地址的安装脚本。入口 ID 复用原有 128 位随机邀请凭证；获取脚本不会消耗邀请，响应禁止缓存。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
 
 邀请 15 分钟有效，只能兑换一次。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。兑换后的 Client token 可重复使用，Server 重启后失效，每个 token 同时只允许一个 Client 在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
 
-目标电脑只需访问 `-public-url`，连接和下载过程均无需访问 GitHub；`127.0.0.1` 仅适用于同机。反向代理需转发 `/c/` 和 `/downloads/`，并允许 `/client` 的 WebSocket 升级及 Authorization 请求头。探测失败时停止下载；探测成功后，每次运行都会从 Server 获取校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
+目标电脑只需访问 `-public-url`，连接和下载过程均无需访问 GitHub；`127.0.0.1` 仅适用于同机。反向代理只需统一转发 `/agenterm/`，保留此前缀，并允许 WebSocket 升级及 Authorization 请求头。探测失败时停止下载；探测成功后，每次运行都会从 Server 获取校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
 
 | 系统 | 缓存目录 |
 | --- | --- |
@@ -115,7 +115,7 @@ Server 默认监听 `127.0.0.1:8080`，每次启动生成 10 位小写字母和�
   --passwd '替换为足够长的随机密钥'
 ```
 
-另行配置支持 WebSocket 的 HTTPS 反向代理。`-public-url` 只声明对外地址，不会启用 TLS。代理与 Server 同机时，后端仅监听本机。公网部署还需适当的访问控制。
+另行配置支持 WebSocket 的 HTTPS 反向代理。`-public-url` 可填域名根地址或以 `/agenterm` 结尾的地址，输出端点始终使用 `/agenterm/` 前缀；它只声明对外地址，不会启用 TLS。代理与 Server 同机时，后端仅监听本机。公网部署还需适当的访问控制。
 
 MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Client token>`。管理模式用参数 `client_token` 选择目标；普通 Client token 无权调用 `create_client`。也可为每个目标单独配置 MCP。Agent 需支持 Streamable HTTP 和自定义请求头。
 
@@ -123,7 +123,7 @@ MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Cl
 
 `-no-password` 关闭 MCP 管理认证，任何能访问接口的人都能创建和控制连接，仅限私有环境。不能与 `--passwd` 同用。
 
-Client token 包含 Server 地址和 128 位随机凭证。当前格式不兼容旧版，Server 和 Client 需一起更新。
+Client token 包含 Server 地址和 128 位随机凭证。所有接口统一使用 `/agenterm/` 前缀，旧根路径接口和旧 token 不再支持。Server 和 Client（包括 GUI）需一起更新，并将 MCP 地址改为 `/agenterm/mcp`。
 
 </details>
 
@@ -187,7 +187,7 @@ Windows 打包需要可用的 Windows C 编译器。打包会递增 `FyneApp.tom
 <summary>用 curl 检查 MCP</summary>
 
 ```sh
-curl -s http://127.0.0.1:8080/mcp \
+curl -s http://127.0.0.1:8080/agenterm/mcp \
   -H 'Authorization: Bearer YOUR_AGENTERM_TOKEN' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \

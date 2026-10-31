@@ -9,15 +9,15 @@ import (
 func TestCompactTokenRoundTrip(t *testing.T) {
 	secret := base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef"))
 	for _, address := range []string{
-		"ws://127.0.0.1:8080/client",
-		"ws://192.168.100.200:65535/client",
-		"wss://192.168.100.200/client",
-		"wss://example.com/client",
-		"wss://example.com:8443/client",
-		"ws://[::1]:8080/client",
-		"wss://[2001:db8::1]:443/client",
-		"wss://[::1]/client",
-		"ws://[fe80::1%25en0]:8080/client",
+		"ws://127.0.0.1:8080/agenterm/client",
+		"ws://192.168.100.200:65535/agenterm/client",
+		"wss://192.168.100.200/agenterm/client",
+		"wss://example.com/agenterm/client",
+		"wss://example.com:8443/agenterm/client",
+		"ws://[::1]:8080/agenterm/client",
+		"wss://[2001:db8::1]:443/agenterm/client",
+		"wss://[::1]/agenterm/client",
+		"ws://[fe80::1%25en0]:8080/agenterm/client",
 	} {
 		t.Run(address, func(t *testing.T) {
 			want := Token{URL: address, Secret: secret}
@@ -28,7 +28,7 @@ func TestCompactTokenRoundTrip(t *testing.T) {
 			if !strings.HasPrefix(encoded, "agenterm:") {
 				t.Fatal("token must start with agenterm:")
 			}
-			if address == "ws://127.0.0.1:8080/client" && len(encoded) != 40 {
+			if strings.HasPrefix(address, "ws://127.0.0.1:8080/") && len(encoded) != 40 {
 				t.Fatalf("default token length = %d, want 40", len(encoded))
 			}
 			got, err := Decode(encoded)
@@ -49,24 +49,25 @@ func TestDecodeRejectsInvalidAndLegacyTokens(t *testing.T) {
 	}
 	legacy := base64.RawURLEncoding.EncodeToString([]byte(`{"url":"ws://localhost:8080/client","secret":"test-secret"}`))
 	for name, token := range map[string]string{
+		"old root routes":    wrap(1, "localhost"),
 		"legacy":             legacy,
 		"prefixed legacy":    "agenterm:" + legacy,
-		"missing prefix":     strings.TrimPrefix(wrap(1, "localhost:8080"), "agenterm:"),
+		"missing prefix":     strings.TrimPrefix(wrap(tokenFormat|1, "localhost:8080"), "agenterm:"),
 		"empty payload":      "agenterm:",
 		"invalid base64":     "agenterm:!",
 		"truncated secret":   "agenterm:" + base64.RawURLEncoding.EncodeToString([]byte{1, 2, 3}),
-		"missing host":       wrap(1, ""),
-		"unsupported format": wrap(3, "localhost"),
-		"host with path":     wrap(1, "localhost/extra"),
-		"host with query":    wrap(1, "localhost?query"),
-		"host with user":     wrap(1, "user@localhost"),
-		"host with no name":  wrap(1, ":8080"),
-		"truncated IPv4":     wrap(5, "short"),
-		"truncated IPv6":     wrap(9, "short"),
-		"extra IPv4 bytes":   wrap(5, strings.Repeat("a", 7)),
-		"extra IPv6 bytes":   wrap(9, strings.Repeat("a", 19)),
-		"unknown flags":      wrap(17, "localhost"),
-		"conflicting flags":  wrap(13, "localhost"),
+		"missing host":       wrap(tokenFormat|1, ""),
+		"unsupported format": wrap(tokenFormat|3, "localhost"),
+		"host with path":     wrap(tokenFormat|1, "localhost/extra"),
+		"host with query":    wrap(tokenFormat|1, "localhost?query"),
+		"host with user":     wrap(tokenFormat|1, "user@localhost"),
+		"host with no name":  wrap(tokenFormat|1, ":8080"),
+		"truncated IPv4":     wrap(tokenFormat|5, "short"),
+		"truncated IPv6":     wrap(tokenFormat|9, "short"),
+		"extra IPv4 bytes":   wrap(tokenFormat|5, strings.Repeat("a", 7)),
+		"extra IPv6 bytes":   wrap(tokenFormat|9, strings.Repeat("a", 19)),
+		"unknown flags":      wrap(tokenFormat|33, "localhost"),
+		"conflicting flags":  wrap(tokenFormat|13, "localhost"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Decode(token); err == nil {
@@ -79,15 +80,16 @@ func TestDecodeRejectsInvalidAndLegacyTokens(t *testing.T) {
 func TestEncodeRejectsInvalidFields(t *testing.T) {
 	secret := base64.RawURLEncoding.EncodeToString(make([]byte, TokenSecretSize))
 	for _, token := range []Token{
-		{URL: "http://localhost/client", Secret: secret},
+		{URL: "ws://localhost/client", Secret: secret},
+		{URL: "http://localhost/agenterm/client", Secret: secret},
 		{URL: "ws://localhost/other", Secret: secret},
-		{URL: "ws://localhost/client?query", Secret: secret},
-		{URL: "ws://localhost/client#fragment", Secret: secret},
-		{URL: "ws://user@localhost/client", Secret: secret},
-		{URL: "ws://localhost/client", Secret: "short"},
-		{URL: "ws://localhost/client", Secret: strings.Repeat("!", 32)},
-		{URL: "ws://127.0.0.1:65536/client", Secret: secret},
-		{URL: "ws://127.0.0.1:0/client", Secret: secret},
+		{URL: "ws://localhost/agenterm/client?query", Secret: secret},
+		{URL: "ws://localhost/agenterm/client#fragment", Secret: secret},
+		{URL: "ws://user@localhost/agenterm/client", Secret: secret},
+		{URL: "ws://localhost/agenterm/client", Secret: "short"},
+		{URL: "ws://localhost/agenterm/client", Secret: strings.Repeat("!", 32)},
+		{URL: "ws://127.0.0.1:65536/agenterm/client", Secret: secret},
+		{URL: "ws://127.0.0.1:0/agenterm/client", Secret: secret},
 	} {
 		if _, err := Encode(token); err == nil {
 			t.Errorf("invalid token fields were accepted: %#v", token)

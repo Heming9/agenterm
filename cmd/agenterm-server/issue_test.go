@@ -19,7 +19,7 @@ func TestCreateClientDisplayText(t *testing.T) {
 	for _, tag := range []string{"v1.2.3", ""} {
 		t.Run(tag, func(t *testing.T) {
 			releaseTag = tag
-			s := &server{clientURL: "wss://example.com/client"}
+			s := &server{clientURL: "wss://example.com/agenterm/client"}
 			result, err := s.createClient()
 			if err != nil {
 				t.Fatal(err)
@@ -50,15 +50,15 @@ func TestCreateClientDisplayText(t *testing.T) {
 func TestManagementCreatesAndUsesClient(t *testing.T) {
 	s := &server{adminKey: "admin-test", tokens: map[string]string{}, clients: map[string]*client{}, invitations: map[string]invitation{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", s.mcp)
-	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
+	mux.HandleFunc("/agenterm/mcp", s.mcp)
+	mux.HandleFunc("/agenterm/invite/redeem", s.redeemInvitation)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
-	s.clientURL = "ws" + ts.URL[4:] + "/client"
+	s.clientURL = "ws" + ts.URL[4:] + "/agenterm/client"
 	call := func(auth, name, args string) (int, map[string]any) {
 		t.Helper()
 		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + name + `","arguments":` + args + `}}`
-		req, _ := http.NewRequest("POST", ts.URL+"/mcp", bytes.NewBufferString(body))
+		req, _ := http.NewRequest("POST", ts.URL+"/agenterm/mcp", bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+auth)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -146,7 +146,7 @@ func TestManagementAuthenticationModes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &server{adminKey: "test-key", noPassword: tc.noPassword}
-			req := httptest.NewRequest("POST", "/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+			req := httptest.NewRequest("POST", "/agenterm/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 			if tc.header != "" {
 				req.Header.Set("Authorization", tc.header)
 			}

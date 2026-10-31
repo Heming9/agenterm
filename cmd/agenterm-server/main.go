@@ -12,7 +12,6 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -333,7 +332,7 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		if version != "2025-03-26" && version != "2025-06-18" {
 			version = "2025-03-26"
 		}
-		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.12"}}, nil)
+		respond(w, req.ID, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": "0.1.13"}}, nil)
 	case "ping":
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
@@ -471,19 +470,20 @@ func main() {
 	passwordFlag := flag.String("passwd", "", "MCP management key (generated when omitted)")
 	noPassword := flag.Bool("no-password", false, "allow MCP management access without a password")
 	autoCreate := flag.Bool("generate", false, "generate a client token and invitation at startup")
-	public := flag.String("public-url", "http://127.0.0.1:8080", "Server base URL reachable by client")
+	public := flag.String("public-url", "http://127.0.0.1:8080", "Public Server URL (optional /agenterm suffix)")
 	flag.Parse()
-	u, err := url.Parse(*public)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		log.Fatal("public-url must be an http(s) origin without a path")
+	u, err := parsePublicURL(*public)
+	if err != nil {
+		log.Fatal(err)
 	}
+	publicBase := u.String()
 	securePublicURL := u.Scheme == "https"
 	if securePublicURL {
 		u.Scheme = "wss"
 	} else {
 		u.Scheme = "ws"
 	}
-	u.Path = "/client"
+	u.Path = protocol.ClientPath
 	keySpecified := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "passwd" {
@@ -555,16 +555,10 @@ func main() {
 			}
 		}
 	}()
-	fmt.Printf("MCP endpoint: %s/mcp\n", strings.TrimRight(*public, "/"))
+	fmt.Printf("MCP endpoint: %s/mcp\n", publicBase)
 	if !securePublicURL {
 		log.Print("WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.")
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/client", s.connect)
-	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
-	mux.HandleFunc("/mcp", s.mcp)
-	mux.Handle("/downloads/", downloadHandler(releaseTag, installer.Assets()))
-	mux.Handle("/c/", s.installWrapper(releaseTag))
-	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, installer.Assets()), ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }

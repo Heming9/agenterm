@@ -6,6 +6,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -15,12 +17,19 @@ import (
 
 func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 	s := &server{clients: make(map[string]*client)}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/client", s.connect)
-	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
-	ts := httptest.NewServer(mux)
+	ts := httptest.NewServer(s.routes("", nil))
 	defer ts.Close()
-	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	target, _ := url.Parse(ts.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, protocol.PathPrefix+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer gateway.Close()
+	s.clientURL = "ws" + strings.TrimPrefix(gateway.URL, "http") + protocol.ClientPath
 	issued, err := s.createClient()
 	if err != nil {
 		t.Fatal(err)
@@ -80,13 +89,13 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 }
 
 func TestProbeRejectsInvalidInvitations(t *testing.T) {
-	s := &server{clientURL: "ws://example.com/client"}
+	s := &server{clientURL: "ws://example.com/agenterm/client"}
 	issued, _ := s.createClient()
 	value := issued["invitation"].(string)
 	decoded, _ := protocol.Decode(value)
-	otherServer, _ := protocol.Encode(protocol.Token{URL: "ws://other.example/client", Secret: decoded.Secret})
+	otherServer, _ := protocol.Encode(protocol.Token{URL: "ws://other.example/agenterm/client", Secret: decoded.Secret})
 	for _, header := range []string{"", "Bearer invalid", "Bearer " + issued["client_token"].(string), "Bearer " + otherServer} {
-		r := httptest.NewRequest(http.MethodGet, "/client?probe=1", nil)
+		r := httptest.NewRequest(http.MethodGet, "/agenterm/client?probe=1", nil)
 		r.Header.Set("Authorization", header)
 		w := httptest.NewRecorder()
 		s.connect(w, r)
@@ -97,7 +106,7 @@ func TestProbeRejectsInvalidInvitations(t *testing.T) {
 	entry := s.invitations[decoded.Secret]
 	entry.expires = time.Now().Add(-time.Second)
 	s.invitations[decoded.Secret] = entry
-	r := httptest.NewRequest(http.MethodGet, "/client?probe=1", nil)
+	r := httptest.NewRequest(http.MethodGet, "/agenterm/client?probe=1", nil)
 	r.Header.Set("Authorization", "Bearer "+value)
 	w := httptest.NewRecorder()
 	s.connect(w, r)

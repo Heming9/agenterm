@@ -117,7 +117,7 @@ func TestHeaderRightAlignmentAndNarrowWidth(t *testing.T) {
 	m := newTUI("")
 	defer m.cancel()
 	m.state = "connected"
-	m.address = "ws://127.0.0.1:18743/client"
+	m.address = "ws://127.0.0.1:18743/agenterm/client"
 	for _, width := range []int{80, 40, 25} {
 		m.width = width
 		header := ansi.Strip(strings.Split(m.View(), "\n")[0])

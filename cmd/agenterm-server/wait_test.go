@@ -16,14 +16,14 @@ import (
 func TestWaitForClientMCP(t *testing.T) {
 	s := &server{tokens: map[string]string{"token-a": "secret-a", "token-b": "secret-b"}, clients: make(map[string]*client)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", s.mcp)
-	mux.HandleFunc("/client", s.connect)
+	mux.HandleFunc("/agenterm/mcp", s.mcp)
+	mux.HandleFunc("/agenterm/client", s.connect)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	call := func(token string, timeout int) string {
 		t.Helper()
 		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "wait_for_client", "arguments": map[string]any{"timeout_ms": timeout}}})
-		req, _ := http.NewRequest("POST", ts.URL+"/mcp", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", ts.URL+"/agenterm/mcp", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -65,7 +65,7 @@ func TestWaitForClientMCP(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	header := http.Header{"Authorization": []string{"Bearer secret-b"}}
-	other, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/client", header)
+	other, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", header)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestWaitForClientMCP(t *testing.T) {
 	default:
 	}
 	header.Set("Authorization", "Bearer secret-a")
-	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/client", header)
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", header)
 	if err != nil {
 		t.Fatal(err)
 	}

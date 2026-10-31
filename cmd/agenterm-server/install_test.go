@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +25,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires a POSIX shell")
 	}
+	prefix := protocol.PathPrefix
 	root := t.TempDir()
 	assets := filepath.Join(root, "assets")
 	bin := filepath.Join(root, "bin")
@@ -61,10 +64,7 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 	log := filepath.Join(root, "downloads")
 	state := &server{}
 	var blockWebSocket atomic.Bool
-	mux := http.NewServeMux()
-	mux.HandleFunc("/client", state.connect)
-	mux.Handle("/c/", state.installWrapper("v0.1.8"))
-	mux.Handle("/downloads/", downloadHandler("v0.1.8", os.DirFS(assets)))
+	mux := state.routes("v0.1.8", os.DirFS(assets))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f, err := os.OpenFile(log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
@@ -73,14 +73,26 @@ func TestShellInvitationPreservesConsentInput(t *testing.T) {
 		}
 		fmt.Fprintln(f, r.URL.Path)
 		f.Close()
-		if blockWebSocket.Load() && r.URL.Path == "/client" {
+		if blockWebSocket.Load() && strings.TrimPrefix(r.URL.Path, prefix) == "/client" {
 			http.Error(w, "WebSocket upgrades blocked by proxy", http.StatusForbidden)
 			return
 		}
 		mux.ServeHTTP(w, r)
 	}))
 	defer ts.Close()
-	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	publicURL := ts.URL
+	target, _ := url.Parse(ts.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, prefix+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer frontend.Close()
+	publicURL = frontend.URL
+	state.clientURL = "ws" + strings.TrimPrefix(publicURL, "http") + prefix + "/client"
 	issued, err := state.createClient()
 	if err != nil {
 		t.Fatal(err)

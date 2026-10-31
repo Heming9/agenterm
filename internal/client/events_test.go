@@ -33,7 +33,7 @@ func TestCommandLifecycleEvents(t *testing.T) {
 			}))
 			defer server.Close()
 			token, err := protocol.Encode(protocol.Token{
-				URL:    "ws" + strings.TrimPrefix(server.URL, "http") + "/client",
+				URL:    "ws" + strings.TrimPrefix(server.URL, "http") + "/agenterm/client",
 				Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize)),
 			})
 			if err != nil {

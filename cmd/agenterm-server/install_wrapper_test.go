@@ -15,10 +15,10 @@ func TestInstallWrapperLifecycle(t *testing.T) {
 	s := &server{}
 	mux := http.NewServeMux()
 	mux.Handle("/c/", s.installWrapper("v1.2.3"))
-	mux.HandleFunc("/invite/redeem", s.redeemInvitation)
+	mux.HandleFunc("/agenterm/invite/redeem", s.redeemInvitation)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
-	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/client"
+	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
 	issued, err := s.createClient()
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestInstallWrapperLifecycle(t *testing.T) {
 		r.Host = "untrusted.example"
 		s.installWrapper("v1.2.3").ServeHTTP(w, r)
 		body := w.Body.String()
-		if w.Code != 200 || !strings.Contains(body, value) || !strings.Contains(body, ts.URL+"/downloads/v1.2.3") || strings.Contains(body, "untrusted.example") || strings.Contains(body, "@RELEASE_TAG@") {
+		if w.Code != 200 || !strings.Contains(body, value) || !strings.Contains(body, ts.URL+"/agenterm/downloads/v1.2.3") || strings.Contains(body, "untrusted.example") || strings.Contains(body, "@RELEASE_TAG@") {
 			t.Fatalf("invalid wrapper %s: %d %s", suffix, w.Code, body)
 		}
 		if w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
@@ -60,7 +60,7 @@ func TestInstallWrapperLifecycle(t *testing.T) {
 }
 
 func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
-	s := &server{clientURL: "wss://example.com/client"}
+	s := &server{clientURL: "wss://example.com/agenterm/client"}
 	issued, _ := s.createClient()
 	decoded, _ := protocol.Decode(issued["invitation"].(string))
 	path := "/c/" + decoded.Secret

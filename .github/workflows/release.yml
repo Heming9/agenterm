@@ -132,13 +132,16 @@ jobs:
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
           Agenterm preview release.
 
+          - All HTTP and WebSocket endpoints now share the /agenterm/ prefix: MCP, client connections, invitation redemption, short installation URLs, and downloads. Reverse proxies need just one route, preserving the prefix.
+          - Breaking change: previous root endpoints and token formats are unsupported. Update Server and Client (including the GUI) together, configure MCP at /agenterm/mcp, and generate new tokens/invitations.
+          - The public-url option accepts an origin or an address ending in /agenterm; generated URLs always include the prefix exactly once.
           - One-command connection no longer accesses GitHub: each Server bundles CLI archives and checksums for macOS, Linux, and Windows (amd64 and arm64), serving compressed files directly.
           - Short invitation URLs dynamically provide the installer with its version, invitation, and download address. Invitations remain valid for 15 minutes and redeemable once; fetching scripts does not consume them.
           - Check invitation validity and the actual WebSocket handshake before downloading a client. Failed probes stop installation immediately.
           - Show five connection stages and terminal download progress. Verified cached clients skip downloading; connection success is shown only after the real handshake.
           - GUI downloads remain available for macOS arm64 and Windows amd64. CLI clients retain the interactive TUI and optional -plain mode.
 
-          Reverse proxies must forward /c/ and /downloads/, and support WebSocket upgrades and the Authorization header on /client. Use matching Server and client release versions.
+          All endpoints now use /agenterm/. Reverse proxies only need to forward this prefix unchanged, with WebSocket upgrades and the Authorization header enabled. Update Server and Client (including the GUI) together, regenerate tokens, and use /agenterm/mcp. Previous root endpoints and token formats are unsupported.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

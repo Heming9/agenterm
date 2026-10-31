@@ -12,11 +12,14 @@ import (
 )
 
 const (
+	PathPrefix = "/agenterm"
+	ClientPath = PathPrefix + "/client"
 	// TokenSecretSize is the number of cryptographically random credential bytes.
 	TokenSecretSize = 16
 	tokenPrefix     = "agenterm:"
 	tokenIPv4       = 4
 	tokenIPv6       = 8
+	tokenFormat     = 16 // Namespaced routes; older token formats are unsupported.
 )
 
 type Token struct {
@@ -37,9 +40,9 @@ func Encode(t Token) (string, error) {
 	// IP addresses use a two-byte port (0 = absent) and 4 or 16 address bytes.
 	// Domain names and scoped IPv6 addresses use the full host as text.
 	b := make([]byte, 1, 1+TokenSecretSize+len(u.Host))
-	b[0] = 1
+	b[0] = tokenFormat | 1
 	if u.Scheme == "wss" {
-		b[0] = 2
+		b[0] = tokenFormat | 2
 	}
 	b = append(b, secret...)
 	if ip, err := netip.ParseAddr(u.Hostname()); err == nil && ip.Zone() == "" {
@@ -75,6 +78,9 @@ func Decode(s string) (Token, error) {
 	if len(b) <= 1+TokenSecretSize {
 		return t, fmt.Errorf("invalid token: incomplete payload")
 	}
+	if b[0]&tokenFormat == 0 {
+		return t, fmt.Errorf("invalid token: unsupported format; update Server and Client together")
+	}
 	scheme := "ws"
 	switch b[0] & 3 {
 	case 1:
@@ -85,7 +91,7 @@ func Decode(s string) (Token, error) {
 	}
 	host := string(b[1+TokenSecretSize:])
 	address := b[1+TokenSecretSize:]
-	switch b[0] &^ 3 {
+	switch b[0] &^ (3 | tokenFormat) {
 	case 0:
 	case tokenIPv4, tokenIPv6:
 		addressSize := 4
@@ -106,7 +112,7 @@ func Decode(s string) (Token, error) {
 	default:
 		return t, fmt.Errorf("invalid token: unsupported address format")
 	}
-	rawURL := (&url.URL{Scheme: scheme, Host: host, Path: "/client"}).String()
+	rawURL := (&url.URL{Scheme: scheme, Host: host, Path: ClientPath}).String()
 	u, err := parseTokenURL(rawURL)
 	if err != nil {
 		return t, err
@@ -120,8 +126,8 @@ func Decode(s string) (Token, error) {
 func parseTokenURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "ws" && u.Scheme != "wss") || u.Hostname() == "" ||
-		u.User != nil || u.Path != "/client" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return nil, fmt.Errorf("invalid token: expected a WebSocket origin with /client path")
+		u.User != nil || u.Path != ClientPath || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, fmt.Errorf("invalid token: expected a WebSocket origin with %s path", ClientPath)
 	}
 	return u, nil
 }
