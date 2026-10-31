@@ -4,128 +4,185 @@
 
 [English](README.md) | 简体中文
 
-让本机 Agent 通过 MCP 在另一台电脑执行命令。支持多个 Client 同时在线，每个 Client 使用独立的 token。
+**给 Agent 接一台远程电脑的 shell，走 MCP。**
 
 ```text
 Agent ── HTTP / MCP ──> Server <── WebSocket ── Client ──> shell
 ```
 
-## 安全范围
+macOS / Linux / Windows · CLI / GUI · 多客户端 · 交互式会话 · 无需 SSH 服务
 
-**Server 默认使用未加密的 HTTP 和 WebSocket。能监听流量的人可能读取 token、命令及输出；持有 token 的人可以在对应 Client 上执行命令，权限等同于运行 Client 的用户。仅在可信网络或受控测试环境使用，不要直接暴露到公网。** 每个 token 用于验证并选择对应的 Client；token 可重复使用，Server 重启后失效。Client 不会保存 token 或自动重连。
+## 快速开始
 
-认证失败按直接连接的来源 IP 计数：1 分钟内失败 10 次后，该 IP 被限制 5 分钟；限制期间正确凭证也不能使用。共享 IP 的用户会相互影响。Server 不信任转发头：使用反向代理时，所有请求可能显示为同一个代理 IP，建议同时在代理入口按真实来源 IP 限流。分布式来源仍可继续尝试。
-
-Server 可以看到命令与输出。命令会显示在 Client 终端，包含在命令中的敏感信息也可能被显示。关闭 Client 会断开连接并尝试停止运行中的命令，但已完成的操作不能撤销，脱离的子进程也不一定会停止。
-
-## 构建
-
-需要 Go 1.24.3 或更高版本：
+从 [Releases](https://github.com/Heming9/agenterm/releases) 下载，或用 Go 1.24.3+ 编译：
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
 cd agenterm
-```
-
-构建命令行程序：
-
-```sh
 go build -o agenterm-server ./cmd/agenterm-server
 go build -o agenterm-client ./cmd/agenterm-client
 ```
 
-为被控电脑的系统和架构编译 Client，例如：
+**1. 启动 Server。** 以下命令用于可信网络：
+
+```sh
+./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --generate
+```
+
+将 `SERVER_IP` 换成 Agent 和目标电脑都能访问的地址，复制输出的 `agenterm:` token。
+
+**2. 连接目标电脑。** 运行 Client，粘贴 token：
+
+```sh
+./agenterm-client
+```
+
+发布版 Server 还会输出 macOS/Linux 和 Windows PowerShell 的一键安装命令。私下发送对应命令，对方确认授权后连接。
+
+**3. 接入 Agent。** 添加支持 Streamable HTTP 和自定义请求头的远程 MCP 服务：
+
+```text
+URL:            http://SERVER_IP:8080/mcp
+Authorization:  Bearer agenterm:...
+```
+
+使用与 Client 相同的完整 token，然后调用 `execute_command`：
+
+```json
+{"command":"pwd && ls"}
+```
+
+> token 等于目标电脑当前用户的 shell 权限。默认 HTTP/WS 不加密；请在可信网络使用，暴露到公网前先配置 HTTPS 反向代理。[安全细节见后文](#详细说明)。
+
+## MCP 工具
+
+| 工具 | 用途 |
+| --- | --- |
+| `create_client` | 创建 token 和一次性邀请，需要管理权限。 |
+| `wait_for_client` | 等待目标电脑上线。 |
+| `execute_command` | 执行命令，结束后返回输出和退出码。 |
+| `session_start` | 启动交互式命令，返回 `session_id`。 |
+| `session_read` | 用 `session_id` 和 `cursor` 读输出，下次传入返回的 `next_cursor`。 |
+| `session_write` | 向会话发送 `input`，提交一行时带上换行符。 |
+| `session_stop` | 停止会话。 |
+
+管理多台电脑时，用 Server 输出的**管理密钥**接入 MCP。调用 `create_client`（参数 `{}`），向对方展示返回的 `display_text`，后续工具调用通过 `client_token` 选择目标：
+
+```json
+{"client_token":"agenterm:...","timeout_ms":30000}
+```
+
+不加 `--generate` 时，Server 只按需创建连接。Client token 控制单个目标，管理密钥控制所有目标。
+
+## 客户端
+
+- **CLI：**默认进入终端界面。方向键滚动，`c` 清空日志，`q` / Ctrl+C 断开退出。`-plain` 使用纯文本输出；重定向输入或输出时自动启用。
+- **GUI：**粘贴 token、连接、查看命令和实时输出。跟随系统明暗主题，当前界面为中文。[构建方法见后文](#详细说明)。
+
+两种客户端都只在内存保留最近约 64 KiB 日志，不保存 token，断线后需手动重连。关闭客户端即断开连接。
+
+## 详细说明
+
+<details>
+<summary>邀请与下载</summary>
+
+发布版 Server 生成的一键命令从 GitHub 下载同版本安装脚本和 CLI，自动识别架构，确认授权后连接。不安装开机自启服务。GUI 从 Release 单独下载；源码构建的 Server 不提供下载命令。
+
+邀请 15 分钟有效，只能兑换一次。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。兑换后的 Client token 可重复使用，Server 重启后失效，每个 token 同时只允许一个 Client 在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
+
+目标电脑需要访问 GitHub 和 `-public-url`；`127.0.0.1` 仅适用于同机。每次运行都会获取 Release 校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
+
+| 系统 | 缓存目录 |
+| --- | --- |
+| macOS | `~/Library/Caches/Agenterm` |
+| Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
+| Windows | `%LOCALAPPDATA%\Agenterm\cache` |
+
+断开后缓存保留，可手动删除；每次连接仍需授权。安装脚本通过 HTTPS 下载，不校验固定哈希。Release 校验和用于发现下载损坏，不能替代代码签名，也不能防御 Release 本身被篡改。
+
+</details>
+
+<details>
+<summary>认证与部署</summary>
+
+Server 默认监听 `127.0.0.1:8080`，每次启动生成 10 位小写字母和数字组成的管理密钥。公网部署请用 `--passwd` 设置更长的随机密钥：
+
+```sh
+./agenterm-server -listen 127.0.0.1:8080 \
+  -public-url https://agenterm.example.com \
+  --passwd '替换为足够长的随机密钥'
+```
+
+另行配置支持 WebSocket 的 HTTPS 反向代理。`-public-url` 只声明对外地址，不会启用 TLS。代理与 Server 同机时，后端仅监听本机。公网部署还需适当的访问控制。
+
+MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Client token>`。管理模式用参数 `client_token` 选择目标；普通 Client token 无权调用 `create_client`。也可为每个目标单独配置 MCP。Agent 需支持 Streamable HTTP 和自定义请求头。
+
+`create_client` 返回 `client_token`、`invitation`、`expires_at` 和 `display_text`。发布版还返回 `macos_linux_command` 与 `windows_powershell_command`，两条命令共用同一个邀请，任选其一。Server 最多创建 1000 个 Client token；即使管理密钥固定，所有 token 和邀请仍在重启后失效。
+
+`-no-password` 关闭 MCP 管理认证，任何能访问接口的人都能创建和控制连接，仅限私有环境。不能与 `--passwd` 同用。
+
+Client token 包含 Server 地址和 128 位随机凭证。当前格式不兼容旧版，Server 和 Client 需一起更新。
+
+</details>
+
+<details>
+<summary>会话行为与平台限制</summary>
+
+- `wait_for_client` 返回 `{"status":"connected"}` 或 `{"status":"timeout"}`。`timeout_ms` 默认 30000，范围 0–300000，0 表示立即检查。先展示邀请再等待，Agent 宿主需允许对应时长，超时后可再次调用。
+- `session_read` 通过轮询获取输出，`wait_ms` 最多等待 20000 毫秒；`done: true` 时返回 `exit_code`。每个会话保留最近 1 MiB 输出，读取落后时返回 `truncated: true`。已结束会话保留至少 30 分钟，新建会话时清理。
+- macOS/Linux 会话使用 PTY。Windows 使用管道，支持简单提示交互，不支持要求真实终端的程序。暂不支持远程图形界面。
+- 全屏终端程序输出的控制序列可能无法被 Agent 正确理解。CLI 会过滤本地日志中的控制序列，它是日志查看器。输入可能被回显，避免通过 Agent 输入敏感信息。
+- 命令使用直接启动 Client 的受支持 shell（PowerShell、cmd、bash、zsh、fish 等）。无法识别时，macOS/Linux 回退到 `/bin/sh`，Windows 回退到 `ComSpec`（通常是 `cmd.exe`）。每条命令启动新的 shell，不共享启动 shell 的会话变量和函数。
+- Windows 根据首段非 ASCII 内容识别 UTF-8 或系统代码页；混合编码仍可能乱码。
+- 断线后需手动重连；Server 重启后需获取新 token。
+- GUI 统计已完成命令数和平均耗时，包含失败或取消的命令。清空日志只影响显示，重连成功后重置统计；连接过程中可取消。
+
+</details>
+
+<details>
+<summary>安全模型</summary>
+
+Server 可见命令与输出，Client 也会在本地显示，两者都可能包含敏感信息。关闭 Client 会尝试停止运行中的命令，但无法撤销已完成操作，也不能保证停止脱离的子进程。
+
+默认 HTTP 和 WebSocket 不加密，流量监听者可读取凭证、命令和输出。不可信网络使用 HTTPS，并保管好 token 和管理密钥。
+
+认证按直连来源 IP 限流：1 分钟内失败 10 次后封禁 5 分钟，期间正确凭证也会被拒绝。共享 IP 的用户相互影响。Server 忽略转发头；反向代理场景还应在代理入口按真实来源 IP 限流。分布式来源仍可继续尝试认证。
+
+</details>
+
+<details>
+<summary>交叉编译与 GUI 打包</summary>
+
+CLI 交叉编译：
 
 ```sh
 GOOS=linux GOARCH=amd64 go build -o agenterm-client-linux-amd64 ./cmd/agenterm-client
 GOOS=windows GOARCH=amd64 go build -o agenterm-client-windows-amd64.exe ./cmd/agenterm-client
 ```
 
-## 图形界面
-
-图形版与命令行版使用相同的 Client 内核，采用跟随系统明暗模式的黑白主题。顶部一行放置 Token 输入框和连接按钮；连接后显示服务器地址、连接状态和“断开连接”。执行记录显示命令和实时输出；右上角统计本次连接已完成的命令数与平均耗时，包含失败或取消的命令，不包含仍在执行的命令。“清空”只清除显示的输出，重新连接成功时重置统计。连接过程中可点击“取消连接”，关闭窗口会断开连接。图形版不会保存 token，也不会自动重连。执行记录仅保存在内存，最多保留最近约 64 KiB；命令或输出可能含有敏感信息。
+Fyne GUI 需要 CGo 和 C 编译器；Linux 还需图形开发库，跨平台编译需目标平台的 C 工具链。参见 [Fyne 构建说明](https://docs.fyne.io/started/)。
 
 ```sh
 go build -o agenterm-gui ./cmd/agenterm-gui
+# Windows：隐藏控制台窗口
+go build -ldflags=-H=windowsgui -o Agenterm.exe ./cmd/agenterm-gui
 ```
 
-GUI 使用 Fyne，构建需要 CGo 和本机 C 编译器。Linux 还需要相应图形库开发文件；跨平台编译需要目标系统的 C 交叉编译器，不能直接复用下面纯 Go 命令行版的交叉编译方式。Windows 可在本机用 `go build -ldflags=-H=windowsgui -o Agenterm.exe ./cmd/agenterm-gui` 构建，避免额外的控制台窗口。不同系统的图形包依赖和发布要求参见 [Fyne 构建说明](https://docs.fyne.io/started/)。
-
-要打包包含系统应用图标的 GUI，请先安装与项目 Fyne 版本一致的 CLI，再在目标系统上运行对应的打包命令：
+打包带图标的应用，先安装匹配版本的 Fyne CLI，再在目标系统执行对应命令：
 
 ```sh
 go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
 cd cmd/agenterm-gui
-fyne package -os darwin --use-raw-icon   # macOS：Agenterm.app
-fyne package -os windows -icon assets/app-icon-windows.png  # Windows：Agenterm.exe
+fyne package -os darwin --use-raw-icon   # Agenterm.app
+fyne package -os windows -icon assets/app-icon-windows.png  # Agenterm.exe
 ```
 
-选择当前操作系统对应的命令；Windows 打包需要可用的 Windows C 编译器。Fyne CLI 每次打包后会递增 `FyneApp.toml` 中的构建号。
+Windows 打包需要可用的 Windows C 编译器。打包会递增 `FyneApp.toml` 的构建号。
 
-## 运行
+</details>
 
-在 Server 机器启动服务：
-
-```sh
-./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
-```
-
-将 `SERVER_IP` 改为 Client 和 Agent 都能访问的地址。Server 默认输出 MCP 地址，不在启动时生成连接 token。指定 `--generate` 时会输出一组 `agenterm:<编码内容>` 格式的连接 token 和邀请。每个 token 对应一条 Client 链路，同一个 token 同时只能连接一个 Client。编码内容采用紧凑二进制结构，包含连接协议、16 字节（128 位）随机凭证和主机地址（含可选端口），使用无填充的 Base64 URL-safe 编码；连接路径固定为 `/client`。IPv4/IPv6 地址及其端口使用二进制存储，域名保留为文本。默认本机地址的 token 为 40 个字符。此格式不兼容旧版 token，Server 与 Client 需同时更新。默认仅监听 `127.0.0.1:8080`，适合单机测试。这里的 token 包含 Server 地址和接入凭证，按密码保管。
-
-在被控电脑运行：
-
-```sh
-./agenterm-client
-```
-
-按提示粘贴 token 并回车。Client 不安装系统 SSH 服务，也不要求单独的系统登录；它以当前登录用户的权限运行命令。
-
-### 使用一次性邀请连接
-
-使用发布版 Server 时，每个连接 token 同时生成一组安装命令，分别供 macOS/Linux 和 Windows PowerShell 使用。将适合对方系统的命令私下发送给对方；命令从该 Server 对应版本的 GitHub Release 下载脚本和命令行客户端，自动检测架构。终端中展示服务器地址与权限说明，对方确认后才会连接。关闭客户端即可断开；不会设置开机自启。图形客户端仍可从 Release 单独下载并使用 token 连接。
-
-客户端按版本、系统和架构缓存在当前用户目录中：macOS 为 `~/Library/Caches/Agenterm`，Linux 为 `${XDG_CACHE_HOME:-~/.cache}/agenterm`，Windows 为 `%LOCALAPPDATA%\Agenterm\cache`。每次执行会先从 GitHub 获取版本校验清单；缓存客户端校验通过时不重复下载，缺失或损坏时自动下载。关闭客户端后缓存会保留；如需清理可删除该缓存目录。每次连接仍需确认授权。
-
-邀请有效期为 15 分钟、只能兑换一次。过期后在 Server 控制台按回车，可为启动时生成的 token 重新生成邀请，并作废其尚未兑换的旧邀请；已有连接不受影响。每个 token 仍只能同时连接一个客户端，兑换后的连接 token 原有的有效期规则不变。邀请命令及 token 都是凭证，应私下发送，避免粘贴到公开场所；命令可能保存在终端历史中，完成后应清理。
-
-对方需要访问 GitHub 和 Server 的 `-public-url`；默认的 `127.0.0.1` 只适用于同机。生产环境应通过支持 WebSocket 的 HTTPS 反向代理提供 Server，防止邀请及连接凭证被窃听。安装脚本通过 HTTPS 从 GitHub 下载，不再单独校验脚本本身的固定哈希；脚本使用 Release 的校验清单检查客户端文件，可发现下载损坏，但不代替代码签名或保护已被篡改的 Release。源码本地构建不会生成下载命令，请使用发布版。
-
-分享对应的邀请或 token 后，Agent 可以调用 `wait_for_client` 等待该目标 Client 连接，然后继续执行。返回值为 `{"status":"connected"}` 或 `{"status":"timeout"}`。`timeout_ms` 默认为 30000，允许 0–300000；设为 0 立即检查。超时后 Agent 可以再次调用。Agent 宿主需要在等待前展示邀请，并允许工具调用运行足够长的时间；使用管理密钥时，也可以通过 MCP 创建新的 token 和邀请。
-
-### 通过 MCP 运行时创建连接
-
-默认启动时不生成 token 和邀请，由 Agent 按需创建。指定 `--generate` 可在启动时生成。服务端默认生成并输出 10 位数字和小写字母组成的 MCP 管理密钥；也可通过 `--passwd` 参数设置固定密钥，例如：
-
-```sh
-./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --passwd '替换为安全的随机密钥'
-```
-
-以 `Authorization: Bearer <管理密钥>` 连接 `/mcp`，调用 `create_client`（无需参数）。结果包含 `client_token`、一次性 `invitation` 和 `expires_at`，以及供 Agent 展示的 `display_text`：连接 token、无客户端时的 macOS / Linux 和 Windows 一键连接命令。发布版还会分别返回 `macos_linux_command` 和 `windows_powershell_command`；源码构建会说明命令不可用。两条命令使用同一个一次性邀请，任选其一，并私下发给对应设备的使用者。管理密钥下调用 `wait_for_client`、`execute_command` 或会话工具时，需要在参数中提供返回的 `client_token` 来选择目标，例如：
-
-```json
-{"client_token":"agenterm:...","timeout_ms":30000}
-```
-
-管理密钥可以创建和操作所有连接，应妥善保管并通过 HTTPS 传输。默认 10 位密钥强度有限，公网部署应使用 `--passwd` 设置更长的随机密钥。使用 `-no-password` 可关闭 MCP 管理认证，此时无需 Authorization 请求头，任何能访问 MCP 的人都能创建和控制连接；不要将此模式暴露到公网。`--passwd` 和 `-no-password` 不能同时使用。未指定 `--passwd` 时，每次重启生成新的管理密钥；即使固定管理密钥，Client token 和邀请仍在服务端重启后失效。每次 `create_client` 都创建新的连接和邀请，服务端总连接 token 数上限为 1000；普通 Client token 无权创建连接。控制台回车只刷新启动时生成的邀请，不影响 MCP 创建的邀请。
-
-在支持 Streamable HTTP 和自定义请求头的 Agent 中添加远程 MCP 服务，地址为 `http://SERVER_IP:8080/mcp`。将请求头 `Authorization` 设置为 `Bearer <token>`，其中 token 是目标 Client 使用的完整 `agenterm:` token。需要操作多个 Client 时，可分别配置 MCP 服务；不同 Agent 对自定义请求头的支持可能不同。连接后调用 `execute_command`，传入 `command` 参数。例如：
-
-```json
-{"command":"pwd && ls"}
-```
-
-`execute_command` 适合非交互式命令，在命令结束后返回输出和退出码。交互式命令使用以下 MCP 工具，Agent 可以在命令运行期间逐段读取输出并回复提示：
-
-1. `session_start`：传入 `command`，取得 `session_id`。
-2. `session_read`：传入 `session_id`；使用返回的 `next_cursor` 作为下次的 `cursor`，设置 `wait_ms`（最多 20000 毫秒）等待新输出。`done` 为 true 时带有 `exit_code`。
-3. `session_write`：传入 `session_id` 和 `input`；回答提示时通常需要包含换行符。
-4. `session_stop`：停止会话。
-
-实时输出通过 Agent 多次调用 `session_read` 获取，而非自动推送；具体展示效果取决于 Agent。Client 本地也会显示命令及输出。每个会话保留最近 1 MiB 输出，落后太多的读取会返回 `truncated: true`。已结束会话保留至少 30 分钟，在新建会话时清理。
-
-MCP 客户端必须能访问 Server；不同 Agent 的配置方式和远程 MCP 支持情况不同。
-
-直接检查 MCP 接口：
+<details>
+<summary>用 curl 检查 MCP</summary>
 
 ```sh
 curl -s http://127.0.0.1:8080/mcp \
@@ -135,21 +192,14 @@ curl -s http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_command","arguments":{"command":"echo hello"}}}'
 ```
 
-Server 当前只提供 HTTP。使用 HTTP 的 `-public-url` 时会输出未加密警告。跨设备时可在可信网络中使用；如需加密传输，可在前面配置支持 WebSocket 的 HTTPS 反向代理，并将 `-public-url` 设为代理的 HTTPS 地址。代理与 Server 同机时，建议仅监听本机，例如 `-listen 127.0.0.1:8080 -public-url https://agenterm.example.com`。仅设置 HTTPS 地址不会自动启用 TLS，必须单独配置反向代理。HTTPS 可以保护传输，但仍需妥善保管 token；公开部署还需要适当的访问控制。
+</details>
 
-## 当前限制
+## 测试
 
-- macOS/Linux 交互会话使用 PTY；Windows 使用普通输入输出管道，支持简单提示交互，但不支持要求真实终端的程序。暂不支持远程图形界面。
-- 全屏终端界面会输出控制字符，Agent 不一定能正确理解。终端输入可能被程序回显，避免通过 Agent 输入密码等敏感信息。
-- 每个 token 同时只允许一个 Client 连接；Server 重启后 token 失效，需要使用新 token 重新连接。连接中断后也需要重新连接。
-- `execute_command` 在结束后返回输出；需要边运行边读取时使用 `session_start` 和 `session_read`。
-- Windows 输出会根据首段非 ASCII 内容推测 UTF-8 或系统代码页并转换为 UTF-8；同一命令混合多种编码时仍可能乱码。
-- 命令默认使用直接启动客户端的受支持 shell（如 PowerShell、cmd、bash、zsh 或 fish）；无法识别时，macOS/Linux 回退到 `/bin/sh`，Windows 回退到 `ComSpec` 指定的命令解释器（通常是 `cmd.exe`）。每条命令都在新的 shell 进程中执行，不会共享启动 shell 的会话变量或函数。
+```sh
+go test ./...
+```
 
-## 开源协议
+## 协议
 
-本项目采用 [Apache License 2.0](LICENSE) 开源协议。
-
-### Client 终端界面
-
-当输入和输出都是终端时，`agenterm-client` 默认启动终端界面。输入连接 token（也可通过 `-token` 传入）；使用方向键滚动，`c` 清空显示，`q` 或 Ctrl+C 断开并退出。连接中断后可输入 token 重新连接。界面最多保留最近 64 KiB 输出并过滤终端控制序列；它是日志查看器，不是终端模拟器。使用 `-plain` 可切换回原来的纯文本输出；输入或输出被重定向时也会自动使用纯文本模式。使用邀请连接时，仍会在进入界面前显示确认提示。
+[Apache-2.0](LICENSE)
