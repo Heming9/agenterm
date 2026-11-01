@@ -255,6 +255,8 @@ jobs:
           merge-multiple: true
       - name: Merge reused files and verify complete release
         run: |
+          # Artifact uploads omit empty directories on full rebuilds.
+          mkdir -p release-plan/reused
           cp -R release-plan/reused/. artifacts/
           python3 scripts/release/release.py finalize
       - name: Publish prerelease
