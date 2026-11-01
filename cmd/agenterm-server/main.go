@@ -54,6 +54,7 @@ type server struct {
 	sessions        map[string]*session
 	limiter         authLimiter
 	invitations     map[string]invitation
+	installCodes    map[string]string // six-character installer code -> invitation secret
 	maxClientsPerIP int
 	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
 	nextClientOrder uint64
@@ -86,7 +87,7 @@ func (s *server) redeemInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.multiDevice[s.tokens[entry.token]] {
-		delete(s.invitations, secret)
+		s.deleteInvitation(secret)
 	}
 	s.mu.Unlock()
 	w.Header().Set("Cache-Control", "no-store")
@@ -480,12 +481,13 @@ func main() {
 	noPassword := flag.Bool("no-password", false, serverText("allow.mcp.management.access.without.a.password"))
 	autoCreate := flag.Bool("generate", false, serverText("generate.a.client.token.and.invitation.at"))
 	public := flag.String("public-url", "http://127.0.0.1:8080", serverText("public.server.url.optional.agenterm.suffix"))
+	urlPrefix := flag.String("url-prefix", protocol.PathPrefix, serverText("server.url.prefix"))
 	maxClientsPerIP := flag.Int("max-clients-per-ip", 0, serverText("max.clients.per.ip"))
 	flag.Parse()
 	if *maxClientsPerIP < 0 {
 		log.Fatal(serverText("max.clients.per.ip.invalid"))
 	}
-	u, err := parsePublicURL(*public)
+	u, err := parsePublicURL(*public, *urlPrefix)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -496,7 +498,7 @@ func main() {
 	} else {
 		u.Scheme = "ws"
 	}
-	u.Path = protocol.ClientPath
+	u.Path += "/client"
 	keySpecified := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "passwd" {
@@ -542,19 +544,17 @@ func main() {
 		for key, entry := range s.invitations {
 			for _, token := range issuedTokens {
 				if entry.token == token {
-					delete(s.invitations, key)
+					s.deleteInvitation(key)
 					break
 				}
 			}
 		}
 		for i, token := range issuedTokens {
-			secret := randomBytes(protocol.TokenSecretSize)
-			value, err := protocol.Encode(protocol.Token{URL: u.String(), Secret: secret})
+			value, err := s.newInvitation(token, time.Now().Add(15*time.Minute))
 			if err != nil {
 				s.mu.Unlock()
 				log.Fatal(err)
 			}
-			s.invitations[secret] = invitation{token: token, expires: time.Now().Add(15 * time.Minute)}
 			outputs = append(outputs, output{value: value, index: i + 1})
 		}
 		s.mu.Unlock()

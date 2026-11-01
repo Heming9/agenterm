@@ -45,7 +45,7 @@ func (s *server) trimPending(ip string, max int) {
 		}
 		for key, invitation := range s.invitations {
 			if invitation.token == oldest.token {
-				delete(s.invitations, key)
+				s.deleteInvitation(key)
 			}
 		}
 		delete(s.tokens, oldest.token)

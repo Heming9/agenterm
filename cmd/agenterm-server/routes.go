@@ -6,19 +6,24 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
-func parsePublicURL(raw string) (*url.URL, error) {
+func parsePublicURL(raw, prefix string) (*url.URL, error) {
+	prefix, err := protocol.NormalizePathPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") ||
 		u.User != nil || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return nil, i18n.NewError("public.url.must.be.an.http.s.origin", protocol.PathPrefix)
+		return nil, i18n.NewError("public.url.must.be.an.http.s.origin", prefix)
 	}
 	switch u.Path {
-	case "", "/", protocol.PathPrefix, protocol.PathPrefix + "/":
-		u.Path = protocol.PathPrefix
+	case "", "/", prefix, prefix + "/":
+		u.Path = prefix
 	default:
-		return nil, i18n.NewError("public.url.path.must.be.s", protocol.PathPrefix)
+		return nil, i18n.NewError("public.url.path.must.be.s", prefix)
 	}
 	return u, nil
 }
@@ -32,6 +37,11 @@ func (s *server) routes(tag string, assets fs.FS) http.Handler {
 	routes.Handle("/c/", s.installWrapper(tag))
 
 	mux := http.NewServeMux()
-	mux.Handle(protocol.PathPrefix+"/", http.StripPrefix(protocol.PathPrefix, routes))
+	prefix := protocol.PathPrefix
+	if s.clientURL != "" {
+		u, _ := url.Parse(s.clientURL) // Validated when constructing the server/token.
+		prefix = strings.TrimSuffix(u.Path, "/client")
+	}
+	mux.Handle(prefix+"/", http.StripPrefix(prefix, routes))
 	return mux
 }

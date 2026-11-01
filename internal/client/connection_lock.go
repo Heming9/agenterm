@@ -2,6 +2,7 @@ package client
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/protocol"
 	"crypto/sha256"
 	"encoding/hex"
 	"net"
@@ -34,6 +35,11 @@ func acquireConnectionLock(serverURL string) (*os.File, error) {
 		}
 	}
 	address := u.Scheme + "://" + net.JoinHostPort(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), port)
+	// Preserve existing lock names for the default route. Custom prefixes can
+	// identify independent servers hosted behind the same origin.
+	if u.Path != protocol.ClientPath {
+		address += u.Path
+	}
 	key := sha256.Sum256([]byte(address))
 	file, err := os.OpenFile(filepath.Join(directory, hex.EncodeToString(key[:])+".lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {

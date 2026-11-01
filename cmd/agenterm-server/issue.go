@@ -19,23 +19,15 @@ func (s *server) createClientMode(owner string, multiDevice bool) (map[string]an
 	if err != nil {
 		return nil, err
 	}
-	inviteSecret := randomBytes(protocol.TokenSecretSize)
-	value, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: inviteSecret})
-	if err != nil {
-		return nil, err
-	}
 	expires := time.Now().Add(15 * time.Minute)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tokens == nil {
 		s.tokens = make(map[string]string)
 	}
-	if s.invitations == nil {
-		s.invitations = make(map[string]invitation)
-	}
 	for key, entry := range s.invitations {
 		if time.Now().After(entry.expires) {
-			delete(s.invitations, key)
+			s.deleteInvitation(key)
 			if secret := s.tokens[entry.token]; s.clientOwners[secret] != nil && !s.clientOwners[secret].used {
 				delete(s.clientOwners, secret)
 				delete(s.tokens, entry.token)
@@ -56,9 +48,12 @@ func (s *server) createClientMode(owner string, multiDevice bool) (map[string]an
 	if s.multiDevice == nil {
 		s.multiDevice = make(map[string]bool)
 	}
+	value, err := s.newInvitation(token, expires)
+	if err != nil {
+		return nil, err
+	}
 	s.multiDevice[secret] = multiDevice
 	s.tokens[token] = secret
-	s.invitations[inviteSecret] = invitation{token: token, expires: expires}
 	if s.maxClientsPerIP > 0 {
 		if s.clientOwners == nil {
 			s.clientOwners = make(map[string]*clientOwner)

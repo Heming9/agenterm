@@ -21,6 +21,7 @@ const (
 	tokenIPv4       = 4
 	tokenIPv6       = 8
 	tokenFormat     = 16 // Namespaced routes; older token formats are unsupported.
+	tokenCustomPath = 32 // Length-prefixed URL prefix before the address data.
 )
 
 const HostnameHeader = "X-Agenterm-Hostname"
@@ -55,6 +56,12 @@ func Encode(t Token) (string, error) {
 		b[0] = tokenFormat | 2
 	}
 	b = append(b, secret...)
+	prefix := strings.TrimSuffix(u.Path, "/client")
+	if prefix != PathPrefix {
+		b[0] |= tokenCustomPath
+		b = binary.BigEndian.AppendUint16(b, uint16(len(prefix)))
+		b = append(b, prefix...)
+	}
 	if ip, err := netip.ParseAddr(u.Hostname()); err == nil && ip.Zone() == "" {
 		var port uint64
 		if u.Port() != "" {
@@ -99,9 +106,25 @@ func Decode(s string) (Token, error) {
 	default:
 		return t, i18n.NewError("invalid.token.unsupported.format")
 	}
-	host := string(b[1+TokenSecretSize:])
 	address := b[1+TokenSecretSize:]
-	switch b[0] &^ (3 | tokenFormat) {
+	prefix := PathPrefix
+	if b[0]&tokenCustomPath != 0 {
+		if len(address) < 2 {
+			return t, i18n.NewError("invalid.url.prefix")
+		}
+		size := int(binary.BigEndian.Uint16(address[:2]))
+		if size > len(address)-2 {
+			return t, i18n.NewError("invalid.url.prefix")
+		}
+		prefix = string(address[2 : 2+size])
+		normalized, err := NormalizePathPrefix(prefix)
+		if err != nil || normalized != prefix {
+			return t, i18n.NewError("invalid.url.prefix")
+		}
+		address = address[2+size:]
+	}
+	host := string(address)
+	switch b[0] &^ (3 | tokenFormat | tokenCustomPath) {
 	case 0:
 	case tokenIPv4, tokenIPv6:
 		addressSize := 4
@@ -122,7 +145,7 @@ func Decode(s string) (Token, error) {
 	default:
 		return t, i18n.NewError("invalid.token.unsupported.address.format")
 	}
-	rawURL := (&url.URL{Scheme: scheme, Host: host, Path: ClientPath}).String()
+	rawURL := (&url.URL{Scheme: scheme, Host: host, Path: prefix + "/client"}).String()
 	u, err := parseTokenURL(rawURL)
 	if err != nil {
 		return t, err
@@ -136,10 +159,38 @@ func Decode(s string) (Token, error) {
 func parseTokenURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "ws" && u.Scheme != "wss") || u.Hostname() == "" ||
-		u.User != nil || u.Path != ClientPath || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		u.User != nil || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, i18n.NewError("invalid.token.expected.a.websocket.origin.with.s", ClientPath)
 	}
+	prefix, ok := strings.CutSuffix(u.Path, "/client")
+	normalized, err := NormalizePathPrefix(prefix)
+	if !ok || err != nil || prefix != normalized {
+		return nil, i18n.NewError("invalid.token.expected.a.websocket.origin.with.s", "<url-prefix>/client")
+	}
 	return u, nil
+}
+
+// NormalizePathPrefix accepts a clean URL path using unreserved ASCII characters.
+// An empty string or slash selects root routes. A trailing slash is optional.
+func NormalizePathPrefix(prefix string) (string, error) {
+	if prefix == "" || prefix == "/" {
+		return "", nil
+	}
+	if !strings.HasPrefix(prefix, "/") || len(prefix) > 1024 {
+		return "", i18n.NewError("invalid.url.prefix")
+	}
+	prefix = strings.TrimSuffix(prefix, "/")
+	for _, segment := range strings.Split(prefix[1:], "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", i18n.NewError("invalid.url.prefix")
+		}
+		for _, c := range segment {
+			if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.ContainsRune("-._~", c)) {
+				return "", i18n.NewError("invalid.url.prefix")
+			}
+		}
+	}
+	return prefix, nil
 }
 
 type Message struct {

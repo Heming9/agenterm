@@ -131,7 +131,7 @@ The server sends a WebSocket Ping immediately after connection and every 20 seco
 
 Reconnection preserves recent logs and statistics, reuses the redeemed token, and holds the local connection lock throughout retries. Interrupted commands are cancelled and never replayed; new connections receive a new `client_id`. Server logs include the client ID, hostname, connection duration, and disconnect reason. Client logs include the failure reason, retry attempt, and delay; normal heartbeats do not produce log entries.
 
-Under the same OS account, CLI and GUI share an exclusive local connection lock for each server address, including different invitations. A duplicate attempt exits before redeeming its invitation; disconnecting or exiting the process releases the lock. Different server addresses can connect independently. Lock files live in `~/.agenterm/locks`, contain no credentials, and are separate from the download cache. Do not delete them while a client is running; their existence alone does not block a connection. This check requires updated clients and does not merge different DNS aliases for a server.
+Under the same OS account, CLI and GUI share an exclusive local connection lock for each server address, including different invitations. A duplicate attempt exits before redeeming its invitation; disconnecting or exiting the process releases the lock. Different server addresses or URL prefixes can connect independently. Lock files live in `~/.agenterm/locks`, contain no credentials, and are separate from the download cache. Do not delete them while a client is running; their existence alone does not block a connection. This check requires updated clients and does not merge different DNS aliases for a server.
 
 ## Details
 
@@ -140,11 +140,11 @@ Under the same OS account, CLI and GUI share an exclusive local connection lock 
 
 Release servers provide CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server and first show a remote control warning and request authorization. After confirmation, they validate the invitation and version compatibility, probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and connect without another prompt. Cancelling stops immediately without probing or downloading the client. Probes do not redeem invitations or register clients. After authorization, installation shows four connection stages: connectivity check, client preparation, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
 
-Commands use a short `/agenterm/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
+Commands use a short `/agenterm/c/<6-character invitation code>` endpoint, with a `.ps1` suffix for Windows. The server maps each code to the full invitation and dynamically fills in the invitation, version, and download URL. Codes contain only uppercase A–Z and digits 0–9 (36^6 combinations, about 31 random bits), with collision retries, a 15-minute expiry, and the existing authentication failure limiter. This makes the short URL easier to guess than the previous 128-bit URL; the full invitation and client credentials retain 128 random bits. Fetching the script does not consume the invitation, and responses disable caching. Codes are removed when their invitations are redeemed (single-device mode), replaced, or reclaimed. Previous 22-character URLs remain supported. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
 Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. Redeemed client tokens remain reusable until the server restarts, with one connected client per single-device token or multiple clients per multi-device token. Share credentials privately; invitation commands may remain in shell history.
 
-The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies only need to forward `/agenterm/`, preserving the prefix and allowing WebSocket upgrades and the Authorization header. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
+The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies only need to forward the configured URL prefix (default `/agenterm/`), preserving the prefix and allowing WebSocket upgrades and the Authorization header. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
 
 | OS | Cache |
 | --- | --- |
@@ -167,7 +167,13 @@ The server defaults to `127.0.0.1:8080` and generates a new 10-character lowerca
   --passwd 'replace-with-a-long-random-key'
 ```
 
-Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url` accepts an origin or an address ending in `/agenterm`; advertised endpoints always use the `/agenterm/` prefix. It does not enable TLS. When the proxy is on the same machine, keep the backend bound to loopback. Public deployments also need appropriate access controls.
+Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url` accepts an origin or an address ending in the configured prefix; it does not enable TLS. `-url-prefix` defaults to `/agenterm` and applies to all endpoints, generated invitations, and downloads. Use `/` (or an empty value) for root routes. Prefixes must start with `/`, contain only letters, digits, `-._~` and `/`, and have no empty, `.` or `..` segments; a trailing slash is normalized. For example:
+
+```sh
+./agenterm-server -public-url https://agenterm.example.com -url-prefix /a --generate
+```
+
+This uses `/a/mcp`, `/a/client`, `/a/c/<6-character code>`, and `/a/downloads/...`. Change the reverse proxy location and the MCP URL to match. When the proxy is on the same machine, keep the backend bound to loopback. Public deployments also need appropriate access controls.
 
 MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <client token>`. Management calls select a target with `client_token`; ordinary client tokens cannot call `create_client`. You can also configure one MCP entry per target. Your agent must support Streamable HTTP and custom headers.
 
@@ -194,7 +200,7 @@ Versions follow [SemVer 2.0.0](https://semver.org/). Connections validate versio
 
 Checks cover installation probes, invitation redemption, and CLI/GUI WebSocket connections. Rejection does not consume the invitation or register a client.
 
-Client tokens contain the server address and a 128-bit random credential. All endpoints use the `/agenterm/` prefix. Previous root routes and token formats are unsupported. Update Server and Client (including the GUI) together and change the MCP URL to `/agenterm/mcp`.
+Client tokens contain the server address and a 128-bit random credential. The default `/agenterm` prefix retains the existing token format. Custom prefixes are carried in an extended token format and require updated clients (including the GUI); clients read the prefix from the token without an extra flag. Legacy token formats without namespaced-route support remain unsupported. The MCP URL is `<public-origin><url-prefix>/mcp`.
 
 </details>
 

@@ -28,7 +28,7 @@ func Endpoint(value string) (string, string, error) {
 	} else {
 		u.Scheme = "http"
 	}
-	u.Path = protocol.PathPrefix + "/invite/redeem"
+	u.Path = strings.TrimSuffix(u.Path, "/client") + "/invite/redeem"
 	return u.String(), t.Secret, nil
 }
 

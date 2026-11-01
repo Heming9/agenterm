@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -52,7 +53,15 @@ func TestCreateClientDisplayText(t *testing.T) {
 				for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
 					command := result[key].(string)
 					decoded, _ := protocol.Decode(result["invitation"].(string))
-					if !strings.Contains(display, command) || !strings.Contains(command, "/c/"+decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
+					code := installCode(decoded.Secret)
+					if !regexp.MustCompile(`^[A-Z0-9]{6}$`).MatchString(code) {
+						t.Fatalf("invalid invitation code: %q", code)
+					}
+					url := "https://example.com/agenterm/c/" + code
+					if key == "windows_powershell_command" {
+						url += ".ps1"
+					}
+					if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
 						t.Fatalf("invalid %s in display: %s", key, display)
 					}
 				}

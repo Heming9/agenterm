@@ -44,8 +44,16 @@
     "zh-CN": "启动时生成客户端 Token 和邀请"
   },
   "public.server.url.optional.agenterm.suffix": {
-    "en": "Public Server URL (optional /agenterm suffix)",
-    "zh-CN": "公开的 Server URL（可带 /agenterm 后缀）"
+    "en": "Public Server URL (optional url-prefix suffix)",
+    "zh-CN": "公开的 Server URL（可带 url-prefix 指定的后缀）"
+  },
+  "server.url.prefix": {
+    "en": "URL path prefix for all endpoints (use / for root routes)",
+    "zh-CN": "所有接口的 URL 路径前缀（使用 / 表示根路径）"
+  },
+  "invalid.url.prefix": {
+    "en": "URL prefix must be / or a path starting with /, at most 1024 bytes, using letters, digits, -._~ and /; empty, . and .. segments are forbidden",
+    "zh-CN": "URL 前缀必须为 / 或以 / 开头的路径，最多 1024 字节，仅可含字母、数字、-._~ 和 /；路径段不可为空、. 或 .."
   },
   "passwd.must.be.nonempty.and.cannot.be": {
     "en": "passwd must be nonempty and cannot be combined with no-password",

@@ -5,8 +5,10 @@ import (
 	"agenterm/internal/installer"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
+	"encoding/base64"
 	"fmt"
 	"io/fs"
+	"math/big"
 	"net/http"
 	"regexp"
 	"strings"
@@ -16,6 +18,56 @@ import (
 // Set by the release workflow to keep the installer and binaries on the same tag.
 var releaseTag = ""
 var validReleaseTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
+
+// Six uppercase base36 characters carry about 31 random bits. The URL is itself
+// an invitation credential, protected by the same expiry and failure limiter.
+const installCodeLength = 6
+
+// Use the last six base36 digits of the full random invitation secret.
+// This keeps command formatting deterministic without exposing base64 symbols.
+func installCode(secret string) string {
+	raw, err := base64.RawURLEncoding.DecodeString(secret)
+	if err != nil || len(raw) != protocol.TokenSecretSize {
+		return ""
+	}
+	code := strings.Repeat("0", installCodeLength) + strings.ToUpper(new(big.Int).SetBytes(raw).Text(36))
+	return code[len(code)-installCodeLength:]
+}
+
+// The caller holds s.mu. Retry collisions before publishing either credential.
+func (s *server) newInvitation(token string, expires time.Time) (string, error) {
+	if s.invitations == nil {
+		s.invitations = make(map[string]invitation)
+	}
+	if s.installCodes == nil {
+		s.installCodes = make(map[string]string)
+	}
+	for {
+		secret := randomBytes(protocol.TokenSecretSize)
+		code := installCode(secret)
+		if _, exists := s.installCodes[code]; exists {
+			continue
+		}
+		if _, exists := s.invitations[secret]; exists {
+			continue
+		}
+		value, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret})
+		if err != nil {
+			return "", err
+		}
+		s.invitations[secret] = invitation{token: token, expires: expires}
+		s.installCodes[code] = secret
+		return value, nil
+	}
+}
+
+// The caller holds s.mu. Remove short URLs with their underlying invitation.
+func (s *server) deleteInvitation(secret string) {
+	delete(s.invitations, secret)
+	if code := installCode(secret); code != "" && s.installCodes[code] == secret {
+		delete(s.installCodes, code)
+	}
+}
 
 func printInstallCommands(index int, invitation string) {
 	if !validReleaseTag.MatchString(releaseTag) {
@@ -32,7 +84,7 @@ func installCommands(invitation string) (string, string) {
 	if err != nil {
 		return "", ""
 	}
-	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + secret
+	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + installCode(secret)
 	// Command substitution leaves stdin connected to the terminal for consent.
 	// Keep curl failure visible, rather than successfully executing an empty script.
 	shell := fmt.Sprintf("s=$(curl -fsS -m15 %s)&&sh -c \"$s\"", shQuote(base))
@@ -43,8 +95,8 @@ func installCommands(invitation string) (string, string) {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// The URL carries the existing 128-bit invitation secret. It has the same
-// expiry and redemption policy as the full invitation; no alias state is needed.
+// Resolve short installer codes without changing the full invitation format.
+// Existing URLs carrying the full 128-bit secret remain supported.
 func (s *server) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -61,6 +113,9 @@ func (s *server) installWrapper(tag string) http.Handler {
 		}
 		secret, powershell := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/c/"), ".ps1")
 		s.mu.Lock()
+		if len(secret) == installCodeLength {
+			secret = s.installCodes[secret]
+		}
 		entry, exists := s.invitations[secret]
 		s.mu.Unlock()
 		if status, err := s.authorize(r.RemoteAddr, exists && time.Now().Before(entry.expires)); err != nil {

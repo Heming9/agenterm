@@ -91,6 +91,15 @@ func TestConnectionLockAcrossProcesses(t *testing.T) {
 				t.Fatalf("different server blocked: %v", err)
 			}
 			other.Close()
+			for _, prefix := range []string{"/a", "/tools/remote", ""} {
+				custom, err := acquireConnectionLock("wss://example.test" + prefix + "/client")
+				if err != nil {
+					t.Fatalf("different prefix blocked: %q %v", prefix, err)
+				}
+				_, err = acquireConnectionLock("wss://EXAMPLE.TEST:443" + prefix + "/client")
+				requireDuplicateConnection(t, err)
+				custom.Close()
+			}
 			if crash {
 				if err := cmd.Process.Kill(); err != nil {
 					t.Fatal(err)
