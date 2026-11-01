@@ -259,6 +259,8 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Agenterm.exe
 
 Windows packaging requires a working Windows C compiler. Packaging increments the build number in `FyneApp.toml`.
 
+Release CLI builds disable function inlining (`-gcflags=all=-l`) to reduce executable and download sizes, and CI tests the CLI with the same compiler setting.
+
 Release CI embeds the six uncompressed CLI binaries together in a single XZ-compressed tar archive. At startup, a pure Go decoder reconstructs standard gzip/ZIP downloads and SHA256SUMS in memory before the server prints invitations or starts listening. This reduces the server executable at the cost of startup CPU and memory, without requiring extra tools on the server or target computers. The release packer and server share deterministic archive generation and use the same pinned Go toolchain; CI compares every reconstructed download and its manifest with the release files. Do not recompress the published CLI archives independently. Artifact sizes appear in the workflow summary. GUI icons are losslessly recompressed without resizing or changing their pixels or metadata.
 
 </details>

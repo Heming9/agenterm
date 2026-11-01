@@ -259,6 +259,8 @@ fyne package -os windows -icon assets/app-icon-windows.png  # Agenterm.exe
 
 Windows 打包需要可用的 Windows C 编译器。打包会递增 `FyneApp.toml` 的构建号。
 
+发布版 CLI 使用 `-gcflags=all=-l` 关闭函数内联，以减小程序和下载包的体积；CI 使用相同的编译设置测试 CLI。
+
 发布 CI 将六个平台的原始 CLI 程序合并为一个 XZ 压缩的 tar 包并内嵌到 Server。Server 启动时通过纯 Go 解码器，在打印邀请和开始监听前，于内存中重建标准 gzip／ZIP 下载包和 SHA256SUMS。这以启动时的 CPU 和内存开销换取更小的 Server 程序，服务端和目标电脑均无需额外工具。发布打包工具与 Server 共用确定性的归档生成逻辑，并使用同一固定版本的 Go 工具链；CI 逐字节比对重建的全部下载包和校验清单，禁止单独重压缩发布的 CLI 包。工作流摘要会报告产物大小。GUI 图标采用无损重压缩，尺寸、像素和元数据保持一致。
 
 </details>

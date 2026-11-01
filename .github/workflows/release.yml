@@ -90,8 +90,8 @@ jobs:
           go-version: '1.26.10'
       - name: Test Windows installer and connection probes
         run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
-      - name: Test Windows client and reconnection
-        run: go test ./internal/client
+      - name: Test Windows CLI client and reconnection
+        run: go test -gcflags=all=-l ./cmd/agenterm-client ./internal/client
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
 
@@ -156,7 +156,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xz-utils
       - name: Test CLI, server, and installers
-        run: go test ./cmd/agenterm-client ./cmd/agenterm-server ./internal/...
+        run: go test -gcflags=all=-l ./cmd/agenterm-client ./cmd/agenterm-server ./internal/...
       - name: Build or reuse CLI, bundle it, then build servers
         if: needs.plan.outputs.server == 'true'
         env:
@@ -177,7 +177,7 @@ jobs:
                 if [ "$os" = darwin ]; then platform=macos; fi
                 if [ "$os" = windows ]; then extension=.exe; fi
                 name="agenterm-cli-${platform}-${arch}${extension}"
-                GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
+                GOOS="$os" GOARCH="$arch" go build -trimpath -gcflags=all=-l -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
               done
             done
           fi
