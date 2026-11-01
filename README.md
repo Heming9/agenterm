@@ -125,7 +125,11 @@ Make concurrent calls with different IDs to operate in parallel. Output, cancell
 - **CLI:** terminal UI by default. Arrow keys scroll, `c` clears the log, `q` / Ctrl+C disconnects. Use `-plain` for text output; redirected input or output selects it automatically.
 - **GUI:** paste a token, connect, watch commands and live output. Follows the system theme; interface text is currently Chinese. [Build instructions below](#details).
 
-Both clients keep recent logs in memory (~64 KiB), never save tokens, and require manual reconnection. Closing the client disconnects it.
+Both clients keep recent logs in memory (~64 KiB) and never save tokens to disk. Temporary connection failures retry automatically after 1, 2, 4, 8, 16, then at most every 30 seconds; a connection lasting 60 seconds resets this backoff. Rate-limit responses honor `Retry-After`. Invalid credentials and incompatible versions stop retries. Closing the client or choosing Disconnect cancels retries immediately.
+
+The server sends a WebSocket Ping immediately after connection and every 20 seconds afterward. A matching Pong measures the round-trip latency without relying on synchronized clocks. GUI and TUI show the latest result in the top-right connection status, for example `Connected · 42ms`; it refreshes with each heartbeat and clears on disconnect. A peer that does not respond within 60 seconds is disconnected. Old clients can answer these heartbeats, but latency display and automatic reconnection require updated clients. Updated clients also remain compatible with older servers that do not advertise heartbeats.
+
+Reconnection preserves recent logs and statistics, reuses the redeemed token, and holds the local connection lock throughout retries. Interrupted commands are cancelled and never replayed; new connections receive a new `client_id`. Server logs include the client ID, hostname, connection duration, and disconnect reason. Client logs include the failure reason, retry attempt, and delay; normal heartbeats do not produce log entries.
 
 Under the same OS account, CLI and GUI share an exclusive local connection lock for each server address, including different invitations. A duplicate attempt exits before redeeming its invitation; disconnecting or exiting the process releases the lock. Different server addresses can connect independently. Lock files live in `~/.agenterm/locks`, contain no credentials, and are separate from the download cache. Do not delete them while a client is running; their existence alone does not block a connection. This check requires updated clients and does not merge different DNS aliases for a server.
 
@@ -203,8 +207,8 @@ Client tokens contain the server address and a 128-bit random credential. All en
 - Full-screen terminal apps emit control sequences the agent may not understand. The CLI strips these from its local log; it is a log viewer. Input may be echoed, so avoid entering secrets through the agent.
 - Commands use the supported shell that directly launched the client (PowerShell, cmd, bash, zsh, fish, etc.). Fallback: `/bin/sh` on macOS/Linux, `ComSpec` (usually `cmd.exe`) on Windows. Each command starts a fresh shell; launching-shell variables and functions are not shared.
 - Windows output decoding detects UTF-8 or the system code page from the first non-ASCII content. Mixed encodings may still produce garbled text.
-- After a disconnect, reconnect manually. After a server restart, obtain a new token.
-- GUI statistics count completed commands, including failures and cancellations. Clearing the log affects only the display; a successful reconnection resets statistics. Connection attempts can be cancelled.
+- Transient disconnects reconnect automatically; rediscover the device with `list_clients` because its ID changes. After a server restart, obtain a new token.
+- GUI statistics count completed commands, including failures and cancellations. Clearing the log affects only the display. Automatic reconnection preserves statistics; starting a new connection manually resets them. Connection attempts can be cancelled.
 
 </details>
 

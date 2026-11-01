@@ -37,6 +37,9 @@ type client struct {
 func (c *client) send(m protocol.Message) error {
 	c.write.Lock()
 	defer c.write.Unlock()
+	if err := c.conn.SetWriteDeadline(time.Now().Add(protocol.WriteTimeout)); err != nil {
+		return err
+	}
 	return c.conn.WriteJSON(m)
 }
 
@@ -163,6 +166,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.Text(i18n.Terminal(), "client.ip.limit.reached"), http.StatusTooManyRequests)
 		return
 	}
+	w.Header().Set(protocol.HeartbeatHeader, "1")
 	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
 	if err != nil {
 		return
@@ -179,10 +183,13 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		owner.used = true
 		s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
 	}
-	log.Println(serverText("client.connected"))
+	log.Printf("client connected id=%s hostname=%q platform=%q", id, c.info.Hostname, c.info.Platform)
 	go func() {
+		var disconnectErr error
+		stopHeartbeat := c.startHeartbeat(protocol.HeartbeatInterval, protocol.HeartbeatTimeout)
 		defer func() {
 			conn.Close()
+			stopHeartbeat()
 			s.mu.Lock()
 			if s.clients[id] == c {
 				delete(s.clients, id)
@@ -195,12 +202,13 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			c.pending = make(map[string]chan protocol.Message)
 			c.mu.Unlock()
-			log.Println(serverText("client.disconnected"))
+			log.Printf("client disconnected id=%s hostname=%q duration=%s reason=%q", id, c.info.Hostname, time.Since(c.info.ConnectedAt).Round(time.Millisecond), disconnectErr)
 		}()
 		conn.SetReadLimit(2 << 20)
 		for {
 			var m protocol.Message
 			if err := conn.ReadJSON(&m); err != nil {
+				disconnectErr = err
 				return
 			}
 			c.mu.Lock()
@@ -209,6 +217,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 				select {
 				case ch <- m:
 				default:
+					disconnectErr = fmt.Errorf("output queue full for command %s", m.ID)
 					log.Printf(serverText("output.queue.full.for.s.closing.connection"), m.ID)
 					c.mu.Unlock()
 					return

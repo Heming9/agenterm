@@ -58,6 +58,39 @@ func TestRedeemedInvitationUsesReusableTokenOnRetry(t *testing.T) {
 	}
 }
 
+func TestLatencyAndReconnectPreserveHistory(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 15})
+	m.Update(tuiEvent{connected: true})
+	d := 42 * time.Millisecond
+	m.Update(tuiEvent{latency: &d})
+	header := ansi.Strip(strings.Split(m.View(), "\n")[0])
+	if !strings.HasSuffix(header, "已连接 · 42ms ") {
+		t.Fatal(header)
+	}
+	m.appendLog("output", "saved output\n")
+	m.Update(tuiEvent{retry: &client.ReconnectEvent{Attempt: 1, Delay: time.Second, Err: errors.New("unexpected EOF")}})
+	header = ansi.Strip(strings.Split(m.View(), "\n")[0])
+	if strings.Contains(header, "42ms") || !strings.Contains(header, "重连中") {
+		t.Fatal(header)
+	}
+	m.Update(tuiEvent{latency: &d}) // Ignore stale measurements while offline.
+	if m.latency >= 0 {
+		t.Fatal("offline latency restored")
+	}
+	m.Update(tuiEvent{connecting: true})
+	m.Update(tuiEvent{connected: true})
+	if m.latency >= 0 || !strings.Contains(m.logs, "saved output") || !strings.Contains(m.logs, "unexpected EOF") || !strings.Contains(m.logs, "连接已恢复") {
+		t.Fatal(m.logs)
+	}
+	m.Update(tuiEvent{latency: &d})
+	m.Update(tuiEvent{finished: true})
+	if m.latency >= 0 {
+		t.Fatal("disconnected latency not cleared")
+	}
+}
+
 func TestDisplayDecoderSplitSequences(t *testing.T) {
 	d := &displayDecoder{}
 	got := d.text("A\x1b[3") + d.text("1m红\x1b]0;bad") + d.text("\aB")

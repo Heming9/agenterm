@@ -702,5 +702,17 @@
   "multi.device.display.notice": {
     "en": "Multi-device token: multiple devices may connect simultaneously. The invitation commands can be reused for 15 minutes.",
     "zh-CN": "多设备 Token：允许多台设备同时在线，一键连接命令可在 15 分钟内重复使用。"
+  },
+  "connection.retry": {
+    "en": "Connection lost or failed (online %s): %s. Retry #%d in %s.",
+    "zh-CN": "连接断开或失败（已连接 %s）：%s。第 %d 次重试将在 %s 后开始。"
+  },
+  "connection.retry.status": {
+    "en": "Reconnecting · %ds",
+    "zh-CN": "重连中 · %d秒"
+  },
+  "connection.restored": {
+    "en": "Connection restored.",
+    "zh-CN": "连接已恢复。"
   }
 }

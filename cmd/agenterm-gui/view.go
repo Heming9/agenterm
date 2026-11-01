@@ -89,6 +89,7 @@ type clientView struct {
 	ticker     *time.Ticker
 	done       chan struct{}
 	invitation string
+	latency    time.Duration
 }
 
 func padded(object fyne.CanvasObject, top, bottom, left, right float32) *fyne.Container {
@@ -231,6 +232,10 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	buffer := &logBuffer{}
 	v.buffer = buffer
 	v.decoder = displayDecoder{}
+	v.clearLogs()
+	v.stats = commandStats{}
+	v.statistics.SetText(v.stats.text())
+	v.latency = -1
 	v.content.Refresh()
 	run := client.RunWithCallbacks
 	if invitation {
@@ -238,6 +243,7 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	}
 	go func() {
 		defer stop()
+		hasConnected := false // Accessed only on the Fyne UI thread.
 		err := run(ctx, value, buffer, client.Callbacks{
 			Redeemed: func(token string) {
 				fyne.Do(func() {
@@ -247,28 +253,50 @@ func (v *clientView) connectValue(value string, invitation bool) {
 					}
 				})
 			},
+			Connecting: func() {
+				fyne.Do(func() {
+					if v.closed || current != v.generation || ctx.Err() != nil {
+						return
+					}
+					v.showConnecting(host, tr("connecting"))
+				})
+			},
+			Reconnecting: func(event client.ReconnectEvent) {
+				fmt.Fprintf(buffer, "\n%s %s\n", time.Now().Format("15:04:05"), event.Text(uiLanguage))
+				fyne.Do(func() {
+					if v.closed || current != v.generation || ctx.Err() != nil {
+						return
+					}
+					v.showConnecting(host, fmt.Sprintf(tr("connection.retry.status"), int(event.Delay.Seconds())))
+					v.flushLogs()
+				})
+			},
+			Latency: func(d time.Duration) {
+				fyne.Do(func() {
+					if v.closed || current != v.generation || ctx.Err() != nil || !v.connected {
+						return
+					}
+					v.setLatency(d)
+				})
+			},
 			Connected: func() {
 				fyne.Do(func() {
 					if v.closed || current != v.generation || ctx.Err() != nil {
 						return
 					}
 					v.connected, v.connecting = true, false
-					v.stats = commandStats{}
-					v.statistics.SetText(v.stats.text())
 					v.address.SetText(host)
-					v.status.SetText(tr("connected"))
+					v.setLatency(-1)
 					v.disconnectButton.Enable()
-					v.token.SetText("")
 					v.inputRow.Hide()
 					v.connectedRow.Show()
-					v.logText = ""
-					v.logSpans = nil
-					v.logColors.Segments = nil
-					v.logSelection.SetText("")
 					v.emptyTitle.SetText(tr("no.commands.yet"))
 					v.emptyDetail.Show()
-					v.empty.Show()
-					v.scroll.Hide()
+					if hasConnected {
+						fmt.Fprintf(buffer, "\n%s %s\n", time.Now().Format("15:04:05"), tr("connection.restored"))
+					}
+					hasConnected = true
+					v.flushLogs()
 					v.refreshTerminalTheme()
 					v.content.Refresh()
 				})
@@ -293,6 +321,8 @@ func (v *clientView) connectValue(value string, invitation bool) {
 			}
 			wasConnected := v.connected
 			v.connected, v.connecting = false, false
+			v.latency = -1
+			v.status.SetText(tr("disconnected"))
 			v.cancel = nil
 			v.connectButton.SetText(tr("connect"))
 			v.connectButton.SetIcon(arrowIcon)
@@ -314,6 +344,27 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	}()
 }
 
+func (v *clientView) showConnecting(host, status string) {
+	v.connected, v.connecting, v.latency = false, true, -1
+	v.address.SetText(host)
+	v.status.SetText(status)
+	v.inputRow.Hide()
+	v.connectedRow.Show()
+	v.disconnectButton.Enable()
+	v.refreshTerminalTheme()
+	v.content.Refresh()
+}
+
+func (v *clientView) setLatency(d time.Duration) {
+	v.latency = d
+	status := tr("connected")
+	if d >= 0 {
+		status += fmt.Sprintf(" · %dms", max(1, d.Milliseconds()))
+	}
+	v.status.SetText(status)
+	v.header.Refresh()
+}
+
 func (v *clientView) showConnectionError(message string) {
 	v.connectionError.SetText(message)
 	v.connectionError.Show()
@@ -322,6 +373,7 @@ func (v *clientView) showConnectionError(message string) {
 
 func (v *clientView) disconnect() {
 	if v.cancel != nil {
+		v.latency = -1
 		v.status.SetText(tr("disconnecting"))
 		if v.connecting {
 			v.connectButton.SetText(tr("cancelling"))

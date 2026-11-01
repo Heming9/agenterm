@@ -36,9 +36,9 @@ jobs:
         with:
           go-version: '1.24.3'
       - name: Test Windows installer and connection probes
-        run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion'
-      - name: Test Windows connection locks
-        run: go test ./internal/client -run 'TestConnectionLock|TestConcurrentConnection|TestDuplicateInvitations|TestInvitationConnection'
+        run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
+      - name: Test Windows client and reconnection
+        run: go test ./internal/client
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
       - uses: msys2/setup-msys2@v2
@@ -156,12 +156,13 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.20 preview release.
+          Agenterm v0.2.21 preview release.
 
-          - Add multi-device tokens with reusable 15-minute invitations and simultaneous device connections.
-          - Replace wait_for_client with list_clients for device discovery and polling.
-          - Route commands and interactive sessions using six-character lowercase alphanumeric client IDs; device output and cancellation remain independent.
-          - Count every online device toward the existing per-issuing-IP quota. Single-device tokens retain their existing connection behavior.
+          - Keep idle connections alive with WebSocket heartbeats every 20 seconds and detect unresponsive peers after 60 seconds.
+          - Display live round-trip latency in the GUI and TUI connection status.
+          - Automatically reconnect with bounded exponential backoff while preserving logs, statistics, and the local connection lock.
+          - Log disconnect reasons and retry attempts without replaying interrupted commands. Stop retries for invalid credentials or incompatible versions.
+          - Remain compatible with older 0.2 clients and servers; server restarts still require new tokens.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

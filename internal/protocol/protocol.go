@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -24,6 +25,12 @@ const (
 
 const HostnameHeader = "X-Agenterm-Hostname"
 const PlatformHeader = "X-Agenterm-Platform"
+
+// Advertised by servers that send Ping frames and latency measurements.
+const HeartbeatHeader = "X-Agenterm-Heartbeat"
+const HeartbeatInterval = 20 * time.Second
+const HeartbeatTimeout = 60 * time.Second
+const WriteTimeout = 10 * time.Second
 
 type Token struct {
 	URL    string
@@ -144,4 +151,5 @@ type Message struct {
 	Output      string `json:"output,omitempty"`
 	ExitCode    int    `json:"exit_code,omitempty"`
 	Error       string `json:"error,omitempty"`
+	LatencyMS   int64  `json:"latency_ms,omitempty"`
 }

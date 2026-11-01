@@ -38,10 +38,13 @@ type CommandEvent struct {
 // process output is written to logWriter as it arrives.
 type Callbacks struct {
 	// Redeemed receives the reusable token after an invitation is exchanged.
-	Redeemed  func(token string)
-	Connected func()
-	Command   func(CommandEvent)
-	Output    func(id string, data []byte)
+	Redeemed     func(token string)
+	Connecting   func()
+	Connected    func()
+	Reconnecting func(ReconnectEvent)
+	Latency      func(time.Duration)
+	Command      func(CommandEvent)
+	Output       func(id string, data []byte)
 }
 
 type connection struct {
@@ -52,6 +55,7 @@ type connection struct {
 	log     io.Writer
 	command func(CommandEvent)
 	output  func(string, []byte)
+	workers sync.WaitGroup
 }
 
 func (c *connection) commandStarted(m protocol.Message) CommandEvent {
@@ -78,6 +82,9 @@ func (c *connection) commandFinished(e CommandEvent, code int, detail string) {
 func (c *connection) send(m protocol.Message) error {
 	c.write.Lock()
 	defer c.write.Unlock()
+	if err := c.ws.SetWriteDeadline(time.Now().Add(protocol.WriteTimeout)); err != nil {
+		return err
+	}
 	return c.ws.WriteJSON(m)
 }
 
@@ -111,10 +118,13 @@ func (c *connection) run(m protocol.Message) {
 	c.mu.Lock()
 	c.running[m.ID] = &process{cancel: cancel}
 	c.mu.Unlock()
+	c.workers.Add(1)
 	go func() {
+		defer c.workers.Done()
 		defer func() { cancel(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
 		event := c.commandStarted(m)
 		cmd := shellCommand(ctx, m.Command)
+		cmd.WaitDelay = 2 * time.Second
 		writer := newOutputWriter(outputWriter{c: c, id: m.ID})
 		cmd.Stdout = writer
 		cmd.Stderr = writer
@@ -147,9 +157,11 @@ func (c *connection) runInteractive(m protocol.Message) {
 		return
 	}
 	c.mu.Lock()
-	c.running[m.ID] = &process{cancel: cancel, input: input}
+	c.running[m.ID] = &process{cancel: func() { cancel(); input.Close(); output.Close() }, input: input}
 	c.mu.Unlock()
+	c.workers.Add(1)
 	go func() {
+		defer c.workers.Done()
 		defer func() {
 			cancel()
 			input.Close()
@@ -177,14 +189,14 @@ func (c *connection) runInteractive(m protocol.Message) {
 	}()
 }
 
-// Run connects until the context is canceled or the connection is lost.
+// Run reconnects after transient failures until canceled or permanently rejected.
 // onConnected is called after the WebSocket handshake. The caller owns logWriter.
 func Run(ctx context.Context, token string, logWriter io.Writer, onConnected func()) error {
 	return RunWithCallbacks(ctx, token, logWriter, Callbacks{Connected: onConnected})
 }
 
 // RunWithCallbacks runs a connection with structured lifecycle notifications for
-// consumers such as the desktop UI. A lost connection still requires reconnecting.
+// consumers such as the desktop UI, retaining the local lock across retries.
 func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, callbacks Callbacks) error {
 	return runWithCallbacks(ctx, token, false, logWriter, callbacks)
 }
@@ -222,6 +234,10 @@ func runWithCallbacks(ctx context.Context, token string, invitation bool, logWri
 			return err
 		}
 	}
+	return reconnect(ctx, t, logWriter, callbacks)
+}
+
+func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, callbacks Callbacks) (result attemptResult) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+t.Secret)
 	headers.Set(version.Header, version.Current)
@@ -231,32 +247,40 @@ func runWithCallbacks(ctx context.Context, token string, invitation bool, logWri
 	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, t.URL, headers)
 	if err != nil {
 		if resp != nil {
+			if resp.Body != nil {
+				resp.Body.Close()
+			}
 			if resp.StatusCode == http.StatusUpgradeRequired {
 				if versionErr := version.Check(version.Current, resp.Header.Get(version.Header)); versionErr != nil {
-					return versionErr
+					return attemptResult{err: versionErr, permanent: true}
 				}
 			}
-			return i18n.NewError("connect.w.http.d", err, resp.StatusCode)
+			return attemptResult{err: i18n.NewError("connect.w.http.d", err, resp.StatusCode), permanent: !retryHTTPStatus(resp.StatusCode), retryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
 		}
-		return err
+		return attemptResult{err: err}
 	}
 	defer ws.Close()
 	if err := version.Check(version.Current, resp.Header.Get(version.Header)); err != nil {
-		return err
+		return attemptResult{err: err, permanent: true}
 	}
 	c := &connection{ws: ws, running: make(map[string]*process), log: logWriter, command: callbacks.Command, output: callbacks.Output}
 	defer func() {
+		// Close I/O before waiting, so old command callbacks finish before the
+		// next connection can start. Commands are never replayed on reconnect.
+		ws.Close()
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		for _, p := range c.running {
 			p.cancel()
 		}
+		c.mu.Unlock()
+		c.workers.Wait()
 	}()
 	closed := make(chan struct{})
 	defer close(closed)
 	go func() {
 		select {
 		case <-ctx.Done():
+			_ = ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "client disconnected"), time.Now().Add(time.Second))
 			ws.Close()
 		case <-closed:
 		}
@@ -264,16 +288,40 @@ func runWithCallbacks(ctx context.Context, token string, invitation bool, logWri
 	if callbacks.Connected != nil {
 		callbacks.Connected()
 	}
+	started := time.Now()
+	defer func() { result.online = time.Since(started) }()
+	// Older servers do not advertise heartbeats. Keep connecting to them
+	// without imposing a read timeout they cannot satisfy.
+	heartbeat := resp.Header.Get(protocol.HeartbeatHeader) == "1"
+	refreshDeadline := func() error {
+		if heartbeat {
+			return ws.SetReadDeadline(time.Now().Add(protocol.HeartbeatTimeout))
+		}
+		return nil
+	}
+	defaultPing := ws.PingHandler()
+	ws.SetPingHandler(func(payload string) error {
+		if err := refreshDeadline(); err != nil {
+			return err
+		}
+		return defaultPing(payload)
+	})
+	_ = refreshDeadline()
 	ws.SetReadLimit(2 << 20)
 	for {
 		var m protocol.Message
 		if err := ws.ReadJSON(&m); err != nil {
 			if ctx.Err() != nil {
-				return nil
+				return attemptResult{}
 			}
-			return i18n.NewError("disconnected.w", err)
+			return attemptResult{err: i18n.NewError("disconnected.w", err), permanent: websocket.IsCloseError(err, websocket.ClosePolicyViolation, websocket.CloseProtocolError, websocket.CloseUnsupportedData)}
 		}
+		_ = refreshDeadline()
 		switch m.Type {
+		case "latency":
+			if callbacks.Latency != nil && m.LatencyMS >= 0 && m.LatencyMS <= protocol.HeartbeatTimeout.Milliseconds() {
+				callbacks.Latency(time.Duration(m.LatencyMS) * time.Millisecond)
+			}
 		case "exec":
 			c.run(m)
 		case "cancel":

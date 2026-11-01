@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
 
 	"golang.org/x/term"
@@ -66,7 +67,9 @@ func main() {
 	if *inviteFlag != "" {
 		run = client.RunInvitationWithCallbacks
 	}
-	if err := run(context.Background(), token, os.Stdout, client.Callbacks{Connected: func() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := run(ctx, token, os.Stdout, client.Callbacks{Connected: func() {
 		if *inviteFlag != "" {
 			fmt.Println(progressConnected + tr("close.the.client.to.disconnect"))
 		} else {

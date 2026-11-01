@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"agenterm/internal/client"
@@ -30,6 +31,7 @@ var logStyles = map[string]lipgloss.Style{
 var statusStyles = map[string]lipgloss.Style{
 	"connected":    lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#257445", Dark: "#85c99b"}),
 	"connecting":   lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#986000", Dark: "#e6be6a"}),
+	"reconnecting": lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#986000", Dark: "#e6be6a"}),
 	"disconnected": lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#737373", Dark: "#a3a3a3"}),
 }
 
@@ -39,6 +41,9 @@ type tuiEvent struct {
 	id         string
 	output     []byte
 	connected  bool
+	connecting bool
+	retry      *client.ReconnectEvent
+	latency    *time.Duration
 	redeemed   string
 	err        error
 	finished   bool
@@ -61,6 +66,9 @@ type tuiModel struct {
 	connectionProgress            bool
 	invitation                    string
 	spacing                       logview.Spacing
+	latency                       time.Duration
+	retryDelay                    time.Duration
+	everConnected                 bool
 }
 
 func newTUI(token string) *tuiModel {
@@ -70,7 +78,7 @@ func newTUI(token string) *tuiModel {
 	input.CharLimit = 4096
 	input.SetValue(token)
 	input.Focus()
-	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", decoders: make(map[string]*displayDecoder), shells: make(map[string]int)}
+	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*displayDecoder), shells: make(map[string]int)}
 }
 func runTUI(token string, connectionProgress bool) error {
 	m := newTUI(token)
@@ -106,6 +114,13 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.address = cleanText(t.URL)
 	m.message = ""
 	m.state = "connecting"
+	m.latency = -1
+	m.everConnected = false
+	m.logs, m.lastID = "", ""
+	m.spans = nil
+	m.completed, m.nextShell = 0, 0
+	m.spacing = logview.Spacing{}
+	m.viewport.SetContent("")
 	m.input.Blur()
 	token := strings.TrimSpace(m.input.Value())
 	run := client.RunWithCallbacks
@@ -114,9 +129,12 @@ func (m *tuiModel) connect() tea.Cmd {
 	}
 	go func() {
 		err := run(m.ctx, token, io.Discard, client.Callbacks{
-			Redeemed:  func(token string) { m.send(generation, tuiEvent{redeemed: token}) },
-			Connected: func() { m.send(generation, tuiEvent{connected: true}) },
-			Command:   func(e client.CommandEvent) { m.send(generation, tuiEvent{command: &e}) },
+			Redeemed:     func(token string) { m.send(generation, tuiEvent{redeemed: token}) },
+			Connecting:   func() { m.send(generation, tuiEvent{connecting: true}) },
+			Connected:    func() { m.send(generation, tuiEvent{connected: true}) },
+			Reconnecting: func(e client.ReconnectEvent) { m.send(generation, tuiEvent{retry: &e}) },
+			Latency:      func(d time.Duration) { m.send(generation, tuiEvent{latency: &d}) },
+			Command:      func(e client.CommandEvent) { m.send(generation, tuiEvent{command: &e}) },
 			Output: func(id string, data []byte) {
 				m.send(generation, tuiEvent{id: id, output: append([]byte(nil), data...)})
 			},
@@ -238,18 +256,26 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.connected {
 			m.state = "connected"
-			m.logs = ""
-			m.spans = nil
+			m.latency = -1
 			m.shells = make(map[string]int)
-			m.nextShell = 0
-			m.completed = 0
 			m.lastID = ""
-			m.spacing = logview.Spacing{}
 			m.decoders = make(map[string]*displayDecoder)
-			m.viewport.SetContent("")
-			if m.connectionProgress {
+			if m.everConnected {
+				m.appendLog("system", m.spacing.Before(2)+time.Now().Format("15:04:05")+" "+tr("connection.restored")+"\n")
+			} else if m.connectionProgress {
 				m.appendLog("system", progressConnected+"\n")
 			}
+			m.everConnected = true
+		}
+		if msg.connecting {
+			m.state, m.latency = "connecting", -1
+		}
+		if msg.retry != nil {
+			m.state, m.latency, m.retryDelay = "reconnecting", -1, msg.retry.Delay
+			m.appendLog("error", m.spacing.Before(2)+time.Now().Format("15:04:05")+" "+cleanText(msg.retry.Text(cliLanguage))+"\n")
+		}
+		if msg.latency != nil && m.state == "connected" {
+			m.latency = *msg.latency
 		}
 		if e := msg.command; e != nil {
 			if !e.Done {
@@ -283,6 +309,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.finished {
 			m.state = "disconnected"
+			m.latency = -1
 			m.input.Focus()
 			if msg.err != nil {
 				m.message = cleanText(msg.err.Error())
@@ -327,6 +354,12 @@ func (m *tuiModel) view() string {
 	}
 	if m.state == "connected" {
 		status = tr("connected.2")
+		if m.latency >= 0 {
+			status += fmt.Sprintf(" · %dms", max(1, m.latency.Milliseconds()))
+		}
+	}
+	if m.state == "reconnecting" {
+		status = fmt.Sprintf(tr("connection.retry.status"), int(m.retryDelay.Seconds()))
 	}
 	if m.connectionProgress {
 		switch m.state {

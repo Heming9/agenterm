@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image/color"
 	"image/png"
@@ -18,6 +19,56 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"github.com/go-text/typesetting/font"
 )
+
+func TestConnectionLatencyAndReconnectStatus(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(newMonochromeTheme(false))
+	w := a.NewWindow("Agenterm")
+	defer w.Close()
+	v := newClientView(w)
+	defer v.close()
+	w.SetPadded(false)
+	w.SetContent(v.content)
+	w.Resize(fyne.NewSize(700, 420))
+	v.connected = true
+	v.address.SetText("agenterm.net")
+	v.inputRow.Hide()
+	v.connectedRow.Show()
+	v.setLatency(42 * time.Millisecond)
+	fmt.Fprint(v.buffer, "connection history\n")
+	v.flushLogs()
+	if !strings.HasSuffix(v.status.Text, "已连接 · 42ms") {
+		t.Fatal(v.status.Text)
+	}
+	capture := func(name string) {
+		if path := os.Getenv("AGENTERM_SCREENSHOTS"); path != "" {
+			if err := os.MkdirAll(path, 0755); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.Create(filepath.Join(path, name+".png"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if err := png.Encode(f, w.Canvas().Capture()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	capture("client-latency")
+	v.showConnecting("agenterm.net", fmt.Sprintf(tr("connection.retry.status"), 30))
+	if v.connected || !v.connecting || v.latency >= 0 || strings.Contains(v.status.Text, "ms") || !strings.Contains(v.logText, "connection history") {
+		t.Fatal("bad reconnect state")
+	}
+	capture("client-reconnecting")
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
+	test.Tap(v.disconnectButton)
+	if ctx.Err() == nil || v.latency >= 0 {
+		t.Fatal("cancel did not stop reconnection")
+	}
+}
 
 func TestInterfaceFontCoversChineseWithoutFallback(t *testing.T) {
 	if systemSans == nil {
