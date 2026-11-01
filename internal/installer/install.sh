@@ -1,4 +1,8 @@
 #!/bin/sh
+# Agenterm installer
+# Project: https://github.com/Heming9/agenterm
+# SPDX-License-Identifier: Apache-2.0
+# License: https://www.apache.org/licenses/LICENSE-2.0
 set -eu
 version='@RELEASE_TAG@'
 invitation=${1:-}
@@ -12,10 +16,47 @@ fi
 case "$locale" in '') if [ "$(uname -s)" = Darwin ]; then locale=$(defaults read -g AppleLanguages 2>/dev/null | tr -d '"(), ' | head -n 1 || true); fi;; esac
 case "$locale" in zh_CN*|zh-SG*|zh_SG*|zh-CN*|zh-Hans*|zh_Hans*|zh|zh.*) chinese=1;; *) chinese=0;; esac
 @TRANSLATIONS@
-say() { format=$(text "$1"); shift; printf "$format\n" "$@"; }
+reset='' cyan='' teal='' muted='' gold='' green=''
+if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
+  reset=$(printf '\033[0m')
+  cyan=$(printf '\033[1;36m')
+  teal=$(printf '\033[36m')
+  muted=$(printf '\033[90m')
+  gold=$(printf '\033[1;33m')
+  green=$(printf '\033[1;32m')
+fi
+say() {
+  color=''
+  case "$1" in
+    installer.connection.progress|installer.1.4.checking.connectivity.and.version|installer.2.4.preparing.client) color=$cyan ;;
+    installer.server.reachable.invitation.and.version.verified|installer.cached.client.verified.skipping.download|installer.client.verified) color=$green ;;
+  esac
+  format=$(text "$1"); shift
+  printf '%s' "$color"
+  printf "$format\n" "$@"
+  printf '%s' "$reset"
+}
+banner_row() {
+  printf '%s│%s   %s%s%s  %s%s%s%s│%s\n' "$muted" "$reset" "$gold" "$1" "$reset" "$2" "$3" "$reset" "$muted" "$reset"
+}
+banner() {
+  printf '\n%s╭──────────────────────────────────────────────────────╮%s\n' "$muted" "$reset"
+  printf '%s│                                                      │%s\n' "$muted" "$reset"
+  banner_row '▚▖     ▗▞' "$cyan" '▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█      '
+  banner_row ' ▸     ◂ ' "$teal" '█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █      '
+  banner_row '▞▘ ▄▄▄ ▝▚' '' "$(printf '%-40s' "Agenterm   [ $version ]")"
+  printf '%s│                                                      │%s\n' "$muted" "$reset"
+  printf '%s╰──────────────────────────────────────────────────────╯%s\n\n' "$muted" "$reset"
+  say installer.project.s 'https://github.com/Heming9/agenterm'
+  say installer.license
+}
 [ -n "$invitation" ] || { say installer.missing.invitation >&2; exit 1; }
 [ -n "$base" ] || { say installer.missing.download.url >&2; exit 1; }
-printf "$(text installer.remote.control.authorization.prompt)" "$origin"
+banner
+printf '\n%s%s%s\n' "$gold" "$(text installer.remote.control.authorization)" "$reset"
+say installer.server.s "$origin"
+say installer.the.server.can.control.this.computer.with
+printf '%s%s%s' "$gold" "$(text installer.allow.connection.y.n)" "$reset"
 if ! read -r answer; then
   say installer.connection.cancelled
   exit 0

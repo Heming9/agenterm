@@ -85,7 +85,8 @@ func TestReleaseDownloads(t *testing.T) {
 			t.Fatalf("%s: status=%d", tc.path, w.Code)
 		}
 		if tc.status == 200 && strings.Contains(tc.path, "install.") {
-			if strings.Contains(w.Body.String(), "@RELEASE_TAG@") || strings.Contains(w.Body.String(), "github.com") || !strings.Contains(w.Body.String(), "v1.2.3") {
+			// Project attribution may link to GitHub; downloads must stay local.
+			if strings.Contains(w.Body.String(), "@RELEASE_TAG@") || strings.Contains(w.Body.String(), "github.com/Heming9/agenterm/releases/download/") || strings.Contains(w.Body.String(), "raw.githubusercontent.com") || !strings.Contains(w.Body.String(), "v1.2.3") {
 				t.Fatalf("script not self-contained: %s", tc.path)
 			}
 		}

@@ -471,9 +471,13 @@
     "en": "Incompatible versions: local %s, peer %s. Update Server and Client to compatible versions",
     "zh-CN": "版本不兼容：本地 %s，对端 %s。请将 Server 和 Client 更新到兼容版本"
   },
-  "installer.remote.control.authorization.prompt": {
-    "en": "\n⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
-    "zh-CN": "\n⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
+  "installer.project.s": {
+    "en": "Project: %s",
+    "zh-CN": "项目地址：%s"
+  },
+  "installer.license": {
+    "en": "License: Apache-2.0",
+    "zh-CN": "开源协议：Apache-2.0"
   },
   "installer.connection.cancelled": {
     "en": "Connection cancelled.",
@@ -568,8 +572,8 @@
     "zh-CN": "WebSocket 连通性检查失败（HTTP %s），请检查服务器和反向代理配置。"
   },
   "installer.remote.control.authorization": {
-    "en": "⚠️ Remote control authorization",
-    "zh-CN": "⚠️ 远程控制授权"
+    "en": "⚠️ Remote control authorization reminder",
+    "zh-CN": "⚠️ 远程控制授权提醒"
   },
   "installer.the.server.can.control.this.computer.with": {
     "en": "The server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.",
@@ -580,8 +584,8 @@
     "zh-CN": "\n连接进度"
   },
   "installer.server.s": {
-    "en": "\nServer: %s",
-    "zh-CN": "\n服务器：%s"
+    "en": "Server: %s",
+    "zh-CN": "服务器：%s"
   },
   "installer.allow.connection.y.n": {
     "en": "\nAllow connection? [y/N] ",

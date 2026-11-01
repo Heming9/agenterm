@@ -1,15 +1,59 @@
+# Agenterm installer
+# Project: https://github.com/Heming9/agenterm
+# SPDX-License-Identifier: Apache-2.0
+# License: https://www.apache.org/licenses/LICENSE-2.0
 param([Parameter(Mandatory=$true)][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base)
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
 $chinese = $language -match '^(zh-CN|zh-SG|zh-Hans)(-|$)' -or $language -eq 'zh'
 @TRANSLATIONS@
-function Say([string]$Key) { Write-Host (Text $Key) }
+$useColor = -not [Console]::IsOutputRedirected -and $env:TERM -ne 'dumb' -and -not $env:NO_COLOR
+function Write-Styled([string]$Message, [string]$Color = '', [switch]$NoNewline) {
+  if ($useColor -and $Color) {
+    Write-Host $Message -ForegroundColor $Color -NoNewline:$NoNewline
+  } else {
+    Write-Host $Message -NoNewline:$NoNewline
+  }
+}
+function Say([string]$Key) {
+  $color = switch ($Key) {
+    'installer.connection.progress' { 'Cyan'; break }
+    'installer.1.4.checking.connectivity.and.version' { 'Cyan'; break }
+    'installer.2.4.preparing.client' { 'Cyan'; break }
+    'installer.server.reachable.invitation.and.version.verified' { 'Green'; break }
+    'installer.cached.client.verified.skipping.download' { 'Green'; break }
+    'installer.client.verified' { 'Green'; break }
+    default { '' }
+  }
+  Write-Styled (Text $Key) $color
+}
+function Write-BannerRow([string]$Mark, [string]$Message, [string]$Color = '') {
+  Write-Styled '│' 'DarkGray' -NoNewline
+  Write-Styled '   ' -NoNewline
+  Write-Styled $Mark 'Yellow' -NoNewline
+  Write-Styled '  ' -NoNewline
+  Write-Styled ($Message.PadRight(40)) $Color -NoNewline
+  Write-Styled '│' 'DarkGray'
+}
+function Show-Banner {
+  Write-Styled "`n╭──────────────────────────────────────────────────────╮" 'DarkGray'
+  Write-Styled '│                                                      │' 'DarkGray'
+  Write-BannerRow '▚▖     ▗▞' '▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█' 'Cyan'
+  Write-BannerRow ' ▸     ◂ ' '█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █' 'DarkCyan'
+  Write-BannerRow '▞▘ ▄▄▄ ▝▚' "Agenterm   [ $Version ]"
+  Write-Styled '│                                                      │' 'DarkGray'
+  Write-Styled "╰──────────────────────────────────────────────────────╯`n" 'DarkGray'
+  Write-Host (Text 'installer.project.s' @('https://github.com/Heming9/agenterm'))
+  Say 'installer.license'
+}
 $origin = $Base -replace '/downloads/[^/]+$', ''
-Say 'installer.remote.control.authorization'
+Show-Banner
+Write-Host ''
+Write-Styled (Text 'installer.remote.control.authorization') 'Yellow'
 Write-Host (Text 'installer.server.s' @($origin))
 Say 'installer.the.server.can.control.this.computer.with'
-Write-Host (Text 'installer.allow.connection.y.n') -NoNewline
+Write-Styled (Text 'installer.allow.connection.y.n') 'Yellow' -NoNewline
 $answer = [Console]::ReadLine()
 if ($null -eq $answer -or $answer.Trim() -ine 'y') {
   Say 'installer.connection.cancelled'

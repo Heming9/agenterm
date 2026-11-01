@@ -156,10 +156,11 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.26 preview release.
+          Agenterm v0.2.27 preview release.
 
-          - Use a Windows connection command that works in both CMD and PowerShell while skipping user profiles.
-          - Skip PowerShell profiles when executing remote commands to avoid profile errors in command output.
+          - Show the project source and Apache-2.0 license in both one-command installers for source traceability.
+          - Add a framed terminal logo, wordmark, and version badge with color-coded authorization and connection progress.
+          - Keep installer output readable without colors and tighten the remote control authorization reminder layout in English and Simplified Chinese.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF
