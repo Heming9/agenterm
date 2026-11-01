@@ -60,6 +60,9 @@ func TestCreateClientDisplayText(t *testing.T) {
 					url := "https://example.com/agenterm/c/" + code
 					if key == "windows_powershell_command" {
 						url += ".ps1"
+						if !strings.HasPrefix(command, `powershell -NoP -c "iex(irm -TimeoutSec 15 `) {
+							t.Fatalf("Windows command must work in CMD and skip profiles: %s", command)
+						}
 					}
 					if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
 						t.Fatalf("invalid %s in display: %s", key, display)

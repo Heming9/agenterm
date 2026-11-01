@@ -88,7 +88,7 @@ func installCommands(invitation string) (string, string) {
 	// Command substitution leaves stdin connected to the terminal for consent.
 	// Keep curl failure visible, rather than successfully executing an empty script.
 	shell := fmt.Sprintf("s=$(curl -fsS -m15 %s)&&sh -c \"$s\"", shQuote(base))
-	powershell := fmt.Sprintf("iex(irm -TimeoutSec 15 %s)", psQuote(base+".ps1"))
+	powershell := fmt.Sprintf("powershell -NoP -c \"iex(irm -TimeoutSec 15 %s)\"", psQuote(base+".ps1"))
 	return shell, powershell
 }
 

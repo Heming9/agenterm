@@ -38,7 +38,7 @@ func shellFlag(path string) string {
 	case "cmd":
 		return "/C"
 	case "powershell", "pwsh":
-		return "-Command"
+		return "-c"
 	case "sh", "bash", "zsh", "dash", "ksh", "fish", "ash":
 		return "-c"
 	default:
@@ -48,5 +48,14 @@ func shellFlag(path string) string {
 
 func shellCommand(ctx context.Context, command string) *exec.Cmd {
 	shell := getShell()
-	return exec.CommandContext(ctx, shell.path, shell.flag, command)
+	return exec.CommandContext(ctx, shell.path, shellArgs(shell, command)...)
+}
+
+func shellArgs(shell commandShell, command string) []string {
+	args := []string{shell.flag, command}
+	name := strings.TrimSuffix(strings.ToLower(filepath.Base(shell.path)), ".exe")
+	if name == "powershell" || name == "pwsh" {
+		args = append([]string{"-NoP"}, args...)
+	}
+	return args
 }

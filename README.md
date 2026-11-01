@@ -62,7 +62,7 @@ Replace `SERVER_IP` with an address reachable by both the agent and target machi
 ./agenterm-client
 ```
 
-Release servers also print one-command installers for macOS/Linux and Windows PowerShell. Share the appropriate command privately; the target user confirms before connecting.
+Release servers also print one-command installers for macOS/Linux and Windows CMD / PowerShell. Share the appropriate command privately; the target user confirms before connecting.
 
 **3. Connect your agent.** Add a remote MCP server with Streamable HTTP and custom headers:
 

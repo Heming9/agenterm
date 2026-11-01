@@ -62,7 +62,7 @@ go build -o agenterm-client ./cmd/agenterm-client
 ./agenterm-client
 ```
 
-发布版 Server 还会输出 macOS/Linux 和 Windows PowerShell 的一键安装命令。私下发送对应命令，对方确认授权后连接。
+发布版 Server 还会输出 macOS/Linux 和 Windows CMD / PowerShell 的一键安装命令。私下发送对应命令，对方确认授权后连接。
 
 **3. 接入 Agent。** 添加支持 Streamable HTTP 和自定义请求头的远程 MCP 服务：
 
