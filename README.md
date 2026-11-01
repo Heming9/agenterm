@@ -19,6 +19,10 @@
 
 ## Quick start
 
+<p align="center">
+  <img src="docs/design/connection-flow-en.gif" alt="Connection workflow: connect Agent to MCP, ask Agent to generate a connection command, share the command, the recipient runs it and grants access, then Agent provides remote assistance" width="1000">
+</p>
+
 ### 1. Person requesting help: connect your agent
 
 Add this MCP service to an agent that supports Streamable HTTP:
@@ -49,12 +53,9 @@ Interactive terminal tasks are supported. Use the CLI or GUI on the target compu
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A["AI Agent"] <-->|MCP| S["Server"]
-    S <-->|WebSocket| C["Client"]
-    C <--> T["shell"]
-```
+<p align="center">
+  <img src="docs/design/architecture-blue.gif" alt="Agenterm architecture: AI Agent connects over MCP to the Server, which relays commands and results over WebSocket to the Client and local shell" width="1000">
+</p>
 
 The server forwards commands and results. The client runs on the target computer, initiates its server connection, and executes tasks through the local shell. Both the agent and target need access to the server; the target needs no inbound port.
 

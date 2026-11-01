@@ -19,6 +19,10 @@
 
 ## 快速开始
 
+<p align="center">
+  <img src="docs/design/connection-flow-zh.gif" alt="使用流程：让 Agent 接入 MCP，生成连接命令，分享连接命令，对方执行并授权连接，Agent 开始远程协助" width="1000">
+</p>
+
 ### 1. 发起协助的人：接入 Agent
 
 在支持 Streamable HTTP 的 Agent 中添加 MCP 服务：
@@ -49,12 +53,9 @@ https://agenterm.net/mcp
 
 ## 工作原理
 
-```mermaid
-flowchart LR
-    A["AI Agent"] <-->|MCP| S["Server"]
-    S <-->|WebSocket| C["Client"]
-    C <--> T["shell"]
-```
+<p align="center">
+  <img src="docs/design/architecture-blue.gif" alt="Agenterm 架构：AI Agent 通过 MCP 接入 Server，经 WebSocket 向 Client 和本地 shell 下发命令并接收结果" width="1000">
+</p>
 
 Server 转发命令与结果；Client 在目标电脑运行并主动连接 Server，再由本地 shell 执行任务。Agent 和目标电脑都需要能访问 Server，目标电脑无需开放入站端口。
 
