@@ -8,7 +8,36 @@
   <p>macOS / Linux / Windows · CLI / GUI · Multiple clients · Interactive sessions · No SSH daemon</p>
 </div>
 
-## Quick start
+## Use the hosted service
+
+Connect an agent that supports Streamable HTTP to the hosted Server; no Server deployment is needed:
+
+```text
+https://agenterm.net/mcp
+```
+
+The hosted management endpoint currently does not require authentication. For example, add this to `~/.codex/config.toml` for Codex:
+
+```toml
+[mcp_servers.agenterm]
+url = "https://agenterm.net/mcp"
+```
+
+Restart the agent or reload its MCP configuration, then:
+
+1. Call `create_client` with `{}`. **Privately share** the one-command installer for the target's OS from the returned `display_text` with the person using that computer.
+2. The recipient runs the command on their computer, reads the prompt, and authorizes remote control. The macOS/Linux and Windows commands share one invitation: use either one. Invitations expire after 15 minutes and can be redeemed once.
+3. Call `wait_for_client` with the returned `client_token`. Once it reports `connected`, pass that same `client_token` to `execute_command` or a session tool to select the target, for example:
+
+   ```json
+   {"client_token":"agenterm:...","command":"pwd && ls"}
+   ```
+
+The hosted service allows up to four connected clients per **IP address issuing invitations**; users sharing a public IP share that quota. When capacity is available, creating another invitation may invalidate the oldest unused one. Server restarts invalidate existing tokens and invitations; create new ones afterward.
+
+> The hosted management endpoint is public: anyone who can reach it can create their own clients, and anyone holding a target's client token can control that computer. Keep tokens and invitations private and connect only with the other person's authorization. To control management access yourself, use the self-hosted setup below.
+
+## Self-hosted quick start
 
 Get binaries from [Releases](https://github.com/Heming9/agenterm/releases), or build with Go 1.24.3+:
 

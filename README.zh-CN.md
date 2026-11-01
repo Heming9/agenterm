@@ -8,7 +8,36 @@
   <p>macOS / Linux / Windows · CLI / GUI · 多客户端 · 交互式会话 · 无需 SSH 服务</p>
 </div>
 
-## 快速开始
+## 使用托管服务
+
+无需自行部署 Server，可将支持 Streamable HTTP 的 Agent 连接到：
+
+```text
+https://agenterm.net/mcp
+```
+
+托管服务的管理接口目前无需认证。以 Codex 为例，在 `~/.codex/config.toml` 中添加：
+
+```toml
+[mcp_servers.agenterm]
+url = "https://agenterm.net/mcp"
+```
+
+重启 Agent 或重新加载 MCP 配置后：
+
+1. 调用 `create_client`，参数为 `{}`。向目标电脑的使用者**私下发送**返回的 `display_text` 中适合其系统的一键连接命令。
+2. 对方在自己的电脑上运行命令，阅读提示并确认远程控制授权。macOS/Linux 和 Windows 命令使用同一个邀请，任选其一；邀请 15 分钟内有效且只能兑换一次。
+3. 使用 `create_client` 返回的 `client_token` 调用 `wait_for_client`；返回 `connected` 后，将同一个 `client_token` 传给 `execute_command` 或会话工具以选择目标，例如：
+
+   ```json
+   {"client_token":"agenterm:...","command":"pwd && ls"}
+   ```
+
+托管服务按**创建邀请的请求来源 IP**限制为最多 4 个在线客户端；同一公网 IP 的使用者共享额度。名额未满时，创建新邀请可能使最早的未使用邀请失效。Server 重启后已有 token 和邀请会失效，需要重新创建。
+
+> 托管服务是公共管理接口，任何可以访问接口的人都能创建自己的客户端；持有某台目标电脑的 client token 即可控制该电脑。请私密保管 token 和邀请，只在取得对方授权后连接。如需自行控制管理访问，请使用下方的自托管方式。
+
+## 自托管快速开始
 
 从 [Releases](https://github.com/Heming9/agenterm/releases) 下载，或用 Go 1.24.3+ 编译：
 
