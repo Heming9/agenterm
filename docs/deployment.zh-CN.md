@@ -27,6 +27,52 @@ Authorization:  Bearer 服务器显示的管理密钥
 
 Server 和客户端建议使用同一发布版本。Windows 下运行对应的 `.exe` 文件。
 
+## 使用 Docker
+
+容器只运行 Server，客户端仍运行在需要协助的电脑上，无需挂载宿主机目录或 Docker socket。镜像和独立 Server 一样，内含一键安装脚本和六个平台的 CLI 下载资源。
+
+安装 Docker 和 Compose 插件后，在仓库根目录执行：
+
+```sh
+cp .env.example .env
+openssl rand -hex 24
+```
+
+编辑 `.env`：将生成的值填入 `AGENTERM_MANAGEMENT_KEY`，并将 `AGENTERM_PUBLIC_URL` 设为 Agent 和目标电脑都能访问的地址。默认的 `http://localhost:8080` 仅适用于双方都在 Docker 宿主机上使用的情况。随后启动：
+
+```sh
+docker compose up -d --build
+docker compose logs -f server
+```
+
+Agent 的 MCP 地址为 `AGENTERM_PUBLIC_URL` 加上 `/agenterm/mcp`，认证头为 `Authorization: Bearer 你的管理密钥`。请妥善保管 `.env`，它已被 Git 和镜像构建上下文排除。Compose 要求填写非空管理密钥，因此重建容器后管理认证保持不变。
+
+Compose 默认只在 `127.0.0.1` 发布 8080 端口。可信局域网直连时，将 `AGENTERM_BIND_ADDRESS` 设为 `0.0.0.0`，并在 `AGENTERM_PUBLIC_URL` 使用 Docker 宿主机的局域网 IP。公网使用时，配置支持 WebSocket 的 HTTPS 反向代理，并填写对应的公网 URL。如果反向代理也运行在容器里，需要共享 Docker 网络并转发到 `server:8080`；代理容器里的 `127.0.0.1` 指向代理自身。转发时保留 `/agenterm` 路径。
+
+不使用 Compose 时，也可以手动构建和启动：
+
+```sh
+docker build -t agenterm-server:local .
+docker run -d --name agenterm-server --restart unless-stopped \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  -p 127.0.0.1:8080:8080 agenterm-server:local \
+  -listen 0.0.0.0:8080 -public-url http://localhost:8080
+docker logs agenterm-server
+```
+
+这种方式每次重启会生成并显示新的管理密钥；追加 `-passwd 你的管理密钥` 可以固定密钥，也可以使用上面的 Compose 配置。其他[启动选项](#启动选项)同样可作为容器参数传入。覆盖参数时保留 `-listen 0.0.0.0:8080`，确保 Docker 能将请求转发到 Server。
+
+镜像采用[多阶段构建](https://docs.docker.com/build/building/multi-stage/)、静态 Go 二进制和非 root 运行用户，不需要可写文件系统或数据卷。邀请、客户端凭据和会话都保存在内存中，Server 重启后会清空，需要重新生成邀请并连接客户端。请运行单个 Server 实例，多个独立副本之间不会共享连接状态。
+
+通过 Buildx 构建 Linux amd64 和 arm64 镜像，将示例仓库地址替换为你自己的地址：
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t YOUR_REGISTRY/agenterm-server:YOUR_TAG --push .
+```
+
+更新时切换到需要的源码版本，再执行 `docker compose up -d --build`；停止服务用 `docker compose down`。
+
 ## 启动选项
 
 查看可用启动选项：

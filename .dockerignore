@@ -1,0 +1,14 @@
+# Only server build inputs belong in the build context.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/agenterm-server/
+!cmd/agenterm-server/**
+!internal/
+!internal/**
+
+**/*_test.go
+**/.DS_Store
+internal/installer/assets/**
+!internal/installer/assets/clients.tar.xz

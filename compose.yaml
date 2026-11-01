@@ -1,0 +1,19 @@
+services:
+  server:
+    build: .
+    image: agenterm-server:local
+    restart: unless-stopped
+    ports:
+      - "${AGENTERM_BIND_ADDRESS:-127.0.0.1}:${AGENTERM_PORT:-8080}:8080"
+    command:
+      - -listen
+      - 0.0.0.0:8080
+      - -public-url
+      - "${AGENTERM_PUBLIC_URL:?Set AGENTERM_PUBLIC_URL in .env}"
+      - -passwd
+      - "${AGENTERM_MANAGEMENT_KEY:?Set AGENTERM_MANAGEMENT_KEY in .env}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
