@@ -30,7 +30,7 @@ func (s *Spacing) Before(newlines int) string {
 	return strings.Repeat("\n", max(0, newlines-s.newlines))
 }
 
-// TrimLeadingBlankLines starts resumed output directly below its source label,
+// TrimLeadingBlankLines starts resumed output without extra leading blank lines,
 // preserving indentation on the first line that contains text.
 func TrimLeadingBlankLines(text string) string {
 	for {

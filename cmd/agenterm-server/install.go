@@ -5,6 +5,7 @@ import (
 	"agenterm/internal/installer"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"encoding/base64"
 	"fmt"
 	"io/fs"
@@ -15,9 +16,10 @@ import (
 	"time"
 )
 
-// Set by the release workflow to keep the installer and binaries on the same tag.
-var releaseTag = ""
-var validReleaseTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
+// Downloads are available in every build, using the program's own version.
+const downloadTag = "v" + version.Current
+
+var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 
 // Six uppercase base36 characters carry about 31 random bits. The URL is itself
 // an invitation credential, protected by the same expiry and failure limiter.
@@ -70,10 +72,6 @@ func (s *server) deleteInvitation(secret string) {
 }
 
 func printInstallCommands(index int, invitation string) {
-	if !validReleaseTag.MatchString(releaseTag) {
-		fmt.Printf(serverText("invitation.d.expires.in.15.minutes.s"), index, invitation)
-		return
-	}
 	shell, powershell := installCommands(invitation)
 	fmt.Printf(serverText("invitation.d.expires.in.15.minutes.share"), index)
 	fmt.Printf(serverText("macos.linux.s.windows.powershell.s"), shell, powershell)
@@ -107,7 +105,7 @@ func (s *server) installWrapper(tag string) http.Handler {
 			http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
 			return
 		}
-		if !validReleaseTag.MatchString(tag) || !strings.HasPrefix(r.URL.Path, "/c/") {
+		if !validDownloadTag.MatchString(tag) || !strings.HasPrefix(r.URL.Path, "/c/") {
 			http.NotFound(w, r)
 			return
 		}
@@ -173,7 +171,7 @@ func downloadHandler(tag string, assets fs.FS) http.Handler {
 			return
 		}
 		prefix := "/downloads/" + tag + "/"
-		if !validReleaseTag.MatchString(tag) || !strings.HasPrefix(r.URL.Path, prefix) {
+		if !validDownloadTag.MatchString(tag) || !strings.HasPrefix(r.URL.Path, prefix) {
 			http.NotFound(w, r)
 			return
 		}

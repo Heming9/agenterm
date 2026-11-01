@@ -35,7 +35,7 @@ func TestTUIMultilineCommandAndOutputToggleIndependently(t *testing.T) {
 	if strings.Count(view, "▸") != 2 || strings.Contains(view, "second") {
 		t.Fatalf("multiline content should start collapsed:\n%s", view)
 	}
-	clickTUILog(t, m, "s1")
+	clickTUILog(t, m, "echo first")
 	view = ansi.Strip(m.viewport.View())
 	if !strings.Contains(view, "echo second") || !strings.Contains(view, "▸ first") {
 		t.Fatalf("command should expand independently:\n%s", view)

@@ -4,12 +4,16 @@ package installer
 import (
 	"agenterm/internal/i18n"
 	"embed"
-	"errors"
 	"io/fs"
 	"strings"
 )
 
-//go:embed install.sh install.ps1 assets
+//go:generate python3 ../../scripts/build_installer_assets.py
+
+// Embed the tracked bundle explicitly so missing resources fail the build
+// instead of producing a server without working invitation installers.
+//
+//go:embed install.sh install.ps1 assets/clients.tar.xz
 var content embed.FS
 
 func Script(name string) ([]byte, error) {
@@ -23,9 +27,6 @@ func Script(name string) ([]byte, error) {
 func Assets() (fs.FS, error) {
 	assets, _ := fs.Sub(content, "assets")
 	bundle, err := assets.Open("clients.tar.xz")
-	if errors.Is(err, fs.ErrNotExist) {
-		return assets, nil // Source builds have no bundled downloads.
-	}
 	if err != nil {
 		return nil, err
 	}

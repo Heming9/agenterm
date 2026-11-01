@@ -60,6 +60,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	call := func(token, name string, args map[string]any) (int, map[string]any) {
 		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
 		req, _ := http.NewRequest("POST", ts.URL+"/agenterm/mcp", bytes.NewReader(body))
+		setMCPHeaders(req)
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
@@ -101,7 +102,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 		t.Fatalf("cross-token session access: %#v", denied)
 	}
 	_, allowed := call(tokens[0], "session_read", map[string]any{"session_id": id, "wait_ms": 1000})
-	if allowed["result"].(map[string]any)["isError"] != false {
+	if allowed["result"].(map[string]any)["isError"] == true {
 		t.Fatalf("owner cannot read: %#v", allowed)
 	}
 	secret := s.tokens[tokens[0]]

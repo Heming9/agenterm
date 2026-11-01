@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -20,7 +19,6 @@ import (
 
 	"agenterm/internal/installer"
 	"agenterm/internal/protocol"
-	"agenterm/internal/version"
 	"github.com/gorilla/websocket"
 )
 
@@ -47,10 +45,11 @@ type server struct {
 	adminKey        string
 	noPassword      bool
 	clientURL       string
-	clientIPHeader  string             // empty uses the directly connected peer IP
-	tokens          map[string]string  // full token -> client credential
-	clients         map[string]*client // six-character client ID -> connection
-	multiDevice     map[string]bool    // client credential -> multi-device mode
+	clientIPHeader  string                      // empty uses the directly connected peer IP
+	tokens          map[string]string           // full token -> client credential
+	clients         map[string]*client          // six-character client ID -> connection
+	clientWaiters   map[string]*clientWaitState // client credential -> active connection waits
+	multiDevice     map[string]bool             // client credential -> multi-device mode
 	mu              sync.Mutex
 	sessions        map[string]*session
 	limiter         authLimiter
@@ -59,6 +58,8 @@ type server struct {
 	maxClientsPerIP int
 	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
 	nextClientOrder uint64
+	mcpOnce         sync.Once
+	mcpHandler      http.Handler
 }
 
 type invitation struct {
@@ -122,6 +123,10 @@ func randomManagementKey() string {
 func (s *server) validSecret(secret string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.validSecretLocked(secret)
+}
+
+func (s *server) validSecretLocked(secret string) bool {
 	for _, candidate := range s.tokens {
 		if candidate == secret {
 			return true
@@ -188,6 +193,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
 		}
 	}
+	s.notifyClientWaitersLocked(secret)
 	log.Printf("client connected id=%s hostname=%q platform=%q", id, c.info.Hostname, c.info.Platform)
 	go func() {
 		var disconnectErr error
@@ -236,250 +242,6 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func (s *server) execute(ctx context.Context, secret, clientID, command string) (string, error) {
-	s.mu.Lock()
-	c, err := s.targetClientLocked(secret, clientID)
-	s.mu.Unlock()
-	if err != nil {
-		return "", err
-	}
-	id := random()
-	ch := make(chan protocol.Message, 256)
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return "", i18n.NewError("client.disconnected")
-	}
-	c.pending[id] = ch
-	c.mu.Unlock()
-	defer func() { c.mu.Lock(); delete(c.pending, id); c.mu.Unlock() }()
-	if err := c.send(protocol.Message{Type: "exec", ID: id, Command: command}); err != nil {
-		return "", err
-	}
-	var out strings.Builder
-	truncated := false
-	for {
-		select {
-		case <-ctx.Done():
-			_ = c.send(protocol.Message{Type: "cancel", ID: id})
-			return "", ctx.Err()
-		case m, ok := <-ch:
-			if !ok {
-				return "", i18n.NewError("client.disconnected")
-			}
-			switch m.Type {
-			case "output":
-				if out.Len()+len(m.Output) <= 1<<20 {
-					out.WriteString(m.Output)
-				} else {
-					truncated = true
-				}
-			case "done":
-				result := out.String()
-				if truncated {
-					result += serverText("mcp.output.truncated.at.1.mib")
-				}
-				if m.Error != "" {
-					return result, fmt.Errorf("%s", m.Error)
-				}
-				return fmt.Sprintf(i18n.Text(i18n.Terminal(), "s.exit.code.d"), result, m.ExitCode), nil
-			}
-		}
-	}
-}
-
-type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-}
-
-func respond(w http.ResponseWriter, id json.RawMessage, result any, rpcErr any) {
-	w.Header().Set("Content-Type", "application/json")
-	payload := map[string]any{"jsonrpc": "2.0", "id": id}
-	if rpcErr != nil {
-		payload["error"] = rpcErr
-	} else {
-		payload["result"] = result
-	}
-	_ = json.NewEncoder(w).Encode(payload)
-}
-func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
-		return
-	}
-	header := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(header, "Bearer ")
-	s.mu.Lock()
-	secret, ok := s.tokens[token]
-	s.mu.Unlock()
-	admin := (s.noPassword && header == "") || (s.adminKey != "" && header == "Bearer "+token && subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) == 1)
-	if status, err := s.authorize(r, admin || (header == "Bearer "+token && ok)); err != nil {
-		if status == http.StatusTooManyRequests {
-			w.Header().Set("Retry-After", "300")
-		} else if status == http.StatusUnauthorized {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="agenterm"`)
-		}
-		http.Error(w, err.Error(), status)
-		return
-	}
-	var req rpcRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		respond(w, json.RawMessage("null"), nil, map[string]any{"code": -32700, "message": serverText("mcp.parse.error")})
-		return
-	}
-	if len(req.ID) == 0 {
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-	switch req.Method {
-	case "initialize":
-		var p struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		_ = json.Unmarshal(req.Params, &p)
-		mcpVersion := p.ProtocolVersion
-		if mcpVersion != "2025-03-26" && mcpVersion != "2025-06-18" {
-			mcpVersion = "2025-03-26"
-		}
-		respond(w, req.ID, map[string]any{"protocolVersion": mcpVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "agenterm", "version": version.Current}}, nil)
-	case "ping":
-		respond(w, req.ID, map[string]any{}, nil)
-	case "tools/list":
-		tools := []any{
-			tool("list_clients", serverText("mcp.list.clients"), map[string]any{}, []string{}),
-			tool("execute_command", serverText("mcp.execute.a.non.interactive.command.and.return.output"), map[string]any{"command": stringField(serverText("mcp.shell.command"))}, []string{"command"}),
-			tool("session_start", serverText("mcp.start.an.interactive.terminal.session.then.use.session"), map[string]any{"command": stringField(serverText("mcp.shell.command.to.run"))}, []string{"command"}),
-			tool("session_read", serverText("mcp.read.new.output.while.the.session.is.running"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier")), "cursor": map[string]any{"type": "integer", "minimum": 0, "description": serverText("mcp.byte.cursor.initially.0")}, "wait_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 20000, "description": serverText("mcp.wait.up.to.this.many.milliseconds.for.output")}}, []string{"session_id"}),
-			tool("session_write", serverText("mcp.send.input.to.a.running.session.include.a"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier")), "input": stringField(serverText("mcp.input.bytes.as.text.e.g.yes.n"))}, []string{"session_id", "input"}),
-			tool("session_stop", serverText("mcp.stop.a.running.session"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier"))}, []string{"session_id"}),
-		}
-		for _, item := range tools {
-			t := item.(map[string]any)
-			if t["name"] == "execute_command" || t["name"] == "session_start" {
-				t["inputSchema"].(map[string]any)["properties"].(map[string]any)["client_id"] = map[string]any{"type": "string", "pattern": "^[a-z0-9]{6}$", "description": serverText("mcp.client.id")}
-			}
-		}
-		if admin {
-			tools = append(tools, tool("create_client", serverText("mcp.create.a.client.connection.token.and.a.one"), map[string]any{"multi_device": map[string]any{"type": "boolean", "default": false, "description": serverText("mcp.multi.device")}}, []string{}))
-			for _, item := range tools[:len(tools)-1] {
-				t := item.(map[string]any)
-				schema := t["inputSchema"].(map[string]any)
-				schema["properties"].(map[string]any)["client_token"] = stringField(serverText("mcp.target.client.connection.token.required.when.authenticated.with"))
-				schema["required"] = append(schema["required"].([]string), "client_token")
-			}
-		}
-		respond(w, req.ID, map[string]any{"tools": tools}, nil)
-	case "tools/call":
-		var p struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": serverText("mcp.invalid.arguments")})
-			return
-		}
-		var a struct {
-			ClientToken string `json:"client_token"`
-			ClientID    string `json:"client_id"`
-			MultiDevice bool   `json:"multi_device"`
-			Command     string `json:"command"`
-			SessionID   string `json:"session_id"`
-			Input       string `json:"input"`
-			Cursor      int64  `json:"cursor"`
-			WaitMS      int    `json:"wait_ms"`
-		}
-		if err := json.Unmarshal(p.Arguments, &a); err != nil {
-			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": serverText("mcp.invalid.arguments")})
-			return
-		}
-		var result any
-		var err error
-		if p.Name == "create_client" && !admin {
-			err = i18n.NewError("management.key.required")
-		} else if admin && p.Name != "create_client" {
-			s.mu.Lock()
-			secret, ok = s.tokens[a.ClientToken]
-			s.mu.Unlock()
-			if !ok {
-				err = i18n.NewError("valid.client.token.is.required")
-			}
-		}
-		if err == nil {
-			switch p.Name {
-			case "create_client":
-				var owner string
-				if s.maxClientsPerIP > 0 {
-					owner, err = s.requestIP(r)
-				}
-				if err == nil {
-					result, err = s.createClientMode(owner, a.MultiDevice)
-				}
-
-			case "list_clients":
-				result = map[string]any{"clients": s.listClients(secret)}
-			case "execute_command":
-				if strings.TrimSpace(a.Command) == "" {
-					err = i18n.NewError("command.is.required")
-				} else {
-					result, err = s.execute(r.Context(), secret, a.ClientID, a.Command)
-				}
-			case "session_start":
-				if strings.TrimSpace(a.Command) == "" {
-					err = i18n.NewError("command.is.required")
-				} else {
-					var sess *session
-					sess, err = s.startSession(secret, a.ClientID, a.Command)
-					if err == nil {
-						result = map[string]any{"session_id": sess.id, "cursor": 0}
-					}
-				}
-			case "session_read":
-				if a.Cursor < 0 || a.WaitMS < 0 || a.WaitMS > 20000 {
-					err = i18n.NewError("invalid.cursor.or.wait.ms")
-				} else {
-					var sess *session
-					sess, err = s.getSession(secret, a.SessionID)
-					if err == nil {
-						result, err = sess.read(r.Context(), a.Cursor, time.Duration(a.WaitMS)*time.Millisecond)
-					}
-				}
-			case "session_write", "session_stop":
-				var sess *session
-				sess, err = s.getSession(secret, a.SessionID)
-				if err == nil {
-					typ := "input"
-					if p.Name == "session_stop" {
-						typ = "cancel"
-					}
-					err = sess.send(typ, a.Input)
-					if err == nil {
-						result = map[string]any{"accepted": true}
-					}
-				}
-			default:
-				err = i18n.NewError("unknown.tool.s", p.Name)
-			}
-		}
-		if err != nil {
-			result = map[string]any{"error": err.Error()}
-		}
-		b, _ := json.Marshal(result)
-		respond(w, req.ID, map[string]any{"content": []any{map[string]string{"type": "text", "text": string(b)}}, "isError": err != nil}, nil)
-	default:
-		respond(w, req.ID, nil, map[string]any{"code": -32601, "message": serverText("mcp.method.not.found")})
-	}
-}
-func stringField(description string) map[string]any {
-	return map[string]any{"type": "string", "description": description}
-}
-func tool(name, description string, properties map[string]any, required []string) map[string]any {
-	return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required}}
-}
 func serverText(key string) string { return i18n.Text(i18n.Terminal(), key) }
 
 func main() {
@@ -586,7 +348,7 @@ func main() {
 	if !securePublicURL {
 		log.Print(serverText("warning.http.and.websocket.traffic.is.unencrypted"))
 	}
-	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, assets), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: *listen, Handler: s.routes(downloadTag, assets), ReadHeaderTimeout: 10 * time.Second}
 	go s.cleanupLoop(context.Background(), time.Minute)
 	log.Fatal(srv.ListenAndServe())
 }

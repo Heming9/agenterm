@@ -20,7 +20,7 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 	value := issued["invitation"].(string)
 	invitation, _ := protocol.Decode(value)
 	token, _ := protocol.Decode(issued["client_token"].(string))
-	for _, peer := range []string{"0.2.13-rc.1", "0.2.99-rc.1", "0.1.13", "0.3.0", "1.2.13", "", "invalid"} {
+	for _, peer := range []string{"0.2.13-rc.1", "0.2.99-rc.1", "0.1.13", "0.2.28", "0.4.0", "1.2.13", "", "invalid"} {
 		for _, endpoint := range []string{"redeem", "probe", "connect"} {
 			r := httptest.NewRequest("GET", protocol.ClientPath, nil)
 			r.Header.Set(version.Header, peer)
@@ -50,7 +50,7 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 	// credentials. A client with a different patch number can still redeem it.
 	r := httptest.NewRequest("POST", "/agenterm/invite/redeem", nil)
 	r.Header.Set("Authorization", "Bearer "+invitation.Secret)
-	r.Header.Set(version.Header, "v0.2.999+build")
+	r.Header.Set(version.Header, "v0.3.999+build")
 	w := httptest.NewRecorder()
 	s.redeemInvitation(w, r)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), issued["client_token"].(string)) {

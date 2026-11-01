@@ -85,6 +85,10 @@ func (s *server) targetClientLocked(secret, id string) (*client, error) {
 func (s *server) listClients(secret string) []clientInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.listClientsLocked(secret)
+}
+
+func (s *server) listClientsLocked(secret string) []clientInfo {
 	clients := make([]clientInfo, 0)
 	for _, c := range s.clients {
 		if c.secret == secret {

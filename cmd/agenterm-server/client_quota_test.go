@@ -19,6 +19,7 @@ func TestMCPCreationUsesIssuingIP(t *testing.T) {
 	call := func(remote, forwarded string) {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/agenterm/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_client","arguments":{}}}`))
+		setMCPHeaders(r)
 		r.RemoteAddr = remote
 		r.Header.Set("X-Real-IP", forwarded)
 		w := httptest.NewRecorder()
@@ -57,6 +58,7 @@ func TestRequestIP(t *testing.T) {
 		{"fe80::1%lo0", "", true},
 	} {
 		r := httptest.NewRequest("POST", "/mcp", nil)
+		setMCPHeaders(r)
 		if tc.header != "" {
 			r.Header.Set("X-Real-IP", tc.header)
 		}
@@ -66,6 +68,7 @@ func TestRequestIP(t *testing.T) {
 		}
 	}
 	r := httptest.NewRequest("POST", "/mcp", nil)
+	setMCPHeaders(r)
 	r.Header.Add("X-Real-IP", "192.0.2.1")
 	r.Header.Add("X-Real-IP", "192.0.2.2")
 	if _, err := s.requestIP(r); err == nil {

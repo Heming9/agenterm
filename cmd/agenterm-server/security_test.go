@@ -30,6 +30,7 @@ func TestFailureLimitAcrossEndpoints(t *testing.T) {
 		}
 	}
 	req := httptest.NewRequest("POST", "/agenterm/mcp", strings.NewReader(`{}`))
+	setMCPHeaders(req)
 	req.RemoteAddr = "127.0.0.1:7777"
 	req.Header.Set("X-Real-IP", "192.0.2.1")
 	req.Header.Set("Authorization", "Bearer valid-token")
@@ -79,6 +80,7 @@ func TestAuthenticationRequiresConfiguredIPHeaderAcrossEndpoints(t *testing.T) {
 			t.Run(endpoint+"/"+header.name, func(t *testing.T) {
 				s := &server{noPassword: true, clientIPHeader: "X-Client-IP"}
 				r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+				setMCPHeaders(r)
 				r.RemoteAddr = "203.0.113.5:1234"
 				r.Header.Set("X-Forwarded-For", "192.0.2.1")
 				r.Header.Set("X-Real-IP", "192.0.2.1")
@@ -115,6 +117,7 @@ func TestAuthenticationNormalizesRealIP(t *testing.T) {
 	s := &server{noPassword: true, clientIPHeader: "X-Real-IP"}
 	for i := 0; i < failureLimit; i++ {
 		r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		setMCPHeaders(r)
 		r.Header.Set("X-Real-IP", "::ffff:192.0.2.1")
 		r.Header.Set("Authorization", "Bearer invalid")
 		w := httptest.NewRecorder()
@@ -124,6 +127,7 @@ func TestAuthenticationNormalizesRealIP(t *testing.T) {
 		}
 	}
 	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
+	setMCPHeaders(r)
 	r.Header.Set("X-Real-IP", "192.0.2.1")
 	w := httptest.NewRecorder()
 	s.mcp(w, r)
@@ -136,6 +140,7 @@ func TestDefaultIPSourceIgnoresHeaders(t *testing.T) {
 	s := &server{noPassword: true}
 	for i := 0; i < failureLimit; i++ {
 		r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		setMCPHeaders(r)
 		r.RemoteAddr = "192.0.2.1:1234"
 		r.Header.Set("X-Real-IP", "203.0.113.1")
 		r.Header.Set("Authorization", "Bearer invalid")
@@ -145,7 +150,8 @@ func TestDefaultIPSourceIgnoresHeaders(t *testing.T) {
 			t.Fatalf("attempt %d: %d", i, w.Code)
 		}
 	}
-	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	setMCPHeaders(r)
 	r.RemoteAddr = "192.0.2.1:5678"
 	r.Header.Set("X-Real-IP", "203.0.113.2")
 	r.Header.Set("X-Forwarded-For", "203.0.113.3")
@@ -178,6 +184,7 @@ func TestRequestIPUsesConfiguredSource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &server{clientIPHeader: tc.header}
 			r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			setMCPHeaders(r)
 			r.RemoteAddr = tc.remote
 			r.Header.Set("X-Real-IP", "198.51.100.1")
 			r.Header.Set("X-Forwarded-For", "198.51.100.2")

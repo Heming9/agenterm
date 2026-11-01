@@ -16,7 +16,7 @@ import (
 )
 
 func TestServerVersionCheckedBeforeConnectedCallback(t *testing.T) {
-	for _, peer := range []string{"0.2.99", "0.2.13-rc.1", "0.2.99-rc.1", "0.3.0", "1.2.13", "", "invalid"} {
+	for _, peer := range []string{"0.3.99", "0.2.99", "0.2.13-rc.1", "0.2.99-rc.1", "0.4.0", "1.2.13", "", "invalid"} {
 		t.Run(peer, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get(version.Header) != version.Current {
@@ -39,10 +39,10 @@ func TestServerVersionCheckedBeforeConnectedCallback(t *testing.T) {
 			defer cancel()
 			connected := false
 			err = Run(ctx, token, io.Discard, func() { connected = true })
-			if connected != (peer == "0.2.99") {
+			if connected != (peer == "0.3.99") {
 				t.Fatalf("peer %q: connected=%v err=%v", peer, connected, err)
 			}
-			if peer != "0.2.99" && err == nil {
+			if peer != "0.3.99" && err == nil {
 				t.Fatal("incompatible server was accepted")
 			}
 		})

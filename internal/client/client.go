@@ -48,14 +48,15 @@ type Callbacks struct {
 }
 
 type connection struct {
-	ws      *websocket.Conn
-	write   sync.Mutex
-	mu      sync.Mutex
-	running map[string]*process
-	log     io.Writer
-	command func(CommandEvent)
-	output  func(string, []byte)
-	workers sync.WaitGroup
+	ws       *websocket.Conn
+	write    sync.Mutex
+	mu       sync.Mutex
+	running  map[string]*process
+	log      io.Writer
+	command  func(CommandEvent)
+	output   func(string, []byte)
+	workers  sync.WaitGroup
+	outputMu sync.Mutex
 }
 
 func (c *connection) commandStarted(m protocol.Message) CommandEvent {
@@ -89,103 +90,144 @@ func (c *connection) send(m protocol.Message) error {
 }
 
 type process struct {
-	cancel context.CancelFunc
-	input  io.WriteCloser
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	ready     chan struct{}
+	readyOnce sync.Once
+	input     io.WriteCloser
+	output    io.ReadCloser
+	stopped   bool
+}
+
+func (p *process) stop() {
+	p.cancel()
+	p.mu.Lock()
+	p.stopped = true
+	input, output := p.input, p.output
+	p.mu.Unlock()
+	p.readyOnce.Do(func() { close(p.ready) })
+	if input != nil {
+		_ = input.Close()
+	}
+	if output != nil {
+		_ = output.Close()
+	}
+}
+
+func (p *process) setIO(input io.WriteCloser, output io.ReadCloser) {
+	p.mu.Lock()
+	p.input, p.output = input, output
+	stopped := p.stopped
+	p.mu.Unlock()
+	p.readyOnce.Do(func() { close(p.ready) })
+	if stopped {
+		_ = input.Close()
+		_ = output.Close()
+	}
+}
+
+func (p *process) write(input string) error {
+	// session_write may arrive before the shell has finished starting.
+	<-p.ready
+	p.mu.Lock()
+	writer := p.input
+	p.mu.Unlock()
+	if writer == nil {
+		return nil
+	}
+	_, err := io.WriteString(writer, input)
+	return err
 }
 
 type outputWriter struct {
-	c  *connection
-	id string
+	c      *connection
+	id     string
+	stream string
 }
 
 func (o outputWriter) Write(p []byte) (int, error) {
+	o.c.outputMu.Lock()
+	defer o.c.outputMu.Unlock()
 	if o.c.output != nil {
 		o.c.output(o.id, p)
 	} else {
 		_, _ = o.c.log.Write(p)
 	}
-	if err := o.c.send(protocol.Message{Type: "output", ID: o.id, Output: string(p)}); err != nil {
+	if err := o.c.send(protocol.Message{Type: "output", ID: o.id, Output: string(p), Stream: o.stream}); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
+
 func (c *connection) run(m protocol.Message) {
-	if m.Interactive {
-		c.runInteractive(m)
-		return
-	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c.mu.Lock()
-	c.running[m.ID] = &process{cancel: cancel}
-	c.mu.Unlock()
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		defer func() { cancel(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
-		event := c.commandStarted(m)
-		cmd := shellCommand(ctx, m.Command)
-		cmd.WaitDelay = 2 * time.Second
-		writer := newOutputWriter(outputWriter{c: c, id: m.ID})
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		cmd.Stdin = nil
-		err := cmd.Run()
-		_ = writer.Close()
-		code := 0
-		detail := ""
-		if err != nil {
-			if e, ok := err.(*exec.ExitError); ok {
-				code = e.ExitCode()
-			} else {
-				code = -1
-				detail = err.Error()
-			}
-		}
-		c.commandFinished(event, code, detail)
-		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail})
-	}()
-}
-func (c *connection) runInteractive(m protocol.Message) {
-	ctx, cancel := context.WithCancel(context.Background())
-	event := c.commandStarted(m)
-	cmd := shellCommand(ctx, m.Command)
-	input, output, err := startInteractive(cmd)
-	if err != nil {
+	if m.TimeoutMS > 0 && m.TimeoutMS <= protocol.MaxCommandTimeoutMS {
 		cancel()
-		c.commandFinished(event, -1, err.Error())
-		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: -1, Error: err.Error()})
-		return
+		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(m.TimeoutMS)*time.Millisecond)
 	}
+	p := &process{cancel: cancel, ready: make(chan struct{})}
 	c.mu.Lock()
-	c.running[m.ID] = &process{cancel: func() { cancel(); input.Close(); output.Close() }, input: input}
+	c.running[m.ID] = p
 	c.mu.Unlock()
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
-		defer func() {
-			cancel()
-			input.Close()
-			output.Close()
-			c.mu.Lock()
-			delete(c.running, m.ID)
-			c.mu.Unlock()
-		}()
-		writer := newOutputWriter(outputWriter{c: c, id: m.ID})
-		_, _ = io.Copy(writer, output)
-		_ = writer.Close()
-		err := cmd.Wait()
-		code := 0
-		detail := ""
-		if err != nil {
-			if e, ok := err.(*exec.ExitError); ok {
-				code = e.ExitCode()
+		defer func() { p.stop(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
+		stopIO := context.AfterFunc(ctx, p.stop)
+		defer stopIO()
+		event := c.commandStarted(m)
+		err := m.ExecOptions.Validate()
+		code := -1
+		if err == nil {
+			cmd := shellCommand(ctx, m.Command)
+			cmd.Dir = m.Cwd
+			cmd.Env = cmd.Environ()
+			for key, value := range m.Env {
+				cmd.Env = append(cmd.Env, key+"="+value)
+			}
+			configureCommand(cmd, m.Interactive)
+			if m.Interactive {
+				var input io.WriteCloser
+				var output io.ReadCloser
+				input, output, err = startInteractive(cmd)
+				if err == nil {
+					p.setIO(input, output)
+					writer := newOutputWriter(outputWriter{c: c, id: m.ID, stream: "terminal"})
+					_, _ = io.Copy(writer, output)
+					_ = writer.Close()
+					err = cmd.Wait()
+				}
 			} else {
-				code = -1
-				detail = err.Error()
+				stdout := newOutputWriter(outputWriter{c: c, id: m.ID, stream: "stdout"})
+				stderr := newOutputWriter(outputWriter{c: c, id: m.ID, stream: "stderr"})
+				cmd.Stdout, cmd.Stderr = stdout, stderr
+				err = cmd.Run()
+				_ = stdout.Close()
+				_ = stderr.Close()
+			}
+			if cmd.ProcessState != nil {
+				code = cmd.ProcessState.ExitCode()
 			}
 		}
+		detail := ""
+		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+		canceled := errors.Is(ctx.Err(), context.Canceled)
+		if timedOut || canceled {
+			code = -1
+		} else if err != nil {
+			var exitError *exec.ExitError
+			if !errors.As(err, &exitError) {
+				code, detail = -1, err.Error()
+			}
+		}
+		if timedOut {
+			detail = i18n.Text(i18n.Terminal(), "execution.timed.out")
+		}
+		if canceled {
+			detail = i18n.Text(i18n.Terminal(), "execution.canceled")
+		}
 		c.commandFinished(event, code, detail)
-		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail})
+		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail, TimedOut: timedOut, Canceled: canceled})
 	}()
 }
 
@@ -270,7 +312,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 		ws.Close()
 		c.mu.Lock()
 		for _, p := range c.running {
-			p.cancel()
+			p.stop()
 		}
 		c.mu.Unlock()
 		c.workers.Wait()
@@ -329,15 +371,15 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			p := c.running[m.ID]
 			c.mu.Unlock()
 			if p != nil {
-				p.cancel()
+				p.stop()
 			}
 		case "input":
 			c.mu.Lock()
 			p := c.running[m.ID]
 			c.mu.Unlock()
-			if p != nil && p.input != nil {
-				if _, err := io.WriteString(p.input, m.Input); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-					_ = c.send(protocol.Message{Type: "output", ID: m.ID, Output: fmt.Sprintf(i18n.Text(i18n.Terminal(), "client.input.error"), err)})
+			if p != nil {
+				if err := p.write(m.Input); err != nil && !errors.Is(err, io.ErrClosedPipe) {
+					_ = c.send(protocol.Message{Type: "output", ID: m.ID, Stream: "stderr", Output: fmt.Sprintf(i18n.Text(i18n.Terminal(), "client.input.error"), err)})
 				}
 			}
 		}

@@ -29,47 +29,34 @@ func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
 }
 
 func TestCreateClientDisplayText(t *testing.T) {
-	originalTag := releaseTag
-	t.Cleanup(func() { releaseTag = originalTag })
-	for _, tag := range []string{"v1.2.3", ""} {
-		t.Run(tag, func(t *testing.T) {
-			releaseTag = tag
-			s := &server{clientURL: "wss://example.com/agenterm/client"}
-			result, err := s.createClient("")
-			if err != nil {
-				t.Fatal(err)
+	s := &server{clientURL: "wss://example.com/agenterm/client"}
+	result, err := s.createClient("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	display := result["display_text"].(string)
+	for _, part := range []string{"连接 token：\n" + result["client_token"].(string), "无客户端", "macOS / Linux 一键连接命令：", "Windows 一键连接命令："} {
+		if !strings.Contains(display, part) {
+			t.Fatalf("display missing %q: %s", part, display)
+		}
+	}
+	for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
+		command := result[key].(string)
+		decoded, _ := protocol.Decode(result["invitation"].(string))
+		code := installCode(decoded.Secret)
+		if !regexp.MustCompile(`^[A-Z0-9]{6}$`).MatchString(code) {
+			t.Fatalf("invalid invitation code: %q", code)
+		}
+		url := "https://example.com/agenterm/c/" + code
+		if key == "windows_powershell_command" {
+			url += ".ps1"
+			if !strings.HasPrefix(command, `powershell -NoP -c "iex(irm -TimeoutSec 15 `) {
+				t.Fatalf("Windows command must work in CMD and skip profiles: %s", command)
 			}
-			display := result["display_text"].(string)
-			for _, part := range []string{"连接 token：\n" + result["client_token"].(string), "无客户端", "macOS / Linux 一键连接命令：", "Windows 一键连接命令："} {
-				if !strings.Contains(display, part) {
-					t.Fatalf("display missing %q: %s", part, display)
-				}
-			}
-			if tag == "" {
-				if !strings.Contains(display, "不可用：请使用发布版服务端") {
-					t.Fatalf("missing unavailable explanation: %s", display)
-				}
-			} else {
-				for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
-					command := result[key].(string)
-					decoded, _ := protocol.Decode(result["invitation"].(string))
-					code := installCode(decoded.Secret)
-					if !regexp.MustCompile(`^[A-Z0-9]{6}$`).MatchString(code) {
-						t.Fatalf("invalid invitation code: %q", code)
-					}
-					url := "https://example.com/agenterm/c/" + code
-					if key == "windows_powershell_command" {
-						url += ".ps1"
-						if !strings.HasPrefix(command, `powershell -NoP -c "iex(irm -TimeoutSec 15 `) {
-							t.Fatalf("Windows command must work in CMD and skip profiles: %s", command)
-						}
-					}
-					if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
-						t.Fatalf("invalid %s in display: %s", key, display)
-					}
-				}
-			}
-		})
+		}
+		if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
+			t.Fatalf("invalid %s in display: %s", key, display)
+		}
 	}
 }
 
@@ -85,6 +72,7 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 		t.Helper()
 		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + name + `","arguments":` + args + `}}`
 		req, _ := http.NewRequest("POST", ts.URL+"/agenterm/mcp", bytes.NewBufferString(body))
+		setMCPHeaders(req)
 		req.Header.Set("Authorization", "Bearer "+auth)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -105,10 +93,11 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 		if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		var result map[string]any
-		if err := json.Unmarshal([]byte(payload.Result.Content[0].Text), &result); err != nil {
+		value, err := decodeToolText(payload.Result.Content[0].Text, payload.Result.IsError)
+		if err != nil {
 			t.Fatal(err)
 		}
+		result := value.(map[string]any)
 		result["isError"] = payload.Result.IsError
 		return res.StatusCode, result
 	}
@@ -128,9 +117,9 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if _, err := invite.Redeem(context.Background(), invitation); err == nil {
 		t.Fatal("invitation redeemed twice")
 	}
-	_, denied := call(token, "create_client", `{}`)
-	if denied["isError"] != true {
-		t.Fatalf("client may create: %v", denied)
+	status, denied := call(token, "create_client", `{}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("client may create: status=%d %v", status, denied)
 	}
 	_, missing := call("admin-test", "list_clients", `{}`)
 	if missing["isError"] != true {
@@ -173,6 +162,7 @@ func TestManagementAuthenticationModes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &server{adminKey: "test-key", noPassword: tc.noPassword}
 			req := httptest.NewRequest("POST", "/agenterm/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+			setMCPHeaders(req)
 			if tc.header != "" {
 				req.Header.Set("Authorization", tc.header)
 			}

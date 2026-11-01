@@ -2,9 +2,11 @@
 
 [![Agenterm remote cleanup demo](poster.png)](agenterm-cleanup.mp4)
 
-[Video / 视频 (MP4)](agenterm-cleanup.mp4) · [Bilingual subtitles / 双语字幕 (SRT)](subtitles.zh-en.srt) · [Chinese narration script / 中文旁白文稿](narration.zh.txt)
+[16-second preview / 16 秒预览 (GIF)](quickstart.gif) · [Video / 视频 (MP4)](agenterm-cleanup.mp4) · [Bilingual subtitles / 双语字幕 (SRT)](subtitles.zh-en.srt) · [Chinese narration script / 中文旁白文稿](narration.zh.txt)
 
 ## What the demo shows
+
+The silent 16-second README preview uses excerpts from this recording: invitation, authorization, connection, and execution. / 首页的 16 秒无声预览截取自本视频，展示邀请、授权、连接和执行。
 
 The 1:42 video follows an MCP agent through Agenterm's hosted service: connect MCP, generate an invitation, run the one-command installer in the target terminal, authorize the connection, then scan, confirm, clean up, and verify disposable files. Kimi Code is one example of a compatible agent. The video includes Chinese narration, Chinese/English captions, background music, and reading pauses.
 

@@ -72,6 +72,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 			ts.Start()
 
 			req, _ := http.NewRequest("POST", origin+prefix+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`))
+			setMCPHeaders(req)
 			req.Header.Set("Authorization", "Bearer test-admin")
 			res, err := ts.Client().Do(req)
 			if err != nil {
@@ -178,6 +179,7 @@ func TestOnlyNamespacedRoutesAreExposed(t *testing.T) {
 		}
 	}
 	r := httptest.NewRequest(http.MethodPost, "/agenterm/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`))
+	setMCPHeaders(r)
 	r.Header.Set("Authorization", "Bearer test-admin")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)

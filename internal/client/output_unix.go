@@ -2,9 +2,13 @@
 
 package client
 
-import "io"
+import (
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
+	"io"
+)
 
-type plainOutput struct{ io.Writer }
-
-func (plainOutput) Close() error                 { return nil }
-func newOutputWriter(w io.Writer) io.WriteCloser { return plainOutput{w} }
+// Buffer incomplete UTF-8 runes so JSON output frames cannot corrupt them.
+func newOutputWriter(w io.Writer) io.WriteCloser {
+	return transform.NewWriter(w, unicode.UTF8.NewDecoder())
+}

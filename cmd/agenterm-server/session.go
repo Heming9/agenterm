@@ -22,6 +22,8 @@ type session struct {
 	done     bool
 	exitCode int
 	err      string
+	timedOut bool
+	canceled bool
 	ended    time.Time
 	changed  chan struct{}
 }
@@ -46,6 +48,7 @@ func (p *session) accept(m protocol.Message) {
 		p.done = true
 		p.exitCode = m.ExitCode
 		p.err = m.Error
+		p.timedOut, p.canceled = m.TimedOut, m.Canceled
 		p.ended = time.Now()
 		p.signal()
 	}
@@ -69,6 +72,8 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (m
 			result := map[string]any{"session_id": p.id, "output": text, "next_cursor": end, "truncated": truncated, "done": p.done}
 			if p.done {
 				result["exit_code"] = p.exitCode
+				result["timed_out"] = p.timedOut
+				result["canceled"] = p.canceled
 				if p.err != "" {
 					result["error"] = p.err
 				}
@@ -87,7 +92,7 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (m
 		}
 	}
 }
-func (s *server) startSession(secret, clientID, command string) (*session, error) {
+func (s *server) startSession(secret, clientID, command string, options protocol.ExecOptions) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.targetClientLocked(secret, clientID)
@@ -126,7 +131,7 @@ func (s *server) startSession(secret, clientID, command string) (*session, error
 	}
 	c.pending[p.id] = ch
 	c.mu.Unlock()
-	if err := c.send(protocol.Message{Type: "exec", ID: p.id, Command: command, Interactive: true}); err != nil {
+	if err := c.send(protocol.Message{Type: "exec", ID: p.id, Command: command, ExecOptions: options, Interactive: true}); err != nil {
 		c.mu.Lock()
 		delete(c.pending, p.id)
 		c.mu.Unlock()

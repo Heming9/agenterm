@@ -3,7 +3,6 @@ package main
 import (
 	"agenterm/internal/client"
 	"agenterm/internal/logview"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -28,9 +27,7 @@ type logBuffer struct {
 	mu       sync.Mutex
 	data     string
 	spans    []logSpan
-	next     int
 	last     string
-	shells   map[string]int
 	decoders map[string]*displayDecoder
 	spacing  logview.Spacing
 }
@@ -99,8 +96,7 @@ func (b *logBuffer) takeSpans() []logSpan {
 	return spans
 }
 
-// command and output serialize labels with their associated chunks, including
-// when several shells write concurrently.
+// command and output serialize log entries, including concurrent output.
 func (b *logBuffer) command(event client.CommandEvent) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -109,26 +105,22 @@ func (b *logBuffer) command(event client.CommandEvent) {
 			b.switchSource(event.ID)
 			b.append("error", b.spacing.Before(1)+event.Error+"\n")
 		}
-		delete(b.shells, event.ID)
 		delete(b.decoders, event.ID)
 		return
 	}
-	if b.shells == nil {
-		b.shells = make(map[string]int)
+	if b.decoders == nil {
 		b.decoders = make(map[string]*displayDecoder)
 	}
-	b.next++
-	b.shells[event.ID] = b.next
 	b.decoders[event.ID] = &displayDecoder{}
-	b.append("system", b.spacing.Before(2)+fmt.Sprintf("s%d %s $ ", b.next, event.StartedAt.Format("15:04:05")))
+	b.append("system", b.spacing.Before(2)+event.StartedAt.Format("15:04:05")+" $ ")
 	b.append("command", event.Command+"\n")
 	b.last = event.ID
 }
 
 func (b *logBuffer) switchSource(id string) {
 	if b.last != id {
-		if n, ok := b.shells[id]; ok {
-			b.append("system", b.spacing.Before(2)+fmt.Sprintf("s%d\n", n))
+		if b.decoders[id] != nil {
+			b.append("system", b.spacing.Before(2))
 		}
 		b.last = id
 	}

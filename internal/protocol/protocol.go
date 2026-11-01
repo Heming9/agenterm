@@ -194,13 +194,17 @@ func NormalizePathPrefix(prefix string) (string, error) {
 }
 
 type Message struct {
-	Type        string `json:"type"`
-	ID          string `json:"id,omitempty"`
-	Command     string `json:"command,omitempty"`
+	Type    string `json:"type"`
+	ID      string `json:"id,omitempty"`
+	Command string `json:"command,omitempty"`
+	ExecOptions
 	Interactive bool   `json:"interactive,omitempty"`
 	Input       string `json:"input,omitempty"`
 	Output      string `json:"output,omitempty"`
+	Stream      string `json:"stream,omitempty"`
 	ExitCode    int    `json:"exit_code,omitempty"`
+	TimedOut    bool   `json:"timed_out,omitempty"`
+	Canceled    bool   `json:"canceled,omitempty"`
 	Error       string `json:"error,omitempty"`
 	LatencyMS   int64  `json:"latency_ms,omitempty"`
 }

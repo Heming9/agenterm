@@ -92,6 +92,8 @@ jobs:
         run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
       - name: Test Windows CLI client and reconnection
         run: go test -gcflags=all=-l ./cmd/agenterm-client ./internal/client
+      - name: Test MCP execution and session lifecycle on Windows
+        run: go test ./cmd/agenterm-server -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery'
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
 
@@ -168,7 +170,7 @@ jobs:
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
           mkdir -p dist
-          rm -f internal/installer/assets/agenterm-cli-* internal/installer/assets/SHA256SUMS internal/installer/assets/clients.tar.xz
+          rm -f internal/installer/assets/agenterm-cli-* internal/installer/assets/SHA256SUMS
           if [ "$BUILD_CLI" = true ]; then
             for os in darwin linux windows; do
               for arch in amd64 arm64; do
@@ -208,7 +210,7 @@ jobs:
               extension=""
               if [ "$os" = darwin ]; then platform=macos; fi
               if [ "$os" = windows ]; then extension=.exe; fi
-              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
+              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
             done
           done
       - name: Report artifact sizes

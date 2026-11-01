@@ -1,333 +1,93 @@
 <div align="center">
+  <img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
-  <img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm app icon" width="128">
-  <p>English | <a href="README.zh-CN.md">简体中文</a></p>
-  <p><strong>Let agents control any remote computer, anytime, anywhere.</strong></p>
-  <p>Connect a remote computer with a single command for AI agent remote assistance through its terminal using MCP.</p>
-  <p><code>Agent ── HTTP / MCP ──&gt; Server &lt;── WebSocket ── Client ──&gt; shell</code></p>
-  <p>macOS / Linux / Windows · CLI / GUI · Multiple clients · Interactive sessions · No SSH daemon</p>
+  <p><strong>Let an AI agent assist with a remote computer through one authorized connection command.</strong></p>
+  <p>macOS / Linux / Windows · CLI / GUI · Multiple devices · No SSH service required</p>
+  <p>
+    <a href="#quick-start">Quick start</a> ·
+    <a href="https://github.com/Heming9/agenterm/releases">Download client</a> ·
+    <a href="docs/deployment.md">Self-host</a> ·
+    <a href="README.zh-CN.md">简体中文</a>
+  </p>
 </div>
 
-## Demo
+<p align="center">
+  <a href="docs/demo/agenterm-cleanup.mp4"><img src="docs/demo/quickstart.gif" alt="An agent creates an invitation, the target computer authorizes access, and the task runs" width="800"></a>
+</p>
+<p align="center">Create invitation → Authorize access → Connect device → Run task</p>
+<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">Full demo · 1 min 42 sec</a> · <a href="docs/demo/subtitles.zh-en.srt">Chinese / English subtitles</a></p>
 
-See Agenterm connect an MCP agent to a target terminal through the hosted service: generate an invitation, run the one-command installer, authorize the connection, then scan and clean up 192 MiB of disposable demo files. Kimi Code is the example agent.
+## Quick start
 
-[![Agenterm cloud demo: invitation, authorization, and remote cleanup](docs/demo/poster.png)](docs/demo/agenterm-cleanup.mp4)
+### 1. Person requesting help: connect your agent
 
-[Demo video — MP4, 1:42](docs/demo/agenterm-cleanup.mp4) · [Chinese/English subtitles](docs/demo/subtitles.zh-en.srt) · [Demo details and media credits](docs/demo/README.md)
-
-Chinese narration, bilingual captions, and pauses for reading each step.
-
-## Use the hosted service
-
-Connect an agent that supports Streamable HTTP to the hosted Server; no Server deployment is needed:
+Add this MCP service to an agent that supports Streamable HTTP:
 
 ```text
 https://agenterm.net/mcp
 ```
 
-The hosted management endpoint currently does not require authentication. For example, add this to `~/.codex/config.toml` for Codex:
+[See configuration examples](docs/usage.md#connect-your-agent). Describe your task, ask the agent to create an invitation, and privately share the generated connection command with the person at the target computer.
 
-```toml
-[mcp_servers.agenterm]
-url = "https://agenterm.net/mcp"
+### 2. Person at the target computer: connect and authorize
+
+Run the invitation command for your operating system, read the notice, and authorize access. The client displays connection status, commands, and output. You do not need to configure MCP or a server.
+
+### 3. Both: complete the task and disconnect
+
+Keep the agent conversation active while the device connects, then start the task. The target computer can disconnect at any time; close the client when finished.
+
+Invitations are single-use by default and expire after 15 minutes. Connections grant terminal access with the current user's permissions. Share invitations and tokens only with people you trust.
+
+## What you can do
+
+- **Troubleshoot development environments:** “Help my colleague check their Python setup and find why the project won't start.”
+- **Inspect system status:** “Check this server's disk usage and application logs.”
+- **Work across computers:** “Connect several test machines, check their environments, and summarize the results.”
+
+Interactive terminal tasks are supported. Use the CLI or GUI on the target computer to follow progress; the client automatically attempts to reconnect after temporary network failures.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["AI Agent"] <-->|MCP| S["Server"]
+    S <-->|WebSocket| C["Client"]
+    C <--> T["shell"]
 ```
 
-Restart the agent or reload its MCP configuration, then:
+The server forwards commands and results. The client runs on the target computer, initiates its server connection, and executes tasks through the local shell. Both the agent and target need access to the server; the target needs no inbound port.
 
-1. Call `create_client` with `{}`. **Privately share** the one-command installer for the target's OS from the returned `display_text` with the person using that computer.
-2. The recipient runs the command on their computer, reads the prompt, and authorizes remote control. The macOS/Linux and Windows commands share one invitation: use either one. Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused.
-3. Poll `list_clients` with the returned `client_token`. Once the device appears in the `clients` array, pass that same `client_token` to `execute_command` or a session tool, for example:
+Use the hosted service or [deploy your own server](docs/deployment.md).
 
-   ```json
-   {"client_token":"agenterm:...","command":"pwd && ls"}
-   ```
-
-The hosted service allows up to four connected clients per **IP address issuing invitations**; users sharing a public IP share that quota. When capacity is available, creating another invitation may invalidate the oldest unused one. Server restarts invalidate existing tokens and invitations; create new ones afterward.
-
-> The hosted management endpoint is public: anyone who can reach it can create their own clients, and anyone holding a target's client token can control that computer. Keep tokens and invitations private and connect only with the other person's authorization. To control management access yourself, use the self-hosted setup below.
-
-## Self-hosted quick start
-
-Get binaries from [Releases](https://github.com/Heming9/agenterm/releases), or build with Go 1.26.10+:
-
-```sh
-git clone https://github.com/Heming9/agenterm.git
-cd agenterm
-go build -o agenterm-server ./cmd/agenterm-server
-go build -o agenterm-client ./cmd/agenterm-client
-```
-
-**1. Start the server.** On a trusted network:
-
-```sh
-./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 --generate
-```
-
-Replace `SERVER_IP` with an address reachable by both the agent and target machine. Copy the printed `agenterm:` token.
-
-**2. Connect the target machine.** Run the client and paste the token:
-
-```sh
-./agenterm-client
-```
-
-Release servers also print one-command installers for macOS/Linux and Windows CMD / PowerShell. Share the appropriate command privately; the target user confirms before connecting.
-
-**3. Connect your agent.** Add a remote MCP server with Streamable HTTP and custom headers:
-
-```text
-URL:            http://SERVER_IP:8080/agenterm/mcp
-Authorization:  Bearer agenterm:...
-```
-
-Use the same full token as the client. Then call `execute_command`:
-
-```json
-{"command":"pwd && ls"}
-```
-
-> A token grants shell access as the client’s user. Default HTTP/WS traffic is unencrypted; use a trusted network, or put an HTTPS reverse proxy in front of the server before exposing it publicly. [Security details](#details).
-
-## MCP tools
-
-| Tool | Use |
-| --- | --- |
-| `create_client` | Create a token and invitation; `multi_device: true` enables multiple devices. Requires management access. |
-| `list_clients` | List online devices for this token; poll to discover connections. |
-| `execute_command` | Run a command; return output and exit code when done. |
-| `session_start` | Start an interactive command; return `session_id`. |
-| `session_read` | Read output with `session_id` and `cursor`; reuse `next_cursor`. |
-| `session_write` | Send `input` to a session. Include a newline to submit a line. |
-| `session_stop` | Stop a session. |
-
-For multiple targets, connect MCP with the server’s printed **management key**. Call `create_client` with `{}`, show its `display_text` to the target user, then pass the returned `client_token` in subsequent tool calls:
-
-```json
-{"client_token":"agenterm:..."}
-```
-
-Without `--generate`, the server creates connections only on demand. A client token controls its devices; the management key can select any token. `--generate` still creates a single-device token.
-
-### Multi-device tokens
-
-Call `create_client` with `{"multi_device":true}` to let multiple devices connect simultaneously with one token. Its one-command installers can be reused for 15 minutes. Omitting the parameter or setting it to `false` preserves single-device behavior.
-
-After showing `display_text` to the target users, poll `list_clients` with that token:
-
-```json
-{"clients":[{"client_id":"a3k9m2","hostname":"MacBook","platform":"darwin","connected_at":"2026-11-01T00:00:00Z"}]}
-```
-
-Each `client_id` has six lowercase letters or digits; the server checks for collisions among online connections before assigning it. Hostnames are display-only and may repeat. Older clients report empty hostname/platform fields. Disconnected devices disappear from the list; reconnecting assigns a new ID.
-
-For multi-device tokens, `execute_command` and `session_start` require `client_id`, even when only one device is online:
-
-```json
-{"client_token":"agenterm:...","client_id":"a3k9m2","command":"pwd && ls"}
-```
-
-Make concurrent calls with different IDs to operate in parallel. Output, cancellation, and sessions remain independent per device. `session_read`, `session_write`, and `session_stop` continue to use `session_id`, plus `client_token` for management access. Single-device tokens may omit `client_id`. When authenticating MCP directly with a client token, omit `client_token`.
-
-
-## Clients
-
-- **CLI:** terminal UI by default. Commands and output that take more than one display line collapse to a one-line preview; click to expand or collapse. Drag to select text without changing the layout or folds; hold the pointer at the top or bottom edge to scroll across screens. Releasing the mouse copies the selection automatically, and Ctrl+C copies it again. Click outside the log or press Esc to clear the selection. While a selection is active, the log layout stays stable and incoming output is collected for display when the selection clears. Arrow keys or the mouse wheel scroll, `c` clears the log, `q` / Ctrl+C (without a selection) disconnects. Over SSH or without a local clipboard tool, copying uses OSC 52 and requires terminal clipboard support. Use `-plain` for text output; redirected input or output selects it automatically.
-- **GUI:** paste a token, connect, watch commands and live output. Follows the system theme; interface text is currently Chinese. [Build instructions below](#details).
-
-Both clients keep recent logs in memory (up to 10 MiB) and never save tokens to disk. Temporary connection failures retry automatically after 1, 2, 4, 8, 16, then at most every 30 seconds; a connection lasting 60 seconds resets this backoff. Rate-limit responses honor `Retry-After`. Invalid credentials and incompatible versions stop retries. Closing the client or choosing Disconnect cancels retries immediately.
-
-The server sends a WebSocket Ping immediately after connection and every 20 seconds afterward. A matching Pong measures the round-trip latency without relying on synchronized clocks. GUI and TUI show the latest result in the top-right connection status, for example `Connected · 42ms`; it refreshes with each heartbeat and clears on disconnect. A peer that does not respond within 60 seconds is disconnected. Old clients can answer these heartbeats, but latency display and automatic reconnection require updated clients. Updated clients also remain compatible with older servers that do not advertise heartbeats.
-
-Reconnection preserves recent logs and statistics, reuses the redeemed token, and holds the local connection lock throughout retries. Interrupted commands are cancelled and never replayed; new connections receive a new `client_id`. Server logs include the client ID, hostname, connection duration, and disconnect reason. Client logs include the failure reason, retry attempt, and delay; normal heartbeats do not produce log entries.
-
-Under the same OS account, CLI and GUI share an exclusive local connection lock for each server address, including different invitations. A duplicate attempt exits before redeeming its invitation; disconnecting or exiting the process releases the lock. Different server addresses or URL prefixes can connect independently. Lock files live in `~/.agenterm/locks`, contain no credentials, and are separate from the download cache. Do not delete them while a client is running; their existence alone does not block a connection. This check requires updated clients and does not merge different DNS aliases for a server.
-
-## Details
+## FAQ
 
 <details>
-<summary>Invitations & downloads</summary>
+<summary>What if a connection fails or an invitation expires?</summary>
 
-Release servers provide CLI archives for all six OS/architecture combinations and their checksum manifest. One-command installers fetch the matching script from the server and first show a remote control warning and request authorization. After confirmation, they validate the invitation and version compatibility, probe the WebSocket handshake on `/agenterm/client`, then verify the cache or download the matching CLI and connect without another prompt. Cancelling stops immediately without probing or downloading the client. Probes do not redeem invitations or register clients. After authorization, installation shows four connection stages: connectivity check, client preparation, connecting, and connected. Terminal downloads display transfer progress; verified cached clients skip the download. No startup service is installed. The GUI is a separate download. Locally built servers do not provide download commands.
-
-Commands use a short `/agenterm/c/<6-character invitation code>` endpoint, with a `.ps1` suffix for Windows. The server maps each code to the full invitation and dynamically fills in the invitation, version, and download URL. Codes contain only uppercase A–Z and digits 0–9 (36^6 combinations, about 31 random bits), with collision retries, a 15-minute expiry, and the existing authentication failure limiter. This makes the short URL easier to guess than the previous 128-bit URL; the full invitation and client credentials retain 128 random bits. Fetching the script does not consume the invitation, and responses disable caching. Codes are removed when their invitations are redeemed (single-device mode), replaced, or reclaimed. Previous 22-character URLs remain supported. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
-
-Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. MCP-created tokens must first connect within the original 15-minute invitation lifetime, even after redemption. Once used, they remain reusable until the last device has been offline for 24 hours; reconnecting resets that deadline, and online tokens are retained. The server cleans expired tokens every minute and when creating invitations, removing associated invitations, short codes, and session records whether or not IP quotas are enabled. Startup `--generate` tokens remain valid until restart so the console can reissue invitations. Restarting invalidates every token. A single-device token allows one connected client; a multi-device token allows multiple clients. Share credentials privately; invitation commands may remain in shell history.
-
-The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies only need to forward the configured URL prefix (default `/agenterm/`), preserving the prefix and allowing WebSocket upgrades and the Authorization header. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
-
-| OS | Cache |
-| --- | --- |
-| macOS | `~/Library/Caches/Agenterm` |
-| Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
-| Windows | `%LOCALAPPDATA%\Agenterm\cache` |
-
-The cache remains after disconnecting; delete it manually to remove it. Each connection still requires authorization. Scripts and assets use the server’s HTTP(S) origin without a pinned script hash; use HTTPS for public deployments. Checksums detect corruption; they do not replace code signing or protect against a compromised server or release. macOS/Linux use gzip archives and Windows uses zip. The server prepares the download archives in memory before accepting connections; extraction still happens on the target computer.
+Check that both sides can reach the server. Ask the agent for a new invitation if one has expired, been used, or the server has restarted. For version mismatches, use server and client binaries from the same release. [Connection troubleshooting](docs/usage.md#connection-failures-or-expired-invitations).
 
 </details>
 
 <details>
-<summary>Authentication & deployment</summary>
+<summary>Will tasks resume automatically after a disconnection?</summary>
 
-The server defaults to `127.0.0.1:8080` and generates a new 10-character lowercase alphanumeric management key on each restart. Set a longer random key with `--passwd` for public deployments:
-
-```sh
-./agenterm-server -listen 127.0.0.1:8080 \
-  -public-url https://agenterm.example.com \
-  --client-ip-header X-Real-IP \
-  --passwd 'replace-with-a-long-random-key'
-```
-
-By default, the client IP comes from the TCP peer address (`RemoteAddr`, without the port), ignoring all forwarded headers. For reverse proxies, set `--client-ip-header X-Real-IP` or another header containing a single IP. When configured, only that header is used; missing, multiple, or invalid values return HTTP 400 without falling back to the peer IP. Configure an HTTPS reverse proxy with WebSocket support separately, and have it overwrite the selected header, for example `proxy_set_header X-Real-IP $remote_addr;`. `-public-url` accepts an origin or an address ending in the configured prefix; it does not enable TLS. `-url-prefix` defaults to `/agenterm` and applies to all endpoints, generated invitations, and downloads. Use `/` (or an empty value) for root routes. Prefixes must start with `/`, contain only letters, digits, `-._~` and `/`, and have no empty, `.` or `..` segments; a trailing slash is normalized. For example:
-
-```sh
-./agenterm-server -public-url https://agenterm.example.com --client-ip-header X-Real-IP -url-prefix /a --generate
-```
-
-This uses `/a/mcp`, `/a/client`, `/a/c/<6-character code>`, and `/a/downloads/...`. Change the reverse proxy location and the MCP URL to match. When the proxy is on the same machine, keep the backend bound to loopback. Public deployments also need appropriate access controls.
-
-MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <client token>`. Management calls select a target with `client_token`; ordinary client tokens cannot call `create_client`. You can also configure one MCP entry per target. Your agent must support Streamable HTTP and custom headers.
-
-`create_client` returns `client_token`, `multi_device`, `invitation`, `expires_at`, and `display_text`. Release builds also return `macos_linux_command` and `windows_powershell_command`; both redeem the same invitation; choose the matching command on each device. All tokens and invitations expire on restart, even with a fixed management key.
-
-`-no-password` disables MCP management authentication: anyone who can reach the endpoint can create and control connections. Keep this mode private. It cannot be combined with `--passwd`.
-
-### Limit clients by issuing IP
-
-`--max-clients-per-ip 5` limits each issuing IP to five connected clients; the default `0` disables this limit. The issuing IP is the MCP caller of `create_client`, not the invited machine. Each online device under a multi-device token consumes one slot. This works in either authentication mode.
-
-While fewer than five clients are online, a new invitation can be created. Online clients plus tokens that have never connected are capped at five per issuing IP. If pending capacity is full, creating an invitation revokes the oldest never-connected token and its invitation, including an already redeemed invitation. Never-connected tokens expire with their original invitation, including redeemed tokens that have not connected. Creation is rejected when all slots are online; reconnects also check the limit. Previously connected tokens survive new invitations but are reclaimed after the last device has been offline for 24 hours. Server restart invalidates all tokens. Startup tokens from `--generate` have no issuing IP and are exempt.
-
-Authentication rate limits and issuance quotas share the same IP source: the directly connected peer by default, or only the specified header when `--client-ip-header <name>` is set. In header mode, restrict server access to a trusted reverse proxy that overwrites the selected header; otherwise callers can spoof their IP.
-
-For Cloudflare → Nginx → Agenterm, set `--client-ip-header X-Real-IP` on the server, enable Nginx's `ngx_http_realip_module`, configure `set_real_ip_from` for all Cloudflare IPv4 and IPv6 ranges and keep them current, set `real_ip_header CF-Connecting-IP;`, and set `proxy_set_header X-Real-IP $remote_addr;` in the Agenterm proxy location. Trust only Cloudflare ranges, never all sources. See [Cloudflare's visitor IP guidance](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) and [IP ranges](https://www.cloudflare.com/ips/). Pseudo IPv4 header overwriting replaces the original IPv6 address and should be disabled for accurate quotas. IP limits cannot prevent IP rotation; users behind the same NAT share a quota.
-
-Versions follow [SemVer 2.0.0](https://semver.org/). Connections validate versions in both directions using this policy:
-
-- Stable versions at or above `1.0.0`: matching major numbers are compatible; minor and patch numbers may differ. New features within a major version must preserve existing wire behavior.
-- `0.x`: SemVer does not guarantee API stability during development. Agenterm requires matching major and minor numbers; `0.0.x` also requires matching patch numbers.
-- Prereleases (`alpha/beta/rc`, etc.): the version core and prerelease identifiers must match exactly. They cannot connect to stable releases.
-- Build metadata (`+build`, etc.) does not affect compatibility. Missing or malformed version information is rejected.
-
-Checks cover installation probes, invitation redemption, and CLI/GUI WebSocket connections. Rejection does not consume the invitation or register a client.
-
-Client tokens contain the server address and a 128-bit random credential. The default `/agenterm` prefix retains the existing token format. Custom prefixes are carried in an extended token format and require updated clients (including the GUI); clients read the prefix from the token without an extra flag. Legacy token formats without namespaced-route support remain unsupported. The MCP URL is `<public-origin><url-prefix>/mcp`.
+The client attempts to reconnect but does not replay commands. Ask the agent to check the device and task state. Connecting a device does not wake an agent conversation that has already ended.
 
 </details>
 
 <details>
-<summary>Session behavior & platform limits</summary>
+<summary>Can I control a desktop or connect several computers?</summary>
 
-- After `create_client` succeeds, first show `display_text`, then poll `list_clients` with the returned `client_token` at reasonable intervals (for example, every 2 seconds). No devices online returns `{"clients":[]}`. Execute commands or start sessions only after the target appears. The wait tool has been removed.
-- `session_read` polls for output. `wait_ms` waits up to 20000 ms; `done: true` includes `exit_code`. Each session retains the latest 1 MiB; lagging readers receive `truncated: true`. Each token retains at most 6 session records, shared across its devices in multi-device mode. Starting a session at that limit evicts the oldest finished record; if all 6 sessions are running, the request is rejected. Records finished more than 30 minutes ago are also cleaned up by the minute-based maintenance task or when a new session starts. Different tokens have independent allowances.
-- macOS/Linux sessions use a PTY. Windows uses pipes: simple prompts work, programs requiring a real terminal do not. Remote graphical interfaces are unsupported.
-- Full-screen terminal apps emit control sequences the agent may not understand. The CLI strips these from its local log; it is a log viewer. Input may be echoed, so avoid entering secrets through the agent.
-- Commands use the supported shell that directly launched the client (PowerShell, cmd, bash, zsh, fish, etc.). Fallback: `/bin/sh` on macOS/Linux, `ComSpec` (usually `cmd.exe`) on Windows. Each command starts a fresh shell; launching-shell variables and functions are not shared.
-- Windows output decoding detects UTF-8 or the system code page from the first non-ASCII content. Mixed encodings may still produce garbled text.
-- Transient disconnects reconnect automatically; rediscover the device with `list_clients` because its ID changes. After a server restart, obtain a new token.
-- GUI statistics count completed commands, including failures and cancellations. Clearing the log affects only the display. Automatic reconnection preserves statistics; starting a new connection manually resets them. Connection attempts can be cancelled.
+Agenterm provides terminal assistance, not a remote desktop. Ask the agent for a multi-device invitation to work across computers. Windows supports simple interactive prompts; full-screen programs requiring a real terminal may not work.
 
 </details>
 
 <details>
-<summary>Security model</summary>
+<summary>What are the hosted service limits?</summary>
 
-The server sees commands and output; the client displays them too. Secrets in either may be visible. Closing the client attempts to stop running commands, but cannot undo completed operations or guarantee that detached children stop.
-
-HTTP and WebSocket are unencrypted by default, exposing credentials, commands, and output to anyone observing traffic. Use HTTPS across untrusted networks and keep tokens and management keys secret.
-
-Authentication is rate-limited by client IP: 10 failures in one minute block that IP for five minutes, including valid credentials during the block. Other IPs are unaffected. By default, the server uses the directly connected peer IP and ignores forwarded headers; use `--client-ip-header <name>` to select a header behind a proxy. In header mode, missing, multiple, or invalid values return HTTP 400 without fallback; restrict server access to a trusted proxy that overwrites the selected header. Users sharing a public IP affect each other, and distributed sources can still attempt authentication.
+Management access currently requires no authentication. Up to four devices can be online per invitation creator's public IP; people on the same network share that allowance. The agent, server, and target client can see commands and output, so keep invitations and tokens private. Use HTTPS when self-hosting publicly.
 
 </details>
 
-<details>
-<summary>Cross-compilation & GUI packaging</summary>
-
-CLI cross-compilation:
-
-```sh
-GOOS=linux GOARCH=amd64 go build -o agenterm-client-linux-amd64 ./cmd/agenterm-client
-GOOS=windows GOARCH=amd64 go build -o agenterm-client-windows-amd64.exe ./cmd/agenterm-client
-```
-
-Build the Fyne GUI with CGo and a C compiler. Linux also needs graphics development libraries; cross-compilation needs a target C toolchain. See [Fyne setup](https://docs.fyne.io/started/).
-
-```sh
-go build -o agenterm-gui ./cmd/agenterm-gui
-# Windows: hide the console window
-go build -ldflags=-H=windowsgui -o Agenterm.exe ./cmd/agenterm-gui
-```
-
-For an application bundle with its icon, install the matching Fyne CLI and run the command for your target OS on that platform:
-
-```sh
-go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
-cd cmd/agenterm-gui
-fyne package -os darwin --use-raw-icon   # Agenterm.app
-fyne package -os windows -icon assets/app-icon-windows.png  # Agenterm.exe
-```
-
-Windows packaging requires a working Windows C compiler. Packaging increments the build number in `FyneApp.toml`.
-
-Release CLI builds disable function inlining (`-gcflags=all=-l`) to reduce executable and download sizes, and CI tests the CLI with the same compiler setting.
-
-Release CI embeds the six uncompressed CLI binaries together in a single XZ-compressed tar archive. At startup, a pure Go decoder reconstructs standard gzip/ZIP downloads and SHA256SUMS in memory before the server prints invitations or starts listening. This reduces the server executable at the cost of startup CPU and memory, without requiring extra tools on the server or target computers. The release packer and server share deterministic archive generation and use the same pinned Go toolchain; CI compares every reconstructed download and its manifest with the release files. Do not recompress the published CLI archives independently. Artifact sizes appear in the workflow summary. GUI icons are losslessly recompressed without resizing or changing their pixels or metadata.
-
-</details>
-
-<details>
-<summary>Probe MCP with curl</summary>
-
-```sh
-curl -s http://127.0.0.1:8080/agenterm/mcp \
-  -H 'Authorization: Bearer YOUR_AGENTERM_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_command","arguments":{"command":"echo hello"}}}'
-```
-
-</details>
-
-## Release
-
-Pushing a `v*` tag still builds all programs and publishes a GitHub prerelease. For selective builds, first commit and push the new version and code, then run **Actions → Release → Run workflow** on that branch. Do not push the new tag first: the manual workflow derives it from `internal/version.Current` and creates it at the exact built commit after checks pass. Keep `cmd/agenterm-gui/FyneApp.toml` at the same version when rebuilding GUI.
-
-| `scope` | Rebuild | Reuse from the base release |
-| --- | --- | --- |
-| `all` (default) | CLI, GUI, Server | None |
-| `server` | Server | CLI, GUI |
-| `client` | CLI, GUI, Server | None; shared client changes affect both clients, and Server embeds CLI |
-| `cli` | CLI, Server | GUI |
-| `gui` | GUI | CLI, Server |
-
-For example, rebuild only Server:
-
-```sh
-gh workflow run release.yml --ref main -f scope=server
-# Optionally choose a specific published release as the source of reused files:
-gh workflow run release.yml --ref main -f scope=server -f base_tag=v0.2.26
-```
-
-These commands are alternatives; run only one for a given version. `base_tag` defaults to the most recently published release whose tag is an ancestor of the selected commit, including GitHub prereleases. Without an available base, the workflow builds everything. An explicitly requested missing or unrelated base fails instead. Existing releases are never overwritten.
-
-Scope selection is manual, not a source-change detector. Include every affected program: installer/server-only changes can use `server`; changes to shared client code need `client`; changes to shared dependencies, protocol, translations, or packaging generally need `all`. After upgrading Go, use `all` for the first release so every binary uses the updated toolchain. Tests still run even for programs whose release binaries are reused, including Windows installer/client tests.
-
-Reused programs keep their original binary version. The workflow applies the actual connection compatibility policy to those versions and falls back to a full build if any is incompatible with the new release. It verifies reused downloads against GitHub release asset SHA256 digests, preserves reused files byte-for-byte, embeds the selected CLI in newly built servers, and checks that all platforms are present before publishing. Missing or corrupt assets stop publication. A `release-manifest.json` records each program's original source tag and version across successive reuses; the Release notes summarize built/reused programs and include generated change notes. Release attachments contain only program files and `release-manifest.json`; GitHub supplies their SHA256 digests. Installation scripts and the installer-facing `SHA256SUMS` remain embedded in or generated by the Server and are served from its download endpoints.
-
-The workflow definition must be on the default branch to expose manual triggering. See [GitHub's manual workflow documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
-
-## Test
-
-```sh
-go test ./...
-```
-
-## License
-
-[Apache-2.0](LICENSE)
-
-## Language
-
-The desktop client follows your system language by default. Use **Language / 语言** in the application menu to choose English, Simplified Chinese, or the system default; restart the application to apply the change. The terminal client and server follow the terminal locale. Unsupported languages fall back to English. Set `AGENTERM_LANG=en` or `AGENTERM_LANG=zh-CN` to override the language for a terminal process and its installer. Command output remains unchanged.
-
-Translation resources are maintained in `internal/i18n/messages.json` with stable keys and both `en` and `zh-CN` values. Go code references keys; installer scripts receive their translations from the same resource at runtime. Add new user-facing messages there, keeping format placeholders consistent across languages.
+[User guide](docs/usage.md) · [Deployment and source builds](docs/deployment.md) · [Report an issue](https://github.com/Heming9/agenterm/issues) · [Apache-2.0](LICENSE)

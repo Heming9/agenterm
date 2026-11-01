@@ -138,7 +138,7 @@ func TestGUILogFormatAndColors(t *testing.T) {
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "second", Command: "pwd", StartedAt: started}})
 	m.Update(tuiEvent{generation: 1, id: "first", output: []byte("hello\n")})
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "first", Done: true, Error: "failed"}})
-	want := "s1 14:32:08 $ echo hello\n\ns2 14:32:08 $ pwd\n\ns1\nhello\nfailed\n"
+	want := "14:32:08 $ echo hello\n\n14:32:08 $ pwd\n\nhello\nfailed\n"
 	if m.logs != want {
 		t.Fatalf("log = %q, want %q", m.logs, want)
 	}
@@ -180,13 +180,13 @@ func TestTUIOutputSpacingAndClear(t *testing.T) {
 	m.Update(tuiEvent{command: &client.CommandEvent{ID: "two", Command: "printf test", StartedAt: started}})
 	m.Update(tuiEvent{id: "two", output: []byte("test")})
 	m.Update(tuiEvent{command: &client.CommandEvent{ID: "three", Command: "next", StartedAt: started}})
-	want := "s1 12:00:00 $ pwd\nPath\n----\nC:\\Users\\dmhe\n\ns2 12:00:00 $ printf test\ntest\n\ns3 12:00:00 $ next\n"
+	want := "12:00:00 $ pwd\nPath\n----\nC:\\Users\\dmhe\n\n12:00:00 $ printf test\ntest\n\n12:00:00 $ next\n"
 	if m.logs != want {
 		t.Fatalf("log = %q, want %q", m.logs, want)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	m.Update(tuiEvent{id: "one", output: []byte("\n  after clear\n\n")})
-	if want := "s1\n  after clear\n"; m.logs != want {
+	if want := "  after clear\n"; m.logs != want {
 		t.Fatalf("output after clear = %q, want %q", m.logs, want)
 	}
 }

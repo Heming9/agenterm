@@ -36,7 +36,7 @@ func (m *tuiModel) refreshLog() {
 	for i := 0; i < len(m.spans); i++ {
 		span := &m.spans[i]
 		prefix := ""
-		// Keep the shell label and command together when wrapping and folding.
+		// Keep the timestamp and command together when wrapping and folding.
 		if span.kind == "system" && !strings.HasSuffix(span.text, "\n") && i+1 < len(m.spans) && m.spans[i+1].kind == "command" {
 			prefix = span.text
 			i++

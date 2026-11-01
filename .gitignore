@@ -19,6 +19,7 @@ __pycache__/
 /release-plan/
 /internal/installer/assets/*
 !/internal/installer/assets/README.txt
+!/internal/installer/assets/clients.tar.xz
 
 # Local configuration and secrets
 .env

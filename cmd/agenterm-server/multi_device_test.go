@@ -37,6 +37,7 @@ func newMultiHarness(t *testing.T, limit int) *multiHarness {
 func (h *multiHarness) request(auth, name string, args map[string]any) (any, bool, error) {
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
 	req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/agenterm/mcp", bytes.NewReader(body))
+	setMCPHeaders(req)
 	req.Header.Set("Authorization", "Bearer "+auth)
 	req.Header.Set("X-Real-IP", "192.0.2.1")
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
@@ -44,12 +45,17 @@ func (h *multiHarness) request(auth, name string, args map[string]any) (any, boo
 		return nil, false, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != 200 && resp.StatusCode != 400 {
 		return nil, false, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	var payload struct {
+		Error struct {
+			Code    int
+			Message string
+		} `json:"error"`
 		Result struct {
-			Content []struct {
+			StructuredContent json.RawMessage `json:"structuredContent"`
+			Content           []struct {
 				Text string `json:"text"`
 			} `json:"content"`
 			IsError bool `json:"isError"`
@@ -58,11 +64,13 @@ func (h *multiHarness) request(auth, name string, args map[string]any) (any, boo
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, false, err
 	}
+	if payload.Error.Code != 0 {
+		return map[string]any{"error": payload.Error.Message}, true, nil
+	}
 	if len(payload.Result.Content) != 1 {
 		return nil, false, fmt.Errorf("missing tool result")
 	}
-	var result any
-	err = json.Unmarshal([]byte(payload.Result.Content[0].Text), &result)
+	result, err := decodeToolText(payload.Result.Content[0].Text, payload.Result.IsError)
 	return result, payload.Result.IsError, err
 }
 
@@ -176,7 +184,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	for _, target := range []struct{ id, label string }{{a, "A"}, {b, "B"}} {
 		go func(id, label string) {
 			out, toolError, err := h.request(token, "execute_command", map[string]any{"client_id": id, "command": "parallel"})
-			if err == nil && (toolError || !strings.HasPrefix(fmt.Sprint(out), label+":parallel")) {
+			if err == nil && (toolError || !strings.HasPrefix(fmt.Sprint(out.(map[string]any)["stdout"]), label+":parallel")) {
 				err = fmt.Errorf("wrong output: %v", out)
 			}
 			results <- err
@@ -233,7 +241,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	}
 	h.call(t, token, "execute_command", map[string]any{"client_id": a, "command": "stale"}, true)
 	out := h.call(t, token, "execute_command", map[string]any{"client_id": b, "command": "still online"}, false)
-	if !strings.HasPrefix(out.(string), "B:still online") {
+	if !strings.HasPrefix(out.(map[string]any)["stdout"].(string), "B:still online") {
 		t.Fatal(out)
 	}
 	h.call(t, token, "session_stop", map[string]any{"session_id": sessions["B"]}, false)
@@ -293,6 +301,7 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	for _, auth := range []string{"admin-test", h.create(t, true)} {
 		req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/agenterm/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		setMCPHeaders(req)
 		req.Header.Set("Authorization", "Bearer "+auth)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

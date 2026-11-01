@@ -66,8 +66,6 @@ type tuiModel struct {
 	completed                     int
 	generation                    uint64
 	decoders                      map[string]*displayDecoder
-	shells                        map[string]int
-	nextShell                     int
 	spans                         []logSpan
 	folds                         []tuiFold
 	logRows                       []string
@@ -94,7 +92,7 @@ func newTUI(token string) *tuiModel {
 	input.CharLimit = 4096
 	input.SetValue(token)
 	input.Focus()
-	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*displayDecoder), shells: make(map[string]int), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
+	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*displayDecoder), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
 }
 func runTUI(token string, connectionProgress bool) error {
 	m := newTUI(token)
@@ -137,7 +135,7 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.folds = nil
 	m.selection = nil
 	m.logRows, m.softWraps, m.logDirty = nil, nil, false
-	m.completed, m.nextShell = 0, 0
+	m.completed = 0
 	m.spacing = logview.Spacing{}
 	m.viewport.SetContent("")
 	m.viewport.GotoTop()
@@ -291,7 +289,6 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.connected {
 			m.state = "connected"
 			m.latency = -1
-			m.shells = make(map[string]int)
 			m.lastID = ""
 			m.decoders = make(map[string]*displayDecoder)
 			if m.everConnected {
@@ -314,9 +311,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if e := msg.command; e != nil {
 			if !e.Done {
 				m.decoders[e.ID] = &displayDecoder{}
-				m.nextShell++
-				m.shells[e.ID] = m.nextShell
-				m.appendLog("system", m.spacing.Before(2)+fmt.Sprintf("s%d %s $ ", m.nextShell, e.StartedAt.Format("15:04:05")))
+				m.appendLog("system", m.spacing.Before(2)+e.StartedAt.Format("15:04:05")+" $ ")
 				m.appendLog("command", cleanText(e.Command)+"\n")
 				m.lastID = e.ID
 			} else {
@@ -325,7 +320,6 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.switchSource(e.ID)
 					m.appendLog("error", m.spacing.Before(1)+cleanText(e.Error)+"\n")
 				}
-				delete(m.shells, e.ID)
 				delete(m.decoders, e.ID)
 			}
 		}
@@ -365,8 +359,8 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *tuiModel) switchSource(id string) {
 	if m.lastID != id {
-		if number, ok := m.shells[id]; ok {
-			m.appendLog("system", m.spacing.Before(2)+fmt.Sprintf("s%d\n", number))
+		if m.decoders[id] != nil {
+			m.appendLog("system", m.spacing.Before(2))
 		}
 		m.lastID = id
 	}

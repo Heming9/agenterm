@@ -52,13 +52,13 @@ func (s *server) createClientMode(owner string, multiDevice bool) (map[string]an
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, order: s.nextClientOrder, expires: expires}
 	result := map[string]any{"client_token": token, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
-	unavailable := i18n.Text(i18n.Terminal(), "unavailable.use.a.release.build.of.the")
-	shell, powershell := unavailable, unavailable
-	if validReleaseTag.MatchString(releaseTag) {
-		shell, powershell = installCommands(value)
-		result["macos_linux_command"] = shell
-		result["windows_powershell_command"] = powershell
+	result["next_action"] = map[string]any{
+		"tool": "list_clients", "arguments": map[string]any{"client_token": token, "wait_ms": 20000},
+		"until": result["expires_at"], "instructions": serverText("mcp.connection.workflow"),
 	}
+	shell, powershell := installCommands(value)
+	result["macos_linux_command"] = shell
+	result["windows_powershell_command"] = powershell
 	result["display_text"] = fmt.Sprintf(i18n.Text(i18n.Terminal(), "connection.token.s.without.a.client.macos"), token, shell, powershell)
 	if multiDevice {
 		result["display_text"] = serverText("multi.device.display.notice") + "\n\n" + result["display_text"].(string)

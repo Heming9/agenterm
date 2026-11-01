@@ -76,5 +76,6 @@ func (s *server) deleteTokensLocked(secrets map[string]bool) {
 		}
 		delete(s.clientOwners, secret)
 		delete(s.multiDevice, secret)
+		s.notifyClientWaitersLocked(secret)
 	}
 }
