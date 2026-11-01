@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,7 +17,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 const maxTUILog = 10 * 1024 * 1024
@@ -70,8 +70,13 @@ type tuiModel struct {
 	nextShell                     int
 	spans                         []logSpan
 	folds                         []tuiFold
-	selecting                     bool
-	selectionView                 string
+	logRows                       []string
+	softWraps                     map[int]bool
+	logDirty                      bool
+	selection                     *tuiSelection
+	selectionID                   uint64
+	clipboard                     *tuiClipboard
+	legacyCells                   bool
 	lastID                        string
 	width, height                 int
 	connectionProgress            bool
@@ -89,7 +94,7 @@ func newTUI(token string) *tuiModel {
 	input.CharLimit = 4096
 	input.SetValue(token)
 	input.Focus()
-	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*displayDecoder), shells: make(map[string]int)}
+	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*displayDecoder), shells: make(map[string]int), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
 }
 func runTUI(token string, connectionProgress bool) error {
 	m := newTUI(token)
@@ -130,6 +135,8 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.logs, m.lastID = "", ""
 	m.spans = nil
 	m.folds = nil
+	m.selection = nil
+	m.logRows, m.softWraps, m.logDirty = nil, nil, false
 	m.completed, m.nextShell = 0, 0
 	m.spacing = logview.Spacing{}
 	m.viewport.SetContent("")
@@ -178,6 +185,8 @@ func (m *tuiModel) appendLog(kind, s string) {
 		m.spans = append(m.spans, logSpan{kind: kind, text: s})
 	}
 	if len(m.logs) > maxTUILog {
+		// Discard coordinates into history that is about to be evicted.
+		m.selection = nil
 		excess := len(m.logs) - maxTUILog
 		for excess > 0 && len(m.spans) > 0 {
 			if len(m.spans[0].text) <= excess {
@@ -198,35 +207,50 @@ func (m *tuiModel) appendLog(kind, s string) {
 		}
 		m.logs = b.String()
 	}
-	if !m.selecting {
-		m.refreshLog()
-	}
+	m.refreshLog()
 }
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// Rewrapping changes content coordinates; dismiss the old selection.
+		m.selection = nil
 		m.width, m.height = msg.Width, msg.Height
 		atBottom := m.viewport.AtBottom()
 		m.viewport.Width = max(1, msg.Width-2)
 		m.viewport.Height = max(1, msg.Height-5)
-		if !m.selecting {
-			m.refreshLog()
-		}
+		m.refreshLog()
 		if atBottom {
 			m.viewport.GotoBottom()
 		}
 		// Reserve the form's left margin, prompt and cursor cell.
-		m.input.Width = max(1, m.viewport.Width-ansi.StringWidth(m.input.Prompt)-2)
+		m.input.Width = max(1, m.viewport.Width-m.cellWidth(m.input.Prompt)-2)
 	case tea.MouseMsg:
-		// The log begins below the header and divider, at screen row 2.
-		if m.selecting || m.state == "disconnected" || msg.X < 0 || msg.X >= m.viewport.Width || msg.Y < 2 || msg.Y >= 2+m.viewport.Height {
-			return m, nil
+		return m, m.handleLogMouse(msg)
+	case tuiSelectionTick:
+		return m, m.scrollSelection(uint64(msg))
+	case tuiCopyResult:
+		if m.selection != nil && msg.selectionID == m.selectionID && msg.request == m.clipboard.request.Load() {
+			m.selection.notice = msg.notice
+			if msg.err != nil {
+				m.selection.notice = "tui.selection.copy.failed"
+			}
 		}
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			m.toggleFold(m.viewport.YOffset + msg.Y - 2)
-			return m, nil
-		}
+		return m, nil
 	case tea.KeyMsg:
+		if m.selection != nil {
+			if (msg.String() == "ctrl+c" || msg.String() == "ctrl+shift+c") && m.selection.dragged {
+				return m, m.copySelection()
+			}
+			// Scrolling retains the selection. Other keys resume live rendering.
+			switch msg.String() {
+			case "up", "down", "pgup", "pgdown", "home", "end":
+			default:
+				m.clearSelection()
+			}
+			if msg.String() == "esc" {
+				return m, nil
+			}
+		}
 		if msg.String() == "ctrl+c" {
 			m.cancel()
 			return m, tea.Quit
@@ -240,21 +264,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				m.cancel()
 				return m, tea.Quit
-			case "s":
-				m.selecting = !m.selecting
-				if m.selecting {
-					// Print a stable, unfolded snapshot into the terminal's main
-					// buffer so its native scrollback and cross-screen selection work.
-					m.selectionView = tr("tui.selection.help")
-					return m, tea.Sequence(tea.DisableMouse, tea.ExitAltScreen, tea.Println(strings.TrimSuffix(m.logs, "\n")))
-				}
-				m.selectionView = ""
-				m.refreshLog()
-				return m, tea.Sequence(tea.EnterAltScreen, tea.EnableMouseCellMotion)
 			case "c":
-				if m.selecting {
-					return m, nil
-				}
 				m.logs = ""
 				m.spans = nil
 				m.folds = nil
@@ -264,10 +274,9 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					decoder.output = logview.Output{}
 				}
 				m.viewport.SetContent("")
+				m.logRows = nil
+				m.softWraps = nil
 				m.viewport.GotoTop()
-				return m, nil
-			}
-			if m.selecting {
 				return m, nil
 			}
 		}
@@ -333,6 +342,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.finished {
+			m.clearSelection()
 			m.state = "disconnected"
 			m.latency = -1
 			m.input.Focus()
@@ -340,10 +350,6 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = cleanText(msg.err.Error())
 			} else {
 				m.message = tr("disconnected.2")
-			}
-			if m.selecting {
-				m.selecting, m.selectionView = false, ""
-				return m, tea.Sequence(tea.EnterAltScreen, tea.EnableMouseCellMotion, textinput.Blink)
 			}
 			return m, textinput.Blink
 		}
@@ -366,19 +372,13 @@ func (m *tuiModel) switchSource(id string) {
 	}
 }
 func (m *tuiModel) View() string {
-	if m.selectionView != "" {
-		if m.width > 0 {
-			return ansi.Truncate(m.selectionView, m.width, "")
-		}
-		return m.selectionView
-	}
 	view := m.view()
 	if m.width <= 0 {
 		return view
 	}
 	lines := strings.Split(view, "\n")
 	for i := range lines {
-		lines[i] = ansi.Truncate(lines[i], m.width, "")
+		lines[i] = m.truncateCells(lines[i], m.width, "")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -406,15 +406,18 @@ func (m *tuiModel) view() string {
 		status = style.Render(status)
 	}
 	header := m.header(status)
-	content := m.viewport.View()
+	content := m.selectionView()
 	help := fmt.Sprintf(tr("d.commands.scroll.c.clear.q.quit"), m.completed)
 	if m.state == "disconnected" {
 		content = m.connectionView()
 		help = "\n " + tr("enter.connect.ctrl.c.quit")
 	}
 	line := strings.Repeat("─", max(1, m.width-2))
-	if m.selecting {
+	if m.selection != nil && m.selection.dragged {
 		help = "\n " + tr("tui.selection.help")
+		if m.selection.notice != "" {
+			help = "\n " + tr(m.selection.notice) + " · " + tr("tui.selection.help")
+		}
 	}
 	return header + "\n " + line + "\n" + content + "\n " + line + help
 }
@@ -437,18 +440,18 @@ func (m *tuiModel) header(status string) string {
 	}
 	left := " Agenterm v" + version.Current
 	// Keep the status visible when the terminal is too narrow for the brand.
-	if width < ansi.StringWidth(left)+1+ansi.StringWidth(status) {
-		return ansi.Truncate(status, width, "")
+	if width < m.cellWidth(left)+1+m.cellWidth(status) {
+		return m.truncateCells(status, width, "")
 	}
 	right := status
-	available := width - ansi.StringWidth(left) - 2 // gap and right margin
+	available := width - m.cellWidth(left) - 2 // gap and right margin
 	if m.state != "disconnected" && m.address != "" {
-		addressWidth := available - ansi.StringWidth(status) - 5 // separator
+		addressWidth := available - m.cellWidth(status) - 5 // separator
 		if addressWidth > 0 {
-			right = ansi.Truncate(m.address, addressWidth, "…") + "  ·  " + status
+			right = m.truncateCells(m.address, addressWidth, "…") + "  ·  " + status
 		}
 	}
-	gap := max(1, width-ansi.StringWidth(left)-ansi.StringWidth(right)-1)
+	gap := max(1, width-m.cellWidth(left)-m.cellWidth(right)-1)
 	return left + strings.Repeat(" ", gap) + right + " "
 }
 func cleanText(s string) string { return (&displayDecoder{}).text(s) }

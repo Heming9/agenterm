@@ -216,12 +216,24 @@
     "zh-CN": "Enter 连接  ·  Ctrl+C 退出"
   },
   "d.commands.scroll.c.clear.q.quit": {
-    "en": "\n %d commands · s select mode · c clear · q quit",
-    "zh-CN": "\n %d 条 · s 选择模式 · c 清空 · q 退出"
+    "en": "\n %d commands · c clear · q quit",
+    "zh-CN": "\n %d 条 · c 清空 · q 退出"
   },
   "tui.selection.help": {
-    "en": "Selection · s return",
-    "zh-CN": "选择模式 · s 返回"
+    "en": "Esc clear selection",
+    "zh-CN": "Esc 清除选区"
+  },
+  "tui.selection.copied": {
+    "en": "Copied",
+    "zh-CN": "已复制"
+  },
+  "tui.selection.copy.failed": {
+    "en": "Copy failed · Ctrl+C retry",
+    "zh-CN": "复制失败 · Ctrl+C 重试"
+  },
+  "tui.selection.sent": {
+    "en": "Clipboard request sent",
+    "zh-CN": "已发送复制请求"
   },
   "tui.fold.lines": {
     "en": "[%d lines]",

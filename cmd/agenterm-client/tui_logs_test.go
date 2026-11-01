@@ -14,6 +14,7 @@ func clickTUILog(t *testing.T, m *tuiModel, preview string) {
 	for y, line := range strings.Split(ansi.Strip(m.viewport.View()), "\n") {
 		if strings.Contains(line, preview) {
 			m.Update(tea.MouseMsg{X: 0, Y: y + 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			m.Update(tea.MouseMsg{X: 0, Y: y + 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
 			return
 		}
 	}

@@ -159,7 +159,7 @@ jobs:
           Agenterm v0.2.24 preview release.
 
           - Increase CLI and GUI log history to 10 MiB.
-          - Use native terminal history in selection mode for scrolling and copying across screens while continuing to collect output.
+          - Support click-to-expand, drag-to-copy, and edge scrolling together in the TUI while preserving folds and dividers.
           - Unify disconnected and failed-connection TUI layouts with the main screen, keeping both dividers and the footer.
           - Add six-character invitation codes and configurable server URL prefixes.
 

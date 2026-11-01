@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/x/ansi"
 )
 
 func styledLogText(kind, text string) string {
@@ -24,9 +22,15 @@ func styledLogText(kind, text string) string {
 }
 
 func (m *tuiModel) refreshLog() {
+	if m.selection != nil {
+		m.logDirty = true
+		return
+	}
+	m.logDirty = false
 	atBottom := m.viewport.AtBottom()
 	width := max(1, m.viewport.Width)
 	m.folds = nil
+	m.softWraps = make(map[int]bool)
 	var b strings.Builder
 	row := 0
 	for i := 0; i < len(m.spans); i++ {
@@ -53,34 +57,56 @@ func (m *tuiModel) refreshLog() {
 		if prefix != "" {
 			styled = styledLogText("system", strings.TrimLeft(prefix, "\n")) + styledLogText(span.kind, strings.TrimRight(span.text, "\n"))
 		}
-		wrapped := ansi.Hardwrap(styled, width, true)
+		wrapped, soft := m.wrapTUILog(styled, width)
 		lines := strings.Count(wrapped, "\n") + 1
 		if (span.kind == "command" || span.kind == "output" || span.kind == "error") && lines > 1 {
 			if span.expanded {
-				wrapped = ansi.Hardwrap("▾ "+styled, width, true)
+				wrapped, soft = m.wrapTUILog("▾ "+styled, width)
 			} else {
 				first, _, _ := strings.Cut(wrapped, "\n")
 				suffix := " " + fmt.Sprintf(tr("tui.fold.lines"), lines)
 				// Leave room for the preview even in a narrow terminal.
-				if ansi.StringWidth(suffix)+4 > width {
+				if m.cellWidth(suffix)+4 > width {
 					suffix = ""
 				}
-				marker := ansi.Truncate("▸ ", width, "")
-				previewWidth := max(0, width-ansi.StringWidth(marker)-ansi.StringWidth(suffix))
-				wrapped = marker + ansi.Truncate(first, previewWidth, "…") + styledLogText("system", suffix)
+				marker := m.truncateCells("▸ ", width, "")
+				previewWidth := max(0, width-m.cellWidth(marker)-m.cellWidth(suffix))
+				wrapped = marker + m.truncateCells(first, previewWidth, "…") + styledLogText("system", suffix)
+				soft = nil
 			}
 			m.folds = append(m.folds, tuiFold{span: i, start: row, end: row + strings.Count(wrapped, "\n") + 1})
+		}
+		for _, line := range soft {
+			m.softWraps[row+line] = true
 		}
 		b.WriteString(wrapped)
 		b.WriteString(strings.Repeat("\n", trailing))
 		row += strings.Count(wrapped, "\n") + trailing
 	}
-	m.viewport.SetContent(b.String())
+	content := b.String()
+	m.logRows = strings.Split(content, "\n")
+	m.viewport.SetContent(content)
 	// SetContent does not clamp offsets that fall into the last screenful.
 	m.viewport.SetYOffset(m.viewport.YOffset)
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
+}
+
+// Remember visual wraps so copying joins them without removing real newlines.
+func (m *tuiModel) wrapTUILog(text string, width int) (string, []int) {
+	lines := strings.Split(text, "\n")
+	var soft []int
+	row := 0
+	for i, line := range lines {
+		lines[i] = m.wrapCells(line, width)
+		n := strings.Count(lines[i], "\n")
+		for j := 0; j < n; j++ {
+			soft = append(soft, row+j)
+		}
+		row += n + 1
+	}
+	return strings.Join(lines, "\n"), soft
 }
 
 func (m *tuiModel) toggleFold(row int) {

@@ -159,6 +159,7 @@ func TestGUILogFormatAndColors(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 18, Height: 20})
 	m.viewport.GotoTop()
 	m.Update(tea.MouseMsg{X: 0, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m.Update(tea.MouseMsg{X: 0, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
 	if !strings.Contains(strings.ReplaceAll(ansi.Strip(m.View()), "\n", ""), "echo hello") {
 		t.Errorf("wrapped command missing: %q", ansi.Strip(m.View()))
 	}
