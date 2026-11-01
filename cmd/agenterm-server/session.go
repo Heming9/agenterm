@@ -10,6 +10,7 @@ import (
 )
 
 const maxSessionOutput = 1 << 20
+const maxSessionsPerToken = 6
 
 type session struct {
 	id       string
@@ -96,15 +97,24 @@ func (s *server) startSession(secret, clientID, command string) (*session, error
 	if s.sessions == nil {
 		s.sessions = make(map[string]*session)
 	}
+	owned := 0
+	oldestFinishedID := ""
+	var oldestFinishedAt time.Time
 	for id, p := range s.sessions {
 		p.mu.Lock()
 		expired := p.done && time.Since(p.ended) > 30*time.Minute
+		if !expired && p.owner == secret {
+			owned++
+			if p.done && (oldestFinishedID == "" || p.ended.Before(oldestFinishedAt)) {
+				oldestFinishedID, oldestFinishedAt = id, p.ended
+			}
+		}
 		p.mu.Unlock()
 		if expired {
 			delete(s.sessions, id)
 		}
 	}
-	if len(s.sessions) >= 100 {
+	if owned >= maxSessionsPerToken && oldestFinishedID == "" {
 		return nil, i18n.NewError("session.limit.reached.try.again.later")
 	}
 	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{})}
@@ -121,6 +131,11 @@ func (s *server) startSession(secret, clientID, command string) (*session, error
 		delete(c.pending, p.id)
 		c.mu.Unlock()
 		return nil, err
+	}
+	// Keep each token's history bounded without evicting running sessions or
+	// allowing one token to consume another token's session allowance.
+	if owned >= maxSessionsPerToken {
+		delete(s.sessions, oldestFinishedID)
 	}
 	s.sessions[p.id] = p
 	go func() {

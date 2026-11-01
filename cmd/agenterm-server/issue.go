@@ -25,16 +25,7 @@ func (s *server) createClientMode(owner string, multiDevice bool) (map[string]an
 	if s.tokens == nil {
 		s.tokens = make(map[string]string)
 	}
-	for key, entry := range s.invitations {
-		if time.Now().After(entry.expires) {
-			s.deleteInvitation(key)
-			if secret := s.tokens[entry.token]; s.clientOwners[secret] != nil && !s.clientOwners[secret].used {
-				delete(s.clientOwners, secret)
-				delete(s.tokens, entry.token)
-				delete(s.multiDevice, secret)
-			}
-		}
-	}
+	s.cleanupTokensLocked(time.Now())
 	if s.maxClientsPerIP > 0 {
 		if owner == "" {
 			return nil, i18n.NewError("client.ip.invalid")
@@ -54,13 +45,12 @@ func (s *server) createClientMode(owner string, multiDevice bool) (map[string]an
 	}
 	s.multiDevice[secret] = multiDevice
 	s.tokens[token] = secret
-	if s.maxClientsPerIP > 0 {
-		if s.clientOwners == nil {
-			s.clientOwners = make(map[string]*clientOwner)
-		}
-		s.nextClientOrder++
-		s.clientOwners[secret] = &clientOwner{ip: owner, token: token, order: s.nextClientOrder}
+	// Track lifecycle even when IP quotas are disabled.
+	if s.clientOwners == nil {
+		s.clientOwners = make(map[string]*clientOwner)
 	}
+	s.nextClientOrder++
+	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, order: s.nextClientOrder, expires: expires}
 	result := map[string]any{"client_token": token, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
 	unavailable := i18n.Text(i18n.Terminal(), "unavailable.use.a.release.build.of.the")
 	shell, powershell := unavailable, unavailable

@@ -47,6 +47,7 @@ type server struct {
 	adminKey        string
 	noPassword      bool
 	clientURL       string
+	clientIPHeader  string             // empty uses the directly connected peer IP
 	tokens          map[string]string  // full token -> client credential
 	clients         map[string]*client // six-character client ID -> connection
 	multiDevice     map[string]bool    // client credential -> multi-device mode
@@ -74,7 +75,7 @@ func (s *server) redeemInvitation(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	entry, ok := s.invitations[secret]
 	ok = ok && r.Header.Get("Authorization") == "Bearer "+secret && time.Now().Before(entry.expires)
-	if status, err := s.authorize(r.RemoteAddr, ok); err != nil {
+	if status, err := s.authorize(r, ok); err != nil {
 		s.mu.Unlock()
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "300")
@@ -135,7 +136,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if status, err := s.authorize(r.RemoteAddr, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret)); err != nil {
+	if status, err := s.authorize(r, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret)); err != nil {
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "300")
 		}
@@ -182,7 +183,10 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	s.clients[id] = c
 	if owner := s.clientOwners[secret]; owner != nil {
 		owner.used = true
-		s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
+		owner.expires = time.Time{}
+		if s.maxClientsPerIP > 0 {
+			s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
+		}
 	}
 	log.Printf("client connected id=%s hostname=%q platform=%q", id, c.info.Hostname, c.info.Platform)
 	go func() {
@@ -194,6 +198,9 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			s.mu.Lock()
 			if s.clients[id] == c {
 				delete(s.clients, id)
+				if owner := s.clientOwners[secret]; owner != nil && !s.hasClientLocked(secret) {
+					owner.expires = time.Now().Add(tokenOfflineTTL)
+				}
 			}
 			s.mu.Unlock()
 			c.mu.Lock()
@@ -311,10 +318,10 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 	secret, ok := s.tokens[token]
 	s.mu.Unlock()
 	admin := (s.noPassword && header == "") || (s.adminKey != "" && header == "Bearer "+token && subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) == 1)
-	if status, err := s.authorize(r.RemoteAddr, admin || (header == "Bearer "+token && ok)); err != nil {
+	if status, err := s.authorize(r, admin || (header == "Bearer "+token && ok)); err != nil {
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "300")
-		} else {
+		} else if status == http.StatusUnauthorized {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="agenterm"`)
 		}
 		http.Error(w, err.Error(), status)
@@ -483,6 +490,7 @@ func main() {
 	public := flag.String("public-url", "http://127.0.0.1:8080", serverText("public.server.url.optional.agenterm.suffix"))
 	urlPrefix := flag.String("url-prefix", protocol.PathPrefix, serverText("server.url.prefix"))
 	maxClientsPerIP := flag.Int("max-clients-per-ip", 0, serverText("max.clients.per.ip"))
+	clientIPHeader := flag.String("client-ip-header", "", serverText("client.ip.header"))
 	flag.Parse()
 	if *maxClientsPerIP < 0 {
 		log.Fatal(serverText("max.clients.per.ip.invalid"))
@@ -519,7 +527,7 @@ func main() {
 		adminKey = randomManagementKey()
 		fmt.Printf(serverText("mcp.management.key.save.securely.s"), adminKey)
 	}
-	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation), maxClientsPerIP: *maxClientsPerIP}
+	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), clientIPHeader: http.CanonicalHeaderKey(*clientIPHeader), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation), maxClientsPerIP: *maxClientsPerIP}
 	if *noPassword {
 		log.Print(serverText("warning.mcp.management.access.has.no.password"))
 	}
@@ -579,5 +587,6 @@ func main() {
 		log.Print(serverText("warning.http.and.websocket.traffic.is.unencrypted"))
 	}
 	srv := &http.Server{Addr: *listen, Handler: s.routes(releaseTag, assets), ReadHeaderTimeout: 10 * time.Second}
+	go s.cleanupLoop(context.Background(), time.Minute)
 	log.Fatal(srv.ListenAndServe())
 }

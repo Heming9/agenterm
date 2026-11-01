@@ -39,7 +39,7 @@ url = "https://agenterm.net/mcp"
 
 ## 自托管快速开始
 
-从 [Releases](https://github.com/Heming9/agenterm/releases) 下载，或用 Go 1.24.3+ 编译：
+从 [Releases](https://github.com/Heming9/agenterm/releases) 下载，或用 Go 1.26.10+ 编译：
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
@@ -142,7 +142,7 @@ Authorization:  Bearer agenterm:...
 
 命令使用 `/agenterm/c/<6位邀请短码>` 短入口，Windows 入口带 `.ps1` 后缀。Server 将短码映射到完整邀请，动态返回带好邀请、版本和下载地址的安装脚本。短码仅使用大写字母 A–Z 和数字 0–9，共 36^6 种组合（约 31 位随机信息），生成时碰撞重试，15 分钟有效，并沿用认证失败限流。短入口比原来的 128 位 URL 更容易被猜中；完整邀请和连接凭证仍保持 128 位随机强度。获取脚本不会消耗邀请，响应禁止缓存。邀请被兑换（单设备模式）、替换或回收时，同时移除短码；仍兼容原有 22 位入口。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
 
-邀请 15 分钟有效，单设备模式只能兑换一次，多设备模式可重复兑换。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。兑换后的 Client token 可重复使用，Server 重启后失效，单设备 token 同时只允许一个 Client 在线，多设备 token 允许多台设备同时在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
+邀请 15 分钟有效，单设备模式只能兑换一次，多设备模式可重复兑换。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。MCP 创建的 token 必须在邀请的 15 分钟有效期内首次上线，即使邀请已兑换；上线后可重复使用，最后一台设备断线满 24 小时后回收，重连重新计时，在线期间不会回收。Server 每分钟清理一次过期 token，并同步移除关联邀请、短码和会话记录，创建新邀请时也会执行清理，与是否开启 IP 配额无关。`--generate` 启动 token 保留至 Server 重启，以便控制台重新签发邀请。Server 重启后所有 token 失效；单设备 token 同时只允许一个 Client 在线，多设备 token 允许多台设备同时在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
 
 目标电脑只需访问 `-public-url`，连接和下载过程均无需访问 GitHub；`127.0.0.1` 仅适用于同机。反向代理只需统一转发配置的 URL 前缀（默认 `/agenterm/`），保留此前缀，并允许 WebSocket 升级及 Authorization 请求头。探测失败时停止下载；探测成功后，每次运行都会从 Server 获取校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
 
@@ -164,13 +164,14 @@ Server 默认监听 `127.0.0.1:8080`，每次启动生成 10 位小写字母和�
 ```sh
 ./agenterm-server -listen 127.0.0.1:8080 \
   -public-url https://agenterm.example.com \
+  --client-ip-header X-Real-IP \
   --passwd '替换为足够长的随机密钥'
 ```
 
-另行配置支持 WebSocket 的 HTTPS 反向代理。`-public-url` 可填域名根地址或以配置的前缀结尾的地址；它只声明对外地址，不会启用 TLS。`-url-prefix` 默认 `/agenterm`，统一作用于所有接口、生成的邀请和下载地址；设为 `/`（或空字符串）时使用根路径。前缀必须以 `/` 开头，仅含字母、数字、`-._~` 和 `/`，路径段不可为空、`.` 或 `..`；末尾斜杠会自动移除。例如：
+默认从 TCP 连接的对端地址（`RemoteAddr`，去掉端口）读取客户端 IP，不信任任何转发头。通过反向代理部署时，使用 `--client-ip-header X-Real-IP` 指定读取的请求头；也可以指定其他包含单个 IP 的头。设置参数后只读取该头，缺失、多个值或非法 IP 返回 HTTP 400，不回退到对端 IP。另行配置支持 WebSocket 的 HTTPS 反向代理，并让代理覆盖所选请求头，例如 `proxy_set_header X-Real-IP $remote_addr;`。`-public-url` 可填域名根地址或以配置的前缀结尾的地址；它只声明对外地址，不会启用 TLS。`-url-prefix` 默认 `/agenterm`，统一作用于所有接口、生成的邀请和下载地址；设为 `/`（或空字符串）时使用根路径。前缀必须以 `/` 开头，仅含字母、数字、`-._~` 和 `/`，路径段不可为空、`.` 或 `..`；末尾斜杠会自动移除。例如：
 
 ```sh
-./agenterm-server -public-url https://agenterm.example.com -url-prefix /a --generate
+./agenterm-server -public-url https://agenterm.example.com --client-ip-header X-Real-IP -url-prefix /a --generate
 ```
 
 此时使用 `/a/mcp`、`/a/client`、`/a/c/<6位短码>` 和 `/a/downloads/...`，反向代理路径与 MCP 地址需同步修改。代理与 Server 同机时，后端仅监听本机。公网部署还需适当的访问控制。
@@ -185,11 +186,11 @@ MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Cl
 
 `--max-clients-per-ip 5` 将每个创建者 IP 的在线客户端限制为 5 个，默认 `0` 表示不限制。配额按调用 MCP `create_client` 的 IP 计算，而不是受邀电脑的 IP。多设备 token 下的每台在线设备都占一个名额。此功能适用于两种认证模式。
 
-在线连接未满时可以创建邀请；在线数加上尚未连接过的 token 数最多为 5。待使用名额已满时，新邀请会撤销该 IP 最早创建且从未连接过的 token 及对应邀请，即使邀请已兑换。未兑换的邀请过期时，其从未连接过的 token 在下次创建邀请时回收。在线数已满时不能创建；客户端重连时也会检查上限。已连接过的 token 不会因为断线或新邀请被回收；Server 重启后所有 token 失效。`--generate` 在启动时生成的 token 没有创建者 IP，不受此配额限制。
+在线连接未满时可以创建邀请；在线数加上尚未连接过的 token 数最多为 5。待使用名额已满时，新邀请会撤销该 IP 最早创建且从未连接过的 token 及对应邀请，即使邀请已兑换。从未上线的 token 随原邀请过期回收，包括已兑换但未上线的 token。在线数已满时不能创建；客户端重连时也会检查上限。已连接过的 token 不会因新邀请被回收，但最后一台设备离线满 24 小时后回收；Server 重启后所有 token 失效。`--generate` 在启动时生成的 token 没有创建者 IP，不受此配额限制。
 
-启用 IP 配额后，Server 从 `X-Real-IP` 请求头读取创建者 IP。缺少该请求头、提供多个值或地址无效时，创建请求会被拒绝。必须限制 Server 仅供可信反向代理访问，并让代理覆盖该请求头；否则直接访问 Server 的调用方可以伪造 IP。
+认证限流和客户端配额统一使用同一个 IP 来源：默认使用直连对端 IP；配置 `--client-ip-header <头名>` 后，只使用指定请求头。启用请求头模式时，必须限制 Server 仅供可信反向代理访问，并让代理覆盖该头；否则调用方可以伪造 IP。
 
-Cloudflare → Nginx → Agenterm 需要 Nginx 启用 `ngx_http_realip_module`，将 Cloudflare 官方公布的全部 IPv4 和 IPv6 网段设置为 `set_real_ip_from` 并持续更新，设置 `real_ip_header CF-Connecting-IP;`，在 Agenterm 代理位置设置 `proxy_set_header X-Real-IP $remote_addr;`。只信任 Cloudflare 网段，不可信任所有来源。参考 [Cloudflare 还原访客 IP](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) 和 [Cloudflare IP 列表](https://www.cloudflare.com/ips/)。Pseudo IPv4 的覆盖模式会替换原始 IPv6，应关闭以准确计数。IP 配额无法阻止更换 IP，同一 NAT 下的使用者也会共享配额。
+Cloudflare → Nginx → Agenterm：Server 设置 `--client-ip-header X-Real-IP`，Nginx 启用 `ngx_http_realip_module`，将 Cloudflare 官方公布的全部 IPv4 和 IPv6 网段设置为 `set_real_ip_from` 并持续更新，设置 `real_ip_header CF-Connecting-IP;`，在 Agenterm 代理位置设置 `proxy_set_header X-Real-IP $remote_addr;`。只信任 Cloudflare 网段，不可信任所有来源。参考 [Cloudflare 还原访客 IP](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) 和 [Cloudflare IP 列表](https://www.cloudflare.com/ips/)。Pseudo IPv4 的覆盖模式会替换原始 IPv6，应关闭以准确计数。IP 配额无法阻止更换 IP，同一 NAT 下的使用者也会共享配额。
 
 版本号遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)，连接时双向校验，并采用以下兼容策略：
 
@@ -208,7 +209,7 @@ Client token 包含 Server 地址和 128 位随机凭证。默认 `/agenterm` �
 <summary>会话行为与平台限制</summary>
 
 - `create_client` 成功后，Agent 先展示 `display_text`，再使用返回的 `client_token` 以合理间隔轮询 `list_clients`（例如每 2 秒一次）。没有设备在线时返回 `{"clients":[]}`；目标上线后才执行命令或启动会话。等待工具已移除。
-- `session_read` 通过轮询获取输出，`wait_ms` 最多等待 20000 毫秒；`done: true` 时返回 `exit_code`。每个会话保留最近 1 MiB 输出，读取落后时返回 `truncated: true`。已结束会话保留至少 30 分钟，新建会话时清理。
+- `session_read` 通过轮询获取输出，`wait_ms` 最多等待 20000 毫秒；`done: true` 时返回 `exit_code`。每个会话保留最近 1 MiB 输出，读取落后时返回 `truncated: true`。每个 token 最多保留 6 条会话记录，多设备模式下所有设备共用此额度；新建会话时若已满额，优先淘汰最早结束的记录，6 个会话都在运行时拒绝新建。已结束超过 30 分钟的记录也会由每分钟的定时任务或新建会话时清理；不同 token 的额度互不影响。
 - macOS/Linux 会话使用 PTY。Windows 使用管道，支持简单提示交互，不支持要求真实终端的程序。暂不支持远程图形界面。
 - 全屏终端程序输出的控制序列可能无法被 Agent 正确理解。CLI 会过滤本地日志中的控制序列，它是日志查看器。输入可能被回显，避免通过 Agent 输入敏感信息。
 - 命令使用直接启动 Client 的受支持 shell（PowerShell、cmd、bash、zsh、fish 等）。无法识别时，macOS/Linux 回退到 `/bin/sh`，Windows 回退到 `ComSpec`（通常是 `cmd.exe`）。每条命令启动新的 shell，不共享启动 shell 的会话变量和函数。
@@ -225,7 +226,7 @@ Server 可见命令与输出，Client 也会在本地显示，两者都可能包
 
 默认 HTTP 和 WebSocket 不加密，流量监听者可读取凭证、命令和输出。不可信网络使用 HTTPS，并保管好 token 和管理密钥。
 
-认证按直连来源 IP 限流：1 分钟内失败 10 次后封禁 5 分钟，期间正确凭证也会被拒绝。共享 IP 的用户相互影响。Server 忽略转发头；反向代理场景还应在代理入口按真实来源 IP 限流。分布式来源仍可继续尝试认证。
+认证按客户端 IP 限流：1 分钟内失败 10 次后封禁该 IP 5 分钟，期间该 IP 的正确凭证也会被拒绝，其他 IP 不受影响。默认使用直连对端 IP，并忽略转发头；代理部署时通过 `--client-ip-header <头名>` 指定 IP 来源。请求头模式下，缺失、多个值或非法 IP 返回 HTTP 400，不回退到其他来源；必须限制 Server 仅供可信代理访问，并由代理覆盖该头。共享公网 IP 的用户相互影响，分布式来源仍可继续尝试认证。
 
 </details>
 
@@ -297,7 +298,7 @@ gh workflow run release.yml --ref main -f scope=server -f base_tag=v0.2.26
 
 两条命令二选一，同一版本只触发一次。`base_tag` 留空时选择发布时间最近、且 tag 属于当前提交祖先的 Release，也包含 GitHub 预发布版。没有可用基准时全量构建；主动指定的基准不存在或不属于当前历史时则报错。不会覆盖已有 Release。
 
-当前由发布者手动选择范围，不会自动分析代码变更。需包含所有受影响的程序：仅安装脚本或服务端变化可选 `server`；客户端公共代码变化选 `client`；公共依赖、协议、翻译或打包逻辑变化通常选 `all`。复用产物不会跳过相关测试，Windows 安装脚本及客户端测试仍会执行。
+当前由发布者手动选择范围，不会自动分析代码变更。需包含所有受影响的程序：仅安装脚本或服务端变化可选 `server`；客户端公共代码变化选 `client`；公共依赖、协议、翻译或打包逻辑变化通常选 `all`。升级 Go 后的首次发布必须使用 `all`，确保所有程序都由新工具链重新构建。复用产物不会跳过相关测试，Windows 安装脚本及客户端测试仍会执行。
 
 复用程序保留原始二进制版本号。流程按实际连接兼容规则检查这些版本，只要有一个与新版本不兼容，就改为全量构建。下载时验证校验和，复用文件保持字节一致，新构建的 Server 内嵌选定的 CLI，发布前检查各平台产物完整。文件缺失或损坏时停止发布。`release-manifest.json` 记录每种程序的原始来源 tag 和版本，连续复用也不会丢失来源；Release 说明列出构建／复用情况并附上自动生成的变更记录。每次发布重新生成安装脚本及完整的 `SHA256SUMS`。
 

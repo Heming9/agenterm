@@ -15,7 +15,7 @@ import (
 )
 
 func TestMCPCreationUsesIssuingIP(t *testing.T) {
-	s := &server{noPassword: true, maxClientsPerIP: 1, clientURL: "wss://example.com/agenterm/client"}
+	s := &server{noPassword: true, clientIPHeader: "X-Real-IP", maxClientsPerIP: 1, clientURL: "wss://example.com/agenterm/client"}
 	call := func(remote, forwarded string) {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/agenterm/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_client","arguments":{}}}`))
@@ -45,7 +45,7 @@ func TestMCPCreationUsesIssuingIP(t *testing.T) {
 }
 
 func TestRequestIP(t *testing.T) {
-	s := &server{}
+	s := &server{clientIPHeader: "X-Real-IP"}
 	for _, tc := range []struct {
 		header, want string
 		invalid      bool

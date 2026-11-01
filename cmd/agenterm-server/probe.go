@@ -20,7 +20,7 @@ func (s *server) probeConnection(w http.ResponseWriter, r *http.Request) {
 	valid := err == nil && r.Header.Get("Authorization") == "Bearer "+value &&
 		sourceErr == nil && token.URL == source.URL && exists && time.Now().Before(entry.expires)
 	s.mu.Unlock()
-	if status, err := s.authorize(r.RemoteAddr, valid); err != nil {
+	if status, err := s.authorize(r, valid); err != nil {
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "300")
 		}

@@ -1,16 +1,12 @@
 package main
 
-import (
-	"agenterm/internal/i18n"
-	"net/http"
-	"net/netip"
-	"strings"
-)
+import "time"
 
 type clientOwner struct {
 	ip, token string
 	order     uint64
-	used      bool // a successful client connection, not merely an invitation redemption
+	used      bool      // a successful client connection, not merely an invitation redemption
+	expires   time.Time // first-connection deadline, or expiry after the last device disconnects
 }
 
 // The caller holds s.mu for both helpers.
@@ -43,26 +39,6 @@ func (s *server) trimPending(ip string, max int) {
 		if count <= max || oldest == nil {
 			return
 		}
-		for key, invitation := range s.invitations {
-			if invitation.token == oldest.token {
-				s.deleteInvitation(key)
-			}
-		}
-		delete(s.tokens, oldest.token)
-		delete(s.clientOwners, oldestSecret)
-		delete(s.multiDevice, oldestSecret)
+		s.deleteTokensLocked(map[string]bool{oldestSecret: true})
 	}
-}
-
-// The reverse proxy must overwrite X-Real-IP and direct access must be restricted.
-func (s *server) requestIP(r *http.Request) (string, error) {
-	values := r.Header.Values("X-Real-IP")
-	if len(values) != 1 {
-		return "", i18n.NewError("client.ip.invalid")
-	}
-	ip, err := netip.ParseAddr(strings.TrimSpace(values[0]))
-	if err != nil || ip.Zone() != "" {
-		return "", i18n.NewError("client.ip.invalid")
-	}
-	return ip.Unmap().String(), nil
 }

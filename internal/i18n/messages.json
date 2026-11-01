@@ -11,6 +11,10 @@
     "en": "maximum connected clients per issuing IP (0 disables the limit)",
     "zh-CN": "每个邀请创建者 IP 的最大在线客户端数（0 表示不限制）"
   },
+  "client.ip.header": {
+    "en": "trusted header containing a single client IP (empty uses the directly connected peer IP)",
+    "zh-CN": "读取客户端 IP 的可信请求头（留空使用直连对端 IP，头内须为单个 IP）"
+  },
   "max.clients.per.ip.invalid": {
     "en": "max-clients-per-ip must be nonnegative",
     "zh-CN": "max-clients-per-ip 必须大于或等于 0"
@@ -380,8 +384,8 @@
     "zh-CN": "尚无客户端连接"
   },
   "session.limit.reached.try.again.later": {
-    "en": "session limit reached; try again later",
-    "zh-CN": "会话数已达上限，请稍后重试"
+    "en": "this token already has 6 running sessions; stop or finish one before starting another",
+    "zh-CN": "当前 token 已有 6 个运行中的会话，请结束其中一个后重试"
   },
   "unknown.session": {
     "en": "unknown session",

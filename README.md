@@ -39,7 +39,7 @@ The hosted service allows up to four connected clients per **IP address issuing 
 
 ## Self-hosted quick start
 
-Get binaries from [Releases](https://github.com/Heming9/agenterm/releases), or build with Go 1.24.3+:
+Get binaries from [Releases](https://github.com/Heming9/agenterm/releases), or build with Go 1.26.10+:
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
@@ -142,7 +142,7 @@ Release servers provide CLI archives for all six OS/architecture combinations an
 
 Commands use a short `/agenterm/c/<6-character invitation code>` endpoint, with a `.ps1` suffix for Windows. The server maps each code to the full invitation and dynamically fills in the invitation, version, and download URL. Codes contain only uppercase A–Z and digits 0–9 (36^6 combinations, about 31 random bits), with collision retries, a 15-minute expiry, and the existing authentication failure limiter. This makes the short URL easier to guess than the previous 128-bit URL; the full invitation and client credentials retain 128 random bits. Fetching the script does not consume the invitation, and responses disable caching. Codes are removed when their invitations are redeemed (single-device mode), replaced, or reclaimed. Previous 22-character URLs remain supported. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
-Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. Redeemed client tokens remain reusable until the server restarts, with one connected client per single-device token or multiple clients per multi-device token. Share credentials privately; invitation commands may remain in shell history.
+Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. MCP-created tokens must first connect within the original 15-minute invitation lifetime, even after redemption. Once used, they remain reusable until the last device has been offline for 24 hours; reconnecting resets that deadline, and online tokens are retained. The server cleans expired tokens every minute and when creating invitations, removing associated invitations, short codes, and session records whether or not IP quotas are enabled. Startup `--generate` tokens remain valid until restart so the console can reissue invitations. Restarting invalidates every token. A single-device token allows one connected client; a multi-device token allows multiple clients. Share credentials privately; invitation commands may remain in shell history.
 
 The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies only need to forward the configured URL prefix (default `/agenterm/`), preserving the prefix and allowing WebSocket upgrades and the Authorization header. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
 
@@ -164,13 +164,14 @@ The server defaults to `127.0.0.1:8080` and generates a new 10-character lowerca
 ```sh
 ./agenterm-server -listen 127.0.0.1:8080 \
   -public-url https://agenterm.example.com \
+  --client-ip-header X-Real-IP \
   --passwd 'replace-with-a-long-random-key'
 ```
 
-Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url` accepts an origin or an address ending in the configured prefix; it does not enable TLS. `-url-prefix` defaults to `/agenterm` and applies to all endpoints, generated invitations, and downloads. Use `/` (or an empty value) for root routes. Prefixes must start with `/`, contain only letters, digits, `-._~` and `/`, and have no empty, `.` or `..` segments; a trailing slash is normalized. For example:
+By default, the client IP comes from the TCP peer address (`RemoteAddr`, without the port), ignoring all forwarded headers. For reverse proxies, set `--client-ip-header X-Real-IP` or another header containing a single IP. When configured, only that header is used; missing, multiple, or invalid values return HTTP 400 without falling back to the peer IP. Configure an HTTPS reverse proxy with WebSocket support separately, and have it overwrite the selected header, for example `proxy_set_header X-Real-IP $remote_addr;`. `-public-url` accepts an origin or an address ending in the configured prefix; it does not enable TLS. `-url-prefix` defaults to `/agenterm` and applies to all endpoints, generated invitations, and downloads. Use `/` (or an empty value) for root routes. Prefixes must start with `/`, contain only letters, digits, `-._~` and `/`, and have no empty, `.` or `..` segments; a trailing slash is normalized. For example:
 
 ```sh
-./agenterm-server -public-url https://agenterm.example.com -url-prefix /a --generate
+./agenterm-server -public-url https://agenterm.example.com --client-ip-header X-Real-IP -url-prefix /a --generate
 ```
 
 This uses `/a/mcp`, `/a/client`, `/a/c/<6-character code>`, and `/a/downloads/...`. Change the reverse proxy location and the MCP URL to match. When the proxy is on the same machine, keep the backend bound to loopback. Public deployments also need appropriate access controls.
@@ -185,11 +186,11 @@ MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <
 
 `--max-clients-per-ip 5` limits each issuing IP to five connected clients; the default `0` disables this limit. The issuing IP is the MCP caller of `create_client`, not the invited machine. Each online device under a multi-device token consumes one slot. This works in either authentication mode.
 
-While fewer than five clients are online, a new invitation can be created. Online clients plus tokens that have never connected are capped at five per issuing IP. If pending capacity is full, creating an invitation revokes the oldest never-connected token and its invitation, including an already redeemed invitation. Expired unredeemed invitations and their never-connected tokens are removed on the next creation. Creation is rejected when all slots are online; reconnects also check the limit. Previously connected tokens survive disconnects and new invitations; Server restart invalidates all tokens. Startup tokens from `--generate` have no issuing IP and are exempt.
+While fewer than five clients are online, a new invitation can be created. Online clients plus tokens that have never connected are capped at five per issuing IP. If pending capacity is full, creating an invitation revokes the oldest never-connected token and its invitation, including an already redeemed invitation. Never-connected tokens expire with their original invitation, including redeemed tokens that have not connected. Creation is rejected when all slots are online; reconnects also check the limit. Previously connected tokens survive new invitations but are reclaimed after the last device has been offline for 24 hours. Server restart invalidates all tokens. Startup tokens from `--generate` have no issuing IP and are exempt.
 
-When the IP quota is enabled, the Server reads the issuing IP from the `X-Real-IP` header. Creation requests with missing, multiple, or invalid values are rejected. Restrict direct access to the Server to a trusted reverse proxy, and have the proxy overwrite this header; otherwise direct callers can spoof their IP.
+Authentication rate limits and issuance quotas share the same IP source: the directly connected peer by default, or only the specified header when `--client-ip-header <name>` is set. In header mode, restrict server access to a trusted reverse proxy that overwrites the selected header; otherwise callers can spoof their IP.
 
-For Cloudflare → Nginx → Agenterm, enable Nginx's `ngx_http_realip_module`, configure `set_real_ip_from` for all Cloudflare IPv4 and IPv6 ranges and keep them current, set `real_ip_header CF-Connecting-IP;`, and set `proxy_set_header X-Real-IP $remote_addr;` in the Agenterm proxy location. Trust only Cloudflare ranges, never all sources. See [Cloudflare's visitor IP guidance](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) and [IP ranges](https://www.cloudflare.com/ips/). Pseudo IPv4 header overwriting replaces the original IPv6 address and should be disabled for accurate quotas. IP limits cannot prevent IP rotation; users behind the same NAT share a quota.
+For Cloudflare → Nginx → Agenterm, set `--client-ip-header X-Real-IP` on the server, enable Nginx's `ngx_http_realip_module`, configure `set_real_ip_from` for all Cloudflare IPv4 and IPv6 ranges and keep them current, set `real_ip_header CF-Connecting-IP;`, and set `proxy_set_header X-Real-IP $remote_addr;` in the Agenterm proxy location. Trust only Cloudflare ranges, never all sources. See [Cloudflare's visitor IP guidance](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) and [IP ranges](https://www.cloudflare.com/ips/). Pseudo IPv4 header overwriting replaces the original IPv6 address and should be disabled for accurate quotas. IP limits cannot prevent IP rotation; users behind the same NAT share a quota.
 
 Versions follow [SemVer 2.0.0](https://semver.org/). Connections validate versions in both directions using this policy:
 
@@ -208,7 +209,7 @@ Client tokens contain the server address and a 128-bit random credential. The de
 <summary>Session behavior & platform limits</summary>
 
 - After `create_client` succeeds, first show `display_text`, then poll `list_clients` with the returned `client_token` at reasonable intervals (for example, every 2 seconds). No devices online returns `{"clients":[]}`. Execute commands or start sessions only after the target appears. The wait tool has been removed.
-- `session_read` polls for output. `wait_ms` waits up to 20000 ms; `done: true` includes `exit_code`. Each session retains the latest 1 MiB; lagging readers receive `truncated: true`. Finished sessions remain for at least 30 minutes and are cleaned up when a new session starts.
+- `session_read` polls for output. `wait_ms` waits up to 20000 ms; `done: true` includes `exit_code`. Each session retains the latest 1 MiB; lagging readers receive `truncated: true`. Each token retains at most 6 session records, shared across its devices in multi-device mode. Starting a session at that limit evicts the oldest finished record; if all 6 sessions are running, the request is rejected. Records finished more than 30 minutes ago are also cleaned up by the minute-based maintenance task or when a new session starts. Different tokens have independent allowances.
 - macOS/Linux sessions use a PTY. Windows uses pipes: simple prompts work, programs requiring a real terminal do not. Remote graphical interfaces are unsupported.
 - Full-screen terminal apps emit control sequences the agent may not understand. The CLI strips these from its local log; it is a log viewer. Input may be echoed, so avoid entering secrets through the agent.
 - Commands use the supported shell that directly launched the client (PowerShell, cmd, bash, zsh, fish, etc.). Fallback: `/bin/sh` on macOS/Linux, `ComSpec` (usually `cmd.exe`) on Windows. Each command starts a fresh shell; launching-shell variables and functions are not shared.
@@ -225,7 +226,7 @@ The server sees commands and output; the client displays them too. Secrets in ei
 
 HTTP and WebSocket are unencrypted by default, exposing credentials, commands, and output to anyone observing traffic. Use HTTPS across untrusted networks and keep tokens and management keys secret.
 
-Authentication is rate-limited by directly connected source IP: 10 failures in one minute block the IP for five minutes, including valid credentials during the block. Shared-IP users affect each other. The server ignores forwarded headers; behind a proxy, also rate-limit by real source IP at the proxy. Distributed sources can still attempt authentication.
+Authentication is rate-limited by client IP: 10 failures in one minute block that IP for five minutes, including valid credentials during the block. Other IPs are unaffected. By default, the server uses the directly connected peer IP and ignores forwarded headers; use `--client-ip-header <name>` to select a header behind a proxy. In header mode, missing, multiple, or invalid values return HTTP 400 without fallback; restrict server access to a trusted proxy that overwrites the selected header. Users sharing a public IP affect each other, and distributed sources can still attempt authentication.
 
 </details>
 
@@ -297,7 +298,7 @@ gh workflow run release.yml --ref main -f scope=server -f base_tag=v0.2.26
 
 These commands are alternatives; run only one for a given version. `base_tag` defaults to the most recently published release whose tag is an ancestor of the selected commit, including GitHub prereleases. Without an available base, the workflow builds everything. An explicitly requested missing or unrelated base fails instead. Existing releases are never overwritten.
 
-Scope selection is manual, not a source-change detector. Include every affected program: installer/server-only changes can use `server`; changes to shared client code need `client`; changes to shared dependencies, protocol, translations, or packaging generally need `all`. Tests still run even for programs whose release binaries are reused, including Windows installer/client tests.
+Scope selection is manual, not a source-change detector. Include every affected program: installer/server-only changes can use `server`; changes to shared client code need `client`; changes to shared dependencies, protocol, translations, or packaging generally need `all`. After upgrading Go, use `all` for the first release so every binary uses the updated toolchain. Tests still run even for programs whose release binaries are reused, including Windows installer/client tests.
 
 Reused programs keep their original binary version. The workflow applies the actual connection compatibility policy to those versions and falls back to a full build if any is incompatible with the new release. It verifies downloaded checksums, preserves reused files byte-for-byte, embeds the selected CLI in newly built servers, and checks that all platforms are present before publishing. Missing or corrupt assets stop publication. A `release-manifest.json` records each program's original source tag and version across successive reuses; the Release notes summarize built/reused programs and include generated change notes. Install scripts and the complete `SHA256SUMS` are regenerated for each release.
 

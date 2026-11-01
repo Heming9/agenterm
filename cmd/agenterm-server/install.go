@@ -118,9 +118,11 @@ func (s *server) installWrapper(tag string) http.Handler {
 		}
 		entry, exists := s.invitations[secret]
 		s.mu.Unlock()
-		if status, err := s.authorize(r.RemoteAddr, exists && time.Now().Before(entry.expires)); err != nil {
+		if status, err := s.authorize(r, exists && time.Now().Before(entry.expires)); err != nil {
 			if status == http.StatusTooManyRequests {
 				w.Header().Set("Retry-After", "300")
+			}
+			if status != http.StatusUnauthorized {
 				http.Error(w, err.Error(), status)
 				return
 			}
