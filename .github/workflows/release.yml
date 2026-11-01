@@ -156,13 +156,11 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.21 preview release.
+          Agenterm v0.2.22 preview release.
 
-          - Keep idle connections alive with WebSocket heartbeats every 20 seconds and detect unresponsive peers after 60 seconds.
-          - Display live round-trip latency in the GUI and TUI connection status.
-          - Automatically reconnect with bounded exponential backoff while preserving logs, statistics, and the local connection lock.
-          - Log disconnect reasons and retry attempts without replaying interrupted commands. Stop retries for invalid credentials or incompatible versions.
-          - Remain compatible with older 0.2 clients and servers; server restarts still require new tokens.
+          - Show the running version immediately beside Agenterm in the TUI header.
+          - Keep connection status and latency aligned on the right, including narrow terminals.
+          - Include the heartbeat, automatic reconnection, latency display, and disconnect logging improvements from v0.2.21.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

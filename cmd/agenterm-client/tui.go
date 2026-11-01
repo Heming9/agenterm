@@ -11,6 +11,7 @@ import (
 	"agenterm/internal/client"
 	"agenterm/internal/logview"
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -382,7 +383,7 @@ func (m *tuiModel) header(status string) string {
 	if width <= 0 {
 		width = 80
 	}
-	left := " Agenterm"
+	left := " Agenterm v" + version.Current
 	// Keep the status visible when the terminal is too narrow for the brand.
 	if width < ansi.StringWidth(left)+1+ansi.StringWidth(status) {
 		return ansi.Truncate(status, width, "")
