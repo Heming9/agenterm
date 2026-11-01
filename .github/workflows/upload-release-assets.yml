@@ -1,0 +1,107 @@
+name: Upload verified release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Completed Release workflow run with all builds and tests passing'
+        required: true
+        type: string
+      tag:
+        description: 'Existing version tag with an owner-created draft release'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: upload-release-assets-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: ${{ inputs.run_id }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the source build and test results
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          repo, run_id, tag = os.environ['GH_REPO'], os.environ['BUILD_RUN_ID'], os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'[0-9]+', run_id), 'Invalid run ID'
+          assert re.fullmatch(r'v[0-9][0-9A-Za-z._+-]*', tag), 'Invalid tag'
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{path}'], text=True))
+          run = api(f'actions/runs/{run_id}')
+          assert run['head_repository']['full_name'] == repo and run['path'] == '.github/workflows/release.yml'
+          assert run['status'] == 'completed', 'Source run is not complete'
+          jobs = api(f'actions/runs/{run_id}/jobs?per_page=100')['jobs']
+          results = {job['name']: job['conclusion'] for job in jobs}
+          for name in ('plan', 'server', 'macos', 'windows', 'windows-tests'):
+              assert results.get(name) == 'success', f'{name} did not pass'
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+          path: release-plan
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: artifacts
+          merge-multiple: true
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify the tag and complete release inventory
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          manifest = json.loads(pathlib.Path('release-plan/release-manifest.json').read_text())
+          tag = os.environ['RELEASE_TAG']
+          assert manifest['release_tag'] == tag and manifest['scope'] == 'all'
+          sha = subprocess.check_output(['git', 'rev-list', '-n', '1', tag], text=True).strip()
+          assert manifest['commit'] == sha, 'Artifacts do not match the version tag'
+          PY
+          mkdir -p release-plan/reused
+          cp -R release-plan/reused/. artifacts/
+          python3 scripts/release/release.py finalize
+      - name: Upload missing assets to the existing draft and verify hashes
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          tag, repo = os.environ['RELEASE_TAG'], os.environ['GH_REPO']
+          def command(*args):
+              return json.loads(subprocess.check_output(args, text=True))
+          release = command('gh', 'release', 'view', tag, '--json', 'databaseId,isDraft,tagName')
+          assert release['isDraft'] and release['tagName'] == tag, 'Only an existing draft may be modified'
+          endpoint = f"repos/{repo}/releases/{release['databaseId']}/assets?per_page=100"
+          remote = {asset['name']: asset for asset in command('gh', 'api', endpoint)}
+          files = {file.name: file for file in pathlib.Path('artifacts').iterdir()}
+          assert not (remote.keys() - files.keys()), 'Unexpected existing release assets'
+          def verify(name, asset):
+              file = files[name]
+              assert asset['state'] == 'uploaded' and asset['size'] == file.stat().st_size
+              with file.open('rb') as stream:
+                  expected = 'sha256:' + hashlib.file_digest(stream, 'sha256').hexdigest()
+              assert asset['digest'] == expected, name
+          for name, asset in remote.items():
+              verify(name, asset)
+          missing = [str(file) for name, file in files.items() if name not in remote]
+          if missing:
+              subprocess.run(['gh', 'release', 'upload', tag, *missing], check=True)
+          remote = {asset['name']: asset for asset in command('gh', 'api', endpoint)}
+          assert remote.keys() == files.keys(), 'Incomplete release upload'
+          for name, asset in remote.items():
+              verify(name, asset)
+          print(f'Verified {len(remote)} draft release assets; owner may now publish the draft.')
+          PY
