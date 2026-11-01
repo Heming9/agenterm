@@ -275,6 +275,34 @@ curl -s http://127.0.0.1:8080/agenterm/mcp \
 
 </details>
 
+## 发布
+
+推送 `v*` tag 仍会全量构建并发布 GitHub 预发布版。按需构建时，先提交并推送新版本号及代码，再到 **Actions → Release → Run workflow** 选择分支和构建范围。不要提前推送新 tag：手动流程根据 `internal/version.Current` 确定版本，检查通过后为实际构建的提交创建 tag。重建 GUI 时，`cmd/agenterm-gui/FyneApp.toml` 的版本号需保持一致。
+
+| `scope` | 重新构建 | 从基准 Release 复用 |
+| --- | --- | --- |
+| `all`（默认） | CLI、GUI、Server | 无 |
+| `server` | Server | CLI、GUI |
+| `client` | CLI、GUI、Server | 无；客户端公共代码影响两种客户端，Server 内嵌 CLI |
+| `cli` | CLI、Server | GUI |
+| `gui` | GUI | CLI、Server |
+
+例如，只重建 Server：
+
+```sh
+gh workflow run release.yml --ref main -f scope=server
+# 也可以指定从哪个已发布版本复用产物：
+gh workflow run release.yml --ref main -f scope=server -f base_tag=v0.2.26
+```
+
+两条命令二选一，同一版本只触发一次。`base_tag` 留空时选择发布时间最近、且 tag 属于当前提交祖先的 Release，也包含 GitHub 预发布版。没有可用基准时全量构建；主动指定的基准不存在或不属于当前历史时则报错。不会覆盖已有 Release。
+
+当前由发布者手动选择范围，不会自动分析代码变更。需包含所有受影响的程序：仅安装脚本或服务端变化可选 `server`；客户端公共代码变化选 `client`；公共依赖、协议、翻译或打包逻辑变化通常选 `all`。复用产物不会跳过相关测试，Windows 安装脚本及客户端测试仍会执行。
+
+复用程序保留原始二进制版本号。流程按实际连接兼容规则检查这些版本，只要有一个与新版本不兼容，就改为全量构建。下载时验证校验和，复用文件保持字节一致，新构建的 Server 内嵌选定的 CLI，发布前检查各平台产物完整。文件缺失或损坏时停止发布。`release-manifest.json` 记录每种程序的原始来源 tag 和版本，连续复用也不会丢失来源；Release 说明列出构建／复用情况并附上自动生成的变更记录。每次发布重新生成安装脚本及完整的 `SHA256SUMS`。
+
+工作流需先进入默认分支，才会显示手动运行入口。参见 [GitHub 手动运行工作流说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)。
+
 ## 测试
 
 ```sh

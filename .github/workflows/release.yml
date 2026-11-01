@@ -4,15 +4,65 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Programs to rebuild (CLI also rebuilds Server)'
+        type: choice
+        default: all
+        options: [all, server, client, cli, gui]
+      base_tag:
+        description: 'Reuse from this release; blank selects latest published ancestor'
+        type: string
+        default: ''
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.plan.outputs.sha }}
+      cli: ${{ steps.plan.outputs.cli }}
+      server: ${{ steps.plan.outputs.server }}
+      gui: ${{ steps.plan.outputs.gui }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
+      - name: Test release planning
+        run: python3 -m unittest discover -s scripts/release -p 'test_*.py'
+      - name: Select builds and verify reused downloads
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SCOPE: ${{ inputs.scope || 'all' }}
+          BASE_TAG: ${{ inputs.base_tag }}
+        run: python3 scripts/release/release.py prepare --scope "$SCOPE" --base "$BASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-plan
+          path: release-plan/
+          if-no-files-found: error
+
   macos:
+    needs: plan
+    if: needs.plan.outputs.gui == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.3'
@@ -24,14 +74,17 @@ jobs:
           ditto -c -k --keepParent Agenterm.app ../../agenterm-client-macos-arm64.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: build-macos
           path: agenterm-client-macos-arm64.zip
           if-no-files-found: error
 
-  windows:
+  windows-tests:
+    needs: plan
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.3'
@@ -41,6 +94,18 @@ jobs:
         run: go test ./internal/client
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
+
+  windows:
+    needs: plan
+    if: needs.plan.outputs.gui == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -59,47 +124,70 @@ jobs:
           Compress-Archive -Path ../../agenterm-client-windows-amd64.exe -DestinationPath ../../agenterm-client-windows-amd64.zip -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: build-windows
           path: |
             agenterm-client-windows-amd64.exe
             agenterm-client-windows-amd64.zip
           if-no-files-found: error
 
   server:
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+          path: release-plan
+      - name: Restore reusable CLI and Server files
+        shell: bash
+        run: |
+          mkdir -p dist
+          for asset in release-plan/reused/agenterm-cli-* release-plan/reused/agenterm-server-*; do
+            [ ! -f "$asset" ] || cp "$asset" dist/
+          done
       - name: Install release compression tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xz-utils
       - name: Test CLI, server, and installers
         run: go test ./cmd/agenterm-client ./cmd/agenterm-server ./internal/...
-      - name: Build and bundle clients, then build servers
+      - name: Build or reuse CLI, bundle it, then build servers
+        if: needs.plan.outputs.server == 'true'
         env:
           CGO_ENABLED: '0'
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          BUILD_CLI: ${{ needs.plan.outputs.cli }}
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._+-]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
           mkdir -p dist
           rm -f internal/installer/assets/agenterm-cli-* internal/installer/assets/SHA256SUMS internal/installer/assets/clients.tar.xz
-          for os in darwin linux windows; do
-            for arch in amd64 arm64; do
-              platform="$os"
-              extension=""
-              if [ "$os" = darwin ]; then platform=macos; fi
-              if [ "$os" = windows ]; then extension=.exe; fi
-              name="agenterm-cli-${platform}-${arch}${extension}"
-              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
+          if [ "$BUILD_CLI" = true ]; then
+            for os in darwin linux windows; do
+              for arch in amd64 arm64; do
+                platform="$os"
+                extension=""
+                if [ "$os" = darwin ]; then platform=macos; fi
+                if [ "$os" = windows ]; then extension=.exe; fi
+                name="agenterm-cli-${platform}-${arch}${extension}"
+                GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
+              done
             done
-          done
+          fi
           # Share the server's deterministic gzip/ZIP writer and checksum rules.
           go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
+          if [ "$BUILD_CLI" != true ]; then
+            for archive in release-plan/reused/agenterm-cli-*.tar.gz release-plan/reused/agenterm-cli-*.zip; do
+              cmp "$archive" "dist/$(basename "$archive")"
+            done
+          fi
           # Only the solid archive is embedded, never the individual downloads.
           xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
           # Verify the exact executable bytes before hashing and embedding.
@@ -123,6 +211,10 @@ jobs:
               GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
             done
           done
+      - name: Generate installers for the new release
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
           sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.sh > dist/install.sh
           sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.ps1 > dist/install.ps1
           # Keep distribution sizes visible when dependencies or assets change.
@@ -134,34 +226,47 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: server
+          name: build-server
           path: dist/*
           if-no-files-found: error
 
   publish:
-    needs: [macos, windows, server]
+    needs: [plan, macos, windows, windows-tests, server]
+    # GUI jobs may be intentionally skipped; failures must still block publication.
+    if: >-
+      always() && !cancelled() &&
+      needs.plan.result == 'success' && needs.server.result == 'success' &&
+      needs.windows-tests.result == 'success' &&
+      (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
+      (needs.windows.result == 'success' || needs.windows.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/download-artifact@v4
         with:
+          name: release-plan
+          path: release-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
           path: artifacts
           merge-multiple: true
+      - name: Merge reused files and verify complete release
+        run: |
+          cp release-plan/reused/* artifacts/
+          python3 scripts/release/release.py finalize
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
-          gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.27 preview release.
-
-          - Show the project source and Apache-2.0 license in both one-command installers for source traceability.
-          - Add a framed terminal logo, wordmark, and version badge with color-coded authorization and connection progress.
-          - Keep installer output readable without colors and tighten the remote control authorization reminder layout in English and Simplified Chinese.
-
-          HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
-          EOF
-          )"
+          TAG: ${{ needs.plan.outputs.tag }}
+          COMMIT: ${{ needs.plan.outputs.sha }}
+        # Manual runs create the version tag at the exact built commit. Tags made
+        # with GITHUB_TOKEN do not trigger another tag-push workflow.
+        run: >-
+          gh release create "$TAG" artifacts/* --target "$COMMIT" --prerelease
+          --title "Agenterm $TAG" --notes-file release-plan/notes.md --generate-notes

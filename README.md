@@ -275,6 +275,34 @@ curl -s http://127.0.0.1:8080/agenterm/mcp \
 
 </details>
 
+## Release
+
+Pushing a `v*` tag still builds all programs and publishes a GitHub prerelease. For selective builds, first commit and push the new version and code, then run **Actions → Release → Run workflow** on that branch. Do not push the new tag first: the manual workflow derives it from `internal/version.Current` and creates it at the exact built commit after checks pass. Keep `cmd/agenterm-gui/FyneApp.toml` at the same version when rebuilding GUI.
+
+| `scope` | Rebuild | Reuse from the base release |
+| --- | --- | --- |
+| `all` (default) | CLI, GUI, Server | None |
+| `server` | Server | CLI, GUI |
+| `client` | CLI, GUI, Server | None; shared client changes affect both clients, and Server embeds CLI |
+| `cli` | CLI, Server | GUI |
+| `gui` | GUI | CLI, Server |
+
+For example, rebuild only Server:
+
+```sh
+gh workflow run release.yml --ref main -f scope=server
+# Optionally choose a specific published release as the source of reused files:
+gh workflow run release.yml --ref main -f scope=server -f base_tag=v0.2.26
+```
+
+These commands are alternatives; run only one for a given version. `base_tag` defaults to the most recently published release whose tag is an ancestor of the selected commit, including GitHub prereleases. Without an available base, the workflow builds everything. An explicitly requested missing or unrelated base fails instead. Existing releases are never overwritten.
+
+Scope selection is manual, not a source-change detector. Include every affected program: installer/server-only changes can use `server`; changes to shared client code need `client`; changes to shared dependencies, protocol, translations, or packaging generally need `all`. Tests still run even for programs whose release binaries are reused, including Windows installer/client tests.
+
+Reused programs keep their original binary version. The workflow applies the actual connection compatibility policy to those versions and falls back to a full build if any is incompatible with the new release. It verifies downloaded checksums, preserves reused files byte-for-byte, embeds the selected CLI in newly built servers, and checks that all platforms are present before publishing. Missing or corrupt assets stop publication. A `release-manifest.json` records each program's original source tag and version across successive reuses; the Release notes summarize built/reused programs and include generated change notes. Install scripts and the complete `SHA256SUMS` are regenerated for each release.
+
+The workflow definition must be on the default branch to expose manual triggering. See [GitHub's manual workflow documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
 ## Test
 
 ```sh
