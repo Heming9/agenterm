@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 )
 
-const maxLogBytes = 64 * 1024
+const maxLogBytes = 10 * 1024 * 1024
 
 func logTail(text string) string {
 	if len(text) > maxLogBytes {

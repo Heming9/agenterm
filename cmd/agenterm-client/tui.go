@@ -19,7 +19,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-const maxTUILog = 64 * 1024
+const maxTUILog = 10 * 1024 * 1024
 
 type logSpan struct {
 	kind, text string
