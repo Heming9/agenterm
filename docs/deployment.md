@@ -75,6 +75,8 @@ For an update, pull the desired source revision and run `docker compose up -d --
 
 ## Use a stdio MCP client
 
+Build the current source for this option; the v0.3.1 release binaries predate stdio support.
+
 For agents that launch a local MCP process, add a configuration like this (replace the executable path and `SERVER_IP`):
 
 ```json

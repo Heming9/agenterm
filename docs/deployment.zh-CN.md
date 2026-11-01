@@ -75,6 +75,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ## 接入 stdio MCP 客户端
 
+此选项需要从当前源码构建，v0.3.1 发布的二进制尚未包含 stdio 支持。
+
 如果 Agent 通过启动本地进程接入 MCP，可以使用以下配置，将程序路径和 `SERVER_IP` 替换为实际值：
 
 ```json
