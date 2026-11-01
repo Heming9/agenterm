@@ -8,6 +8,16 @@
   <p>macOS / Linux / Windows · CLI / GUI · Multiple clients · Interactive sessions · No SSH daemon</p>
 </div>
 
+## Demo
+
+See Agenterm connect an MCP agent to a target terminal through the hosted service: generate an invitation, run the one-command installer, authorize the connection, then scan and clean up 192 MiB of disposable demo files. Kimi Code is the example agent.
+
+[![Agenterm cloud demo: invitation, authorization, and remote cleanup](docs/demo/poster.png)](docs/demo/agenterm-cleanup.mp4)
+
+[Demo video — MP4, 1:42](docs/demo/agenterm-cleanup.mp4) · [Chinese/English subtitles](docs/demo/subtitles.zh-en.srt) · [Demo details and media credits](docs/demo/README.md)
+
+Chinese narration, bilingual captions, and pauses for reading each step.
+
 ## Use the hosted service
 
 Connect an agent that supports Streamable HTTP to the hosted Server; no Server deployment is needed:

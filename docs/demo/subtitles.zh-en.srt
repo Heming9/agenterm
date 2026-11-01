@@ -1,0 +1,84 @@
+1
+00:00:00,150 --> 00:00:02,512
+Agenterm，远程终端协助。
+Agenterm: remote terminal assistance.
+
+2
+00:00:03,600 --> 00:00:07,125
+先让 Kimi 接入 Agenterm 的云端 MCP。
+First, connect Kimi to Agenterm's cloud MCP endpoint.
+
+3
+00:00:10,600 --> 00:00:14,000
+接着，请 Agent 生成远程连接邀请。
+Next, ask the Agent to create a remote connection invitation.
+
+4
+00:00:16,100 --> 00:00:19,438
+Agenterm 返回一条完整的一键连接命令。
+Agenterm returns a complete one-command installer.
+
+5
+00:00:24,600 --> 00:00:28,800
+把这条命令交给目标电脑，在右侧终端执行。
+Run that same command in the target terminal on the right.
+
+6
+00:00:34,600 --> 00:00:38,562
+阅读提示后，输入 Y，授权这次远程连接。
+Read the prompt, then enter Y to authorize this remote connection.
+
+7
+00:00:44,100 --> 00:00:48,375
+看到 Connected，目标终端就已经通过云端上线。
+Connected means the target terminal is now online through the cloud service.
+
+8
+00:00:49,600 --> 00:00:52,575
+现在，请 Agent 帮忙清理垃圾。
+Now ask the Agent to clean up unwanted files.
+
+9
+00:00:54,100 --> 00:00:57,238
+这次只处理准备好的临时演示文件。
+This demo only uses disposable sample files prepared in advance.
+
+10
+00:00:59,600 --> 00:01:02,400
+先扫描，再查看可清理清单。
+Scan first, then review the cleanup list.
+
+11
+00:01:05,200 --> 00:01:08,062
+缓存九十六兆，日志三十二兆，
+Cache: 96 MiB. Logs: 32 MiB.
+
+12
+00:01:09,000 --> 00:01:12,313
+临时文件六十四兆，共一百九十二兆。
+Temporary files: 64 MiB. Total: 192 MiB.
+
+13
+00:01:13,600 --> 00:01:17,375
+确认清单后，只删除这三个演示垃圾文件。
+After confirming the list, delete only these three disposable demo files.
+
+14
+00:01:22,600 --> 00:01:27,675
+Agenterm 在目标终端执行清理，并把输出返回给 Agent。
+Agenterm runs the cleanup on the target terminal and returns the output to the Agent.
+
+15
+00:01:29,500 --> 00:01:32,775
+最终，清理了一百九十二兆演示垃圾，
+The cleanup removes 192 MiB of disposable demo files.
+
+16
+00:01:34,100 --> 00:01:35,838
+笔记文件依然保留。
+The notes file is preserved.
+
+17
+00:01:38,300 --> 00:01:41,050
+Agenterm，开源远程终端协助。
+Agenterm: open-source remote terminal assistance.

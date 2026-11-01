@@ -8,6 +8,16 @@
   <p>macOS / Linux / Windows · CLI / GUI · 多客户端 · 交互式会话 · 无需 SSH 服务</p>
 </div>
 
+## 演示视频
+
+通过云托管服务，展示 Agenterm 的完整链路：生成远程连接邀请 → 目标终端执行一键命令 → 确认授权 → 连接成功 → 扫描并清理 192 MiB 临时演示垃圾。Kimi Code 作为 MCP Agent 接入示例。
+
+[![Agenterm 云托管演示：生成邀请、授权连接与远程清理](docs/demo/poster.png)](docs/demo/agenterm-cleanup.mp4)
+
+[查看 / 下载视频 — MP4，1 分 42 秒](docs/demo/agenterm-cleanup.mp4) · [中英双语字幕](docs/demo/subtitles.zh-en.srt) · [演示说明与素材来源](docs/demo/README.md)
+
+包含中文旁白、中英双语字幕和背景音乐，每个关键操作留有阅读停顿。
+
 ## 使用托管服务
 
 无需自行部署 Server，可将支持 Streamable HTTP 的 Agent 连接到：
