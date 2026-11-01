@@ -1,4 +1,8 @@
 {
+  "mcp.stdio.transport": {
+    "en": "also serve management MCP over stdin/stdout (trusted process owner)",
+    "zh-CN": "同时通过标准输入输出提供 MCP 管理接口（信任启动进程的用户）"
+  },
   "client.ip.limit.reached": {
     "en": "client connection limit for this IP reached",
     "zh-CN": "该 IP 的客户端连接数量已达上限"

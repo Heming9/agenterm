@@ -73,6 +73,25 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 For an update, pull the desired source revision and run `docker compose up -d --build` again. Stop the service with `docker compose down`.
 
+## Use a stdio MCP client
+
+For agents that launch a local MCP process, add a configuration like this (replace the executable path and `SERVER_IP`):
+
+```json
+{
+  "mcpServers": {
+    "agenterm": {
+      "command": "/absolute/path/agenterm-server",
+      "args": ["-stdio", "-listen", "0.0.0.0:8080", "-public-url", "http://SERVER_IP:8080"]
+    }
+  }
+}
+```
+
+Stdio grants management access to the user who launches the process; it needs no bearer header. HTTP management authentication remains enabled. The HTTP listener still serves invitations, installers, and target-client WebSockets, so target computers must be able to reach the configured public URL. Use HTTPS through a reverse proxy for public deployments, as described above.
+
+In this mode, stdout contains only MCP messages and startup information goes to stderr. Closing the stdio connection stops the HTTP server too. The interactive Enter-to-regenerate-invitation shortcut is available only in HTTP-only mode.
+
 ## Startup options
 
 View available startup options:

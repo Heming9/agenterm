@@ -8,6 +8,7 @@ import (
 	"agenterm/internal/version"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/big"
 	"net/http"
@@ -71,10 +72,10 @@ func (s *server) deleteInvitation(secret string) {
 	}
 }
 
-func printInstallCommands(index int, invitation string) {
+func printInstallCommands(w io.Writer, index int, invitation string) {
 	shell, powershell := installCommands(invitation)
-	fmt.Printf(serverText("invitation.d.expires.in.15.minutes.share"), index)
-	fmt.Printf(serverText("macos.linux.s.windows.powershell.s"), shell, powershell)
+	fmt.Fprintf(w, serverText("invitation.d.expires.in.15.minutes.share"), index)
+	fmt.Fprintf(w, serverText("macos.linux.s.windows.powershell.s"), shell, powershell)
 }
 
 func installCommands(invitation string) (string, string) {

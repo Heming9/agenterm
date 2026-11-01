@@ -7,19 +7,25 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"agenterm/internal/installer"
 	"agenterm/internal/protocol"
 	"github.com/gorilla/websocket"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type client struct {
@@ -246,6 +252,7 @@ func serverText(key string) string { return i18n.Text(i18n.Terminal(), key) }
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", serverText("http.listen.address"))
+	stdio := flag.Bool("stdio", false, serverText("mcp.stdio.transport"))
 	passwordFlag := flag.String("passwd", "", serverText("mcp.management.key.generated.when.omitted"))
 	noPassword := flag.Bool("no-password", false, serverText("allow.mcp.management.access.without.a.password"))
 	autoCreate := flag.Bool("generate", false, serverText("generate.a.client.token.and.invitation.at"))
@@ -254,6 +261,10 @@ func main() {
 	maxClientsPerIP := flag.Int("max-clients-per-ip", 0, serverText("max.clients.per.ip"))
 	clientIPHeader := flag.String("client-ip-header", "", serverText("client.ip.header"))
 	flag.Parse()
+	var startupOutput io.Writer = os.Stdout
+	if *stdio {
+		startupOutput = os.Stderr
+	}
 	if *maxClientsPerIP < 0 {
 		log.Fatal(serverText("max.clients.per.ip.invalid"))
 	}
@@ -287,7 +298,7 @@ func main() {
 	adminKey := *passwordFlag
 	if !*noPassword && !keySpecified {
 		adminKey = randomManagementKey()
-		fmt.Printf(serverText("mcp.management.key.save.securely.s"), adminKey)
+		fmt.Fprintf(startupOutput, serverText("mcp.management.key.save.securely.s"), adminKey)
 	}
 	s := &server{adminKey: adminKey, noPassword: *noPassword, clientURL: u.String(), clientIPHeader: http.CanonicalHeaderKey(*clientIPHeader), tokens: make(map[string]string), clients: make(map[string]*client), invitations: make(map[string]invitation), maxClientsPerIP: *maxClientsPerIP}
 	if *noPassword {
@@ -302,7 +313,7 @@ func main() {
 		}
 		s.tokens[token] = secret
 		issuedTokens = append(issuedTokens, token)
-		fmt.Printf(serverText("agenterm.token.1.s"), token)
+		fmt.Fprintf(startupOutput, serverText("agenterm.token.1.s"), token)
 	}
 	issueInvitations := func() {
 		type output struct {
@@ -329,26 +340,43 @@ func main() {
 		}
 		s.mu.Unlock()
 		for _, out := range outputs {
-			printInstallCommands(out.index, out.value)
+			printInstallCommands(startupOutput, out.index, out.value)
 		}
-		fmt.Println(serverText("press.enter.to.replace.unredeemed.startup.invitations"))
+		if !*stdio {
+			fmt.Fprintln(startupOutput, serverText("press.enter.to.replace.unredeemed.startup.invitations"))
+		}
 	}
 	if *autoCreate {
 		issueInvitations()
 	}
-	go func() {
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			if *autoCreate {
-				issueInvitations()
+	if !*stdio {
+		go func() {
+			scanner := bufio.NewScanner(os.Stdin)
+			for scanner.Scan() {
+				if *autoCreate {
+					issueInvitations()
+				}
 			}
-		}
-	}()
-	fmt.Printf(serverText("mcp.endpoint.s.mcp"), publicBase)
+		}()
+	}
+	fmt.Fprintf(startupOutput, serverText("mcp.endpoint.s.mcp"), publicBase)
 	if !securePublicURL {
 		log.Print(serverText("warning.http.and.websocket.traffic.is.unencrypted"))
 	}
 	srv := &http.Server{Addr: *listen, Handler: s.routes(downloadTag, assets), ReadHeaderTimeout: 10 * time.Second}
+	if *stdio {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		listener, err := net.Listen("tcp", srv.Addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		go s.cleanupLoop(ctx, time.Minute)
+		if err := s.runStdio(ctx, srv, listener, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal(err)
+		}
+		return
+	}
 	go s.cleanupLoop(context.Background(), time.Minute)
 	log.Fatal(srv.ListenAndServe())
 }

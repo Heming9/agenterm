@@ -73,6 +73,25 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 更新时切换到需要的源码版本，再执行 `docker compose up -d --build`；停止服务用 `docker compose down`。
 
+## 接入 stdio MCP 客户端
+
+如果 Agent 通过启动本地进程接入 MCP，可以使用以下配置，将程序路径和 `SERVER_IP` 替换为实际值：
+
+```json
+{
+  "mcpServers": {
+    "agenterm": {
+      "command": "/absolute/path/agenterm-server",
+      "args": ["-stdio", "-listen", "0.0.0.0:8080", "-public-url", "http://SERVER_IP:8080"]
+    }
+  }
+}
+```
+
+stdio 信任启动该进程的用户，直接提供管理权限，无需填写 Bearer 认证头；HTTP 管理接口仍保留认证。HTTP 监听继续提供邀请兑换、安装资源和目标客户端 WebSocket，目标电脑需要能访问配置的公开地址。公网部署请按前文配置 HTTPS 反向代理。
+
+此模式下 stdout 只输出 MCP 消息，启动信息写入 stderr。stdio 连接关闭后，HTTP 服务也会停止。按回车重新生成邀请的交互快捷方式只在纯 HTTP 模式下启用。
+
 ## 启动选项
 
 查看可用启动选项：
