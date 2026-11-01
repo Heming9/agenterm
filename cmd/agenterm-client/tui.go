@@ -198,7 +198,9 @@ func (m *tuiModel) appendLog(kind, s string) {
 		}
 		m.logs = b.String()
 	}
-	m.refreshLog()
+	if !m.selecting {
+		m.refreshLog()
+	}
 }
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -207,15 +209,14 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		atBottom := m.viewport.AtBottom()
 		m.viewport.Width = max(1, msg.Width-2)
 		m.viewport.Height = max(1, msg.Height-5)
-		m.refreshLog()
+		if !m.selecting {
+			m.refreshLog()
+		}
 		if atBottom {
 			m.viewport.GotoBottom()
 		}
-		m.input.Width = max(1, msg.Width-4)
-		if m.selecting {
-			m.selectionView = ""
-			m.selectionView = m.View()
-		}
+		// Reserve the form's left margin, prompt and cursor cell.
+		m.input.Width = max(1, m.viewport.Width-ansi.StringWidth(m.input.Prompt)-2)
 	case tea.MouseMsg:
 		// The log begins below the header and divider, at screen row 2.
 		if m.selecting || m.state == "disconnected" || msg.X < 0 || msg.X >= m.viewport.Width || msg.Y < 2 || msg.Y >= 2+m.viewport.Height {
@@ -242,13 +243,14 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "s":
 				m.selecting = !m.selecting
 				if m.selecting {
-					// Hold the rendered screen steady while the terminal owns selection.
-					// Incoming events still update the model and are shown on return.
-					m.selectionView = m.View()
-					return m, tea.DisableMouse
+					// Print a stable, unfolded snapshot into the terminal's main
+					// buffer so its native scrollback and cross-screen selection work.
+					m.selectionView = tr("tui.selection.help")
+					return m, tea.Sequence(tea.DisableMouse, tea.ExitAltScreen, tea.Println(strings.TrimSuffix(m.logs, "\n")))
 				}
 				m.selectionView = ""
-				return m, tea.EnableMouseCellMotion
+				m.refreshLog()
+				return m, tea.Sequence(tea.EnterAltScreen, tea.EnableMouseCellMotion)
 			case "c":
 				if m.selecting {
 					return m, nil
@@ -341,7 +343,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.selecting {
 				m.selecting, m.selectionView = false, ""
-				return m, tea.Batch(textinput.Blink, tea.EnableMouseCellMotion)
+				return m, tea.Sequence(tea.EnterAltScreen, tea.EnableMouseCellMotion, textinput.Blink)
 			}
 			return m, textinput.Blink
 		}
@@ -365,6 +367,9 @@ func (m *tuiModel) switchSource(id string) {
 }
 func (m *tuiModel) View() string {
 	if m.selectionView != "" {
+		if m.width > 0 {
+			return ansi.Truncate(m.selectionView, m.width, "")
+		}
 		return m.selectionView
 	}
 	view := m.view()
@@ -401,15 +406,29 @@ func (m *tuiModel) view() string {
 		status = style.Render(status)
 	}
 	header := m.header(status)
+	content := m.viewport.View()
+	help := fmt.Sprintf(tr("d.commands.scroll.c.clear.q.quit"), m.completed)
 	if m.state == "disconnected" {
-		return header + "\n\n " + tr("connection.token") + "\n " + m.input.View() + "\n\n " + m.message + "\n\n " + tr("enter.connect.ctrl.c.quit")
+		content = m.connectionView()
+		help = "\n " + tr("enter.connect.ctrl.c.quit")
 	}
 	line := strings.Repeat("─", max(1, m.width-2))
-	help := fmt.Sprintf(tr("d.commands.scroll.c.clear.q.quit"), m.completed)
 	if m.selecting {
 		help = "\n " + tr("tui.selection.help")
 	}
-	return header + "\n " + line + "\n" + m.viewport.View() + "\n " + line + help
+	return header + "\n " + line + "\n" + content + "\n " + line + help
+}
+func (m *tuiModel) connectionView() string {
+	content := " " + tr("connection.token") + "\n " + m.input.View()
+	if m.message != "" {
+		content += "\n\n " + logStyles["error"].Render(m.message)
+	}
+	return lipgloss.NewStyle().
+		Width(m.viewport.Width).
+		Height(m.viewport.Height).
+		MaxWidth(m.viewport.Width).
+		MaxHeight(m.viewport.Height).
+		Render(content)
 }
 func (m *tuiModel) header(status string) string {
 	width := m.width

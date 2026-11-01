@@ -156,11 +156,12 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.23 preview release.
+          Agenterm v0.2.24 preview release.
 
-          - Collapse multiline commands and output to one-line previews; click to expand or collapse.
-          - Add selection mode (s) for native terminal selection and copying while continuing to collect output.
-          - Simplify the TUI footer and preserve expansion state during streaming output and terminal resizing.
+          - Increase CLI and GUI log history to 10 MiB.
+          - Use native terminal history in selection mode for scrolling and copying across screens while continuing to collect output.
+          - Unify disconnected and failed-connection TUI layouts with the main screen, keeping both dividers and the footer.
+          - Add six-character invitation codes and configurable server URL prefixes.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

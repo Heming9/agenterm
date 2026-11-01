@@ -1,7 +1,6 @@
 package main
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -20,12 +19,12 @@ func TestTUISelectionReleasesMouseAndPreservesIncomingOutput(t *testing.T) {
 	m.Update(tuiEvent{id: "one", output: []byte("first\nsecond\n")})
 	clickTUILog(t, m, "▸ first")
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if cmd == nil || reflect.TypeOf(cmd()) != reflect.TypeOf(tea.DisableMouse()) {
-		t.Fatal("selection mode must disable terminal mouse reporting")
+	if cmd == nil || !m.selecting {
+		t.Fatal("selection mode must hand control to the terminal")
 	}
 	frozen := m.View()
-	if !strings.Contains(ansi.Strip(frozen), "选择模式") || !strings.Contains(ansi.Strip(frozen), "second") {
-		t.Fatalf("selection mode lost expanded content or instructions:\n%s", frozen)
+	if !strings.Contains(ansi.Strip(frozen), "选择模式") {
+		t.Fatalf("selection mode lost its return instructions:\n%s", frozen)
 	}
 	m.Update(tuiEvent{id: "one", output: []byte("third\n")})
 	delay := 50 * time.Millisecond
@@ -39,7 +38,7 @@ func TestTUISelectionReleasesMouseAndPreservesIncomingOutput(t *testing.T) {
 		t.Fatal("selection changed on incoming output or output was lost")
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if cmd == nil || reflect.TypeOf(cmd()) != reflect.TypeOf(tea.EnableMouseCellMotion()) {
+	if cmd == nil || m.selecting {
 		t.Fatal("returning from selection mode must restore mouse interaction")
 	}
 	view := ansi.Strip(m.View())
@@ -49,6 +48,29 @@ func TestTUISelectionReleasesMouseAndPreservesIncomingOutput(t *testing.T) {
 	clickTUILog(t, m, "▾ first")
 	if !strings.Contains(ansi.Strip(m.viewport.View()), "▸ first") {
 		t.Fatal("click to collapse was not restored")
+	}
+}
+
+func TestTUISelectionRetainsScrollPositionAndExpansion(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.Update(tuiEvent{connected: true})
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	m.appendLog("output", strings.Repeat("earlier output\n", 20))
+	m.appendLog("system", "\nnext command\n")
+	m.appendLog("output", "later output\nsecond line\n")
+	clickTUILog(t, m, "▸ later output")
+	m.viewport.GotoTop()
+	before := m.viewport.View()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	m.appendLog("system", "new output while selecting\n")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if m.viewport.YOffset != 0 || m.viewport.View() != before {
+		t.Fatal("returning from selection lost the log browsing position")
+	}
+	m.viewport.GotoBottom()
+	if !strings.Contains(ansi.Strip(m.viewport.View()), "▾ later output") {
+		t.Fatal("selection mode changed the expansion state")
 	}
 }
 
