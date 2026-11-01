@@ -6,12 +6,15 @@ import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -222,6 +225,9 @@ func runWithCallbacks(ctx context.Context, token string, invitation bool, logWri
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+t.Secret)
 	headers.Set(version.Header, version.Current)
+	hostname, _ := os.Hostname()
+	headers.Set(protocol.HostnameHeader, base64.RawURLEncoding.EncodeToString([]byte(hostname)))
+	headers.Set(protocol.PlatformHeader, runtime.GOOS)
 	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, t.URL, headers)
 	if err != nil {
 		if resp != nil {

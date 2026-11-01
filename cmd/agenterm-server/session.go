@@ -86,12 +86,12 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (m
 		}
 	}
 }
-func (s *server) startSession(secret, command string) (*session, error) {
+func (s *server) startSession(secret, clientID, command string) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c := s.clients[secret]
-	if c == nil {
-		return nil, i18n.NewError("no.client.connected")
+	c, err := s.targetClientLocked(secret, clientID)
+	if err != nil {
+		return nil, err
 	}
 	if s.sessions == nil {
 		s.sessions = make(map[string]*session)

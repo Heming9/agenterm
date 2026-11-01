@@ -22,6 +22,9 @@ const (
 	tokenFormat     = 16 // Namespaced routes; older token formats are unsupported.
 )
 
+const HostnameHeader = "X-Agenterm-Hostname"
+const PlatformHeader = "X-Agenterm-Platform"
+
 type Token struct {
 	URL    string
 	Secret string

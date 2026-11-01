@@ -37,8 +37,6 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 	}
 	value := issued["invitation"].(string)
 	token, _ := protocol.Decode(issued["client_token"].(string))
-	waiter := make(chan struct{})
-	s.waiters = map[string]map[chan struct{}]struct{}{token.Secret: {waiter: {}}}
 	for i := 0; i < 2; i++ {
 		ws, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + value}})
 		if err != nil {
@@ -57,11 +55,6 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 		if connected != 0 || invitations != 1 {
 			t.Fatalf("probe changed state: clients=%d invitations=%d", connected, invitations)
 		}
-		select {
-		case <-waiter:
-			t.Fatal("probe woke a client waiter")
-		default:
-		}
 	}
 	got, err := invite.Redeem(context.Background(), value)
 	if err != nil || got != issued["client_token"] {
@@ -76,16 +69,18 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 			t.Fatalf("redeemed probe status: %d", response.StatusCode)
 		}
 	}
-	// A genuine connection still registers and wakes the waiter after a probe.
+	// A genuine connection still registers after a probe.
 	ws, _, err := websocket.DefaultDialer.Dial(s.clientURL, http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + token.Secret}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	select {
-	case <-waiter:
-	case <-time.After(time.Second):
-		t.Fatal("real connection did not wake waiter")
+	deadline := time.Now().Add(time.Second)
+	for len(s.listClients(token.Secret)) != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("real connection did not register")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

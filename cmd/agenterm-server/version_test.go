@@ -20,8 +20,6 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 	value := issued["invitation"].(string)
 	invitation, _ := protocol.Decode(value)
 	token, _ := protocol.Decode(issued["client_token"].(string))
-	waiter := make(chan struct{})
-	s.waiters = map[string]map[chan struct{}]struct{}{token.Secret: {waiter: {}}}
 	for _, peer := range []string{"0.2.13-rc.1", "0.2.99-rc.1", "0.1.13", "0.3.0", "1.2.13", "", "invalid"} {
 		for _, endpoint := range []string{"redeem", "probe", "connect"} {
 			r := httptest.NewRequest("GET", protocol.ClientPath, nil)
@@ -45,11 +43,6 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 			}
 			if len(s.clients) != 0 || len(s.invitations) != 1 {
 				t.Fatal("incompatible connection changed server state")
-			}
-			select {
-			case <-waiter:
-				t.Fatal("incompatible connection woke waiter")
-			default:
 			}
 		}
 	}

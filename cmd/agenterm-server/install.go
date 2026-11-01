@@ -44,7 +44,7 @@ func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
 // The URL carries the existing 128-bit invitation secret. It has the same
-// expiry and single redemption as the full invitation; no alias state is needed.
+// expiry and redemption policy as the full invitation; no alias state is needed.
 func (s *server) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

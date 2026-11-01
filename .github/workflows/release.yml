@@ -156,11 +156,12 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.19 preview release.
+          Agenterm v0.2.20 preview release.
 
-          - Add an optional per-issuing-IP limit for connected clients and pending credentials, with oldest-unused invitation recycling.
-          - Read the issuing IP from the reverse proxy's X-Real-IP header when the quota is enabled. Restrict direct Server access and configure the proxy to overwrite this header.
-          - Remove the fixed global limit of 1,000 client tokens.
+          - Add multi-device tokens with reusable 15-minute invitations and simultaneous device connections.
+          - Replace wait_for_client with list_clients for device discovery and polling.
+          - Route commands and interactive sessions using six-character lowercase alphanumeric client IDs; device output and cancellation remain independent.
+          - Count every online device toward the existing per-issuing-IP quota. Single-device tokens retain their existing connection behavior.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

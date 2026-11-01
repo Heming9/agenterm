@@ -26,8 +26,8 @@ url = "https://agenterm.net/mcp"
 Restart the agent or reload its MCP configuration, then:
 
 1. Call `create_client` with `{}`. **Privately share** the one-command installer for the target's OS from the returned `display_text` with the person using that computer.
-2. The recipient runs the command on their computer, reads the prompt, and authorizes remote control. The macOS/Linux and Windows commands share one invitation: use either one. Invitations expire after 15 minutes and can be redeemed once.
-3. Call `wait_for_client` with the returned `client_token`. Once it reports `connected`, pass that same `client_token` to `execute_command` or a session tool to select the target, for example:
+2. The recipient runs the command on their computer, reads the prompt, and authorizes remote control. The macOS/Linux and Windows commands share one invitation: use either one. Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused.
+3. Poll `list_clients` with the returned `client_token`. Once the device appears in the `clients` array, pass that same `client_token` to `execute_command` or a session tool, for example:
 
    ```json
    {"client_token":"agenterm:...","command":"pwd && ls"}
@@ -83,8 +83,8 @@ Use the same full token as the client. Then call `execute_command`:
 
 | Tool | Use |
 | --- | --- |
-| `create_client` | Create a token and one-time invitation. Requires management access. |
-| `wait_for_client` | Wait for the target to connect. |
+| `create_client` | Create a token and invitation; `multi_device: true` enables multiple devices. Requires management access. |
+| `list_clients` | List online devices for this token; poll to discover connections. |
 | `execute_command` | Run a command; return output and exit code when done. |
 | `session_start` | Start an interactive command; return `session_id`. |
 | `session_read` | Read output with `session_id` and `cursor`; reuse `next_cursor`. |
@@ -94,10 +94,31 @@ Use the same full token as the client. Then call `execute_command`:
 For multiple targets, connect MCP with the server’s printed **management key**. Call `create_client` with `{}`, show its `display_text` to the target user, then pass the returned `client_token` in subsequent tool calls:
 
 ```json
-{"client_token":"agenterm:...","timeout_ms":90000}
+{"client_token":"agenterm:..."}
 ```
 
-Without `--generate`, the server creates connections only on demand. A client token controls one target; the management key controls all targets.
+Without `--generate`, the server creates connections only on demand. A client token controls its devices; the management key can select any token. `--generate` still creates a single-device token.
+
+### Multi-device tokens
+
+Call `create_client` with `{"multi_device":true}` to let multiple devices connect simultaneously with one token. Its one-command installers can be reused for 15 minutes. Omitting the parameter or setting it to `false` preserves single-device behavior.
+
+After showing `display_text` to the target users, poll `list_clients` with that token:
+
+```json
+{"clients":[{"client_id":"a3k9m2","hostname":"MacBook","platform":"darwin","connected_at":"2026-11-01T00:00:00Z"}]}
+```
+
+Each `client_id` has six lowercase letters or digits; the server checks for collisions among online connections before assigning it. Hostnames are display-only and may repeat. Older clients report empty hostname/platform fields. Disconnected devices disappear from the list; reconnecting assigns a new ID.
+
+For multi-device tokens, `execute_command` and `session_start` require `client_id`, even when only one device is online:
+
+```json
+{"client_token":"agenterm:...","client_id":"a3k9m2","command":"pwd && ls"}
+```
+
+Make concurrent calls with different IDs to operate in parallel. Output, cancellation, and sessions remain independent per device. `session_read`, `session_write`, and `session_stop` continue to use `session_id`, plus `client_token` for management access. Single-device tokens may omit `client_id`. When authenticating MCP directly with a client token, omit `client_token`.
+
 
 ## Clients
 
@@ -117,7 +138,7 @@ Release servers provide CLI archives for all six OS/architecture combinations an
 
 Commands use a short `/agenterm/c/<22-character invitation ID>` endpoint, with a `.ps1` suffix for Windows. The server dynamically fills in the invitation, version, and download URL. The ID reuses the existing 128-bit random invitation credential. Fetching the script does not consume the invitation, and responses disable caching. Treat the URL as an invitation: share it privately and exclude it from proxy access logs.
 
-Invitations expire after 15 minutes and can be redeemed once. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. Redeemed client tokens remain reusable until the server restarts, with one connected client per token. Share credentials privately; invitation commands may remain in shell history.
+Invitations expire after 15 minutes. Single-device invitations can be redeemed once; multi-device invitations can be reused. In the server console, Enter replaces unused startup invitations; existing connections and MCP-created invitations are unaffected. Redeemed client tokens remain reusable until the server restarts, with one connected client per single-device token or multiple clients per multi-device token. Share credentials privately; invitation commands may remain in shell history.
 
 The target only needs access to `-public-url`; installation and connection do not access GitHub. `127.0.0.1` works only locally. Reverse proxies only need to forward `/agenterm/`, preserving the prefix and allowing WebSocket upgrades and the Authorization header. Failed probes stop installation before downloading the manifest or CLI. After a successful probe, each invocation fetches the checksum manifest from the server and verifies the cached CLI, downloading it again if missing or damaged. Cache locations, partitioned by version, OS, and architecture:
 
@@ -146,13 +167,13 @@ Configure an HTTPS reverse proxy with WebSocket support separately. `-public-url
 
 MCP accepts `Authorization: Bearer <management key>` or `Authorization: Bearer <client token>`. Management calls select a target with `client_token`; ordinary client tokens cannot call `create_client`. You can also configure one MCP entry per target. Your agent must support Streamable HTTP and custom headers.
 
-`create_client` returns `client_token`, `invitation`, `expires_at`, and `display_text`. Release builds also return `macos_linux_command` and `windows_powershell_command`; both redeem the same invitation, so use one. All tokens and invitations expire on restart, even with a fixed management key.
+`create_client` returns `client_token`, `multi_device`, `invitation`, `expires_at`, and `display_text`. Release builds also return `macos_linux_command` and `windows_powershell_command`; both redeem the same invitation; choose the matching command on each device. All tokens and invitations expire on restart, even with a fixed management key.
 
 `-no-password` disables MCP management authentication: anyone who can reach the endpoint can create and control connections. Keep this mode private. It cannot be combined with `--passwd`.
 
 ### Limit clients by issuing IP
 
-`--max-clients-per-ip 5` limits each issuing IP to five connected clients; the default `0` disables this limit. The issuing IP is the MCP caller of `create_client`, not the invited machine. This works in either authentication mode.
+`--max-clients-per-ip 5` limits each issuing IP to five connected clients; the default `0` disables this limit. The issuing IP is the MCP caller of `create_client`, not the invited machine. Each online device under a multi-device token consumes one slot. This works in either authentication mode.
 
 While fewer than five clients are online, a new invitation can be created. Online clients plus tokens that have never connected are capped at five per issuing IP. If pending capacity is full, creating an invitation revokes the oldest never-connected token and its invitation, including an already redeemed invitation. Expired unredeemed invitations and their never-connected tokens are removed on the next creation. Creation is rejected when all slots are online; reconnects also check the limit. Previously connected tokens survive disconnects and new invitations; Server restart invalidates all tokens. Startup tokens from `--generate` have no issuing IP and are exempt.
 
@@ -176,7 +197,7 @@ Client tokens contain the server address and a 128-bit random credential. All en
 <details>
 <summary>Session behavior & platform limits</summary>
 
-- After `create_client` succeeds, the agent must first show `display_text`, then call `wait_for_client` with the returned `client_token`. Only execute commands or start sessions after it returns `{"status":"connected"}`. `wait_for_client` may also return `{"status":"timeout"}`. `timeout_ms`: default 90000 (90 seconds), range 0–300000; 0 checks immediately. The agent host must allow the chosen duration; call again after a timeout if needed. This sequence is instructed through tool descriptions, not enforced by the server.
+- After `create_client` succeeds, first show `display_text`, then poll `list_clients` with the returned `client_token` at reasonable intervals (for example, every 2 seconds). No devices online returns `{"clients":[]}`. Execute commands or start sessions only after the target appears. The wait tool has been removed.
 - `session_read` polls for output. `wait_ms` waits up to 20000 ms; `done: true` includes `exit_code`. Each session retains the latest 1 MiB; lagging readers receive `truncated: true`. Finished sessions remain for at least 30 minutes and are cleaned up when a new session starts.
 - macOS/Linux sessions use a PTY. Windows uses pipes: simple prompts work, programs requiring a real terminal do not. Remote graphical interfaces are unsupported.
 - Full-screen terminal apps emit control sequences the agent may not understand. The CLI strips these from its local log; it is a log viewer. Input may be echoed, so avoid entering secrets through the agent.

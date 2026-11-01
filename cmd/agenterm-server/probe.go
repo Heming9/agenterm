@@ -10,7 +10,7 @@ import (
 )
 
 // A probe uses the real client route and WebSocket upgrade, but never redeems
-// the invitation, registers a client, wakes waiters, or accepts commands.
+// the invitation, registers a client, or accepts commands.
 func (s *server) probeConnection(w http.ResponseWriter, r *http.Request) {
 	value := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	token, err := protocol.Decode(value)

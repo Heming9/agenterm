@@ -27,7 +27,7 @@ url = "https://agenterm.net/mcp"
 
 1. 调用 `create_client`，参数为 `{}`。向目标电脑的使用者**私下发送**返回的 `display_text` 中适合其系统的一键连接命令。
 2. 对方在自己的电脑上运行命令，阅读提示并确认远程控制授权。macOS/Linux 和 Windows 命令使用同一个邀请，任选其一；邀请 15 分钟内有效且只能兑换一次。
-3. 使用 `create_client` 返回的 `client_token` 调用 `wait_for_client`；返回 `connected` 后，将同一个 `client_token` 传给 `execute_command` 或会话工具以选择目标，例如：
+3. 使用返回的 `client_token` 轮询 `list_clients`；设备出现在 `clients` 数组后，将同一个 `client_token` 传给 `execute_command` 或会话工具，例如：
 
    ```json
    {"client_token":"agenterm:...","command":"pwd && ls"}
@@ -83,8 +83,8 @@ Authorization:  Bearer agenterm:...
 
 | 工具 | 用途 |
 | --- | --- |
-| `create_client` | 创建 token 和一次性邀请，需要管理权限。 |
-| `wait_for_client` | 等待目标电脑上线。 |
+| `create_client` | 创建 token 和邀请；`multi_device: true` 开启多设备模式。需要管理权限。 |
+| `list_clients` | 列出当前 token 下所有在线设备，供 Agent 轮询。 |
 | `execute_command` | 执行命令，结束后返回输出和退出码。 |
 | `session_start` | 启动交互式命令，返回 `session_id`。 |
 | `session_read` | 用 `session_id` 和 `cursor` 读输出，下次传入返回的 `next_cursor`。 |
@@ -94,10 +94,31 @@ Authorization:  Bearer agenterm:...
 管理多台电脑时，用 Server 输出的**管理密钥**接入 MCP。调用 `create_client`（参数 `{}`），向对方展示返回的 `display_text`，后续工具调用通过 `client_token` 选择目标：
 
 ```json
-{"client_token":"agenterm:...","timeout_ms":90000}
+{"client_token":"agenterm:..."}
 ```
 
-不加 `--generate` 时，Server 只按需创建连接。Client token 控制单个目标，管理密钥控制所有目标。
+不加 `--generate` 时，Server 只按需创建连接。Client token 控制其下的设备，管理密钥可选择所有 token。`--generate` 创建的仍是单设备 token。
+
+### 多设备 token
+
+调用 `create_client` 时传入 `{"multi_device":true}`，同一个 token 可让多台设备同时在线；返回的一键连接命令在 15 分钟内可重复使用。省略该参数或传 `false` 时，保持单设备行为。
+
+向目标用户展示 `display_text` 后，使用该 token 轮询 `list_clients`：
+
+```json
+{"clients":[{"client_id":"a3k9m2","hostname":"MacBook","platform":"darwin","connected_at":"2026-11-01T00:00:00Z"}]}
+```
+
+`client_id` 为 6 位小写字母或数字，服务端检查在线连接间的冲突后分配。主机名仅用于展示，允许重复；旧客户端没有上报信息时主机名和系统为空。设备断线后从列表移除，重连分配新 ID。
+
+多设备模式下，`execute_command` 和 `session_start` 必须提供 `client_id`，即使只有一台设备在线：
+
+```json
+{"client_token":"agenterm:...","client_id":"a3k9m2","command":"pwd && ls"}
+```
+
+通过不同 `client_id` 并发调用即可并行操作，各设备输出、取消和会话独立。`session_read`、`session_write`、`session_stop` 继续使用 `session_id`，管理模式还需传 `client_token`。单设备 token 可省略 `client_id`；使用 token 直接认证 MCP 时可省略 `client_token`。
+
 
 ## 客户端
 
@@ -117,7 +138,7 @@ Authorization:  Bearer agenterm:...
 
 命令使用 `/agenterm/c/<22位邀请ID>` 短入口，Windows 入口带 `.ps1` 后缀。Server 动态返回带好邀请、版本和下载地址的安装脚本。入口 ID 复用原有 128 位随机邀请凭证；获取脚本不会消耗邀请，响应禁止缓存。入口 URL 等同于邀请，应私下分享并避免记录到代理访问日志。
 
-邀请 15 分钟有效，只能兑换一次。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。兑换后的 Client token 可重复使用，Server 重启后失效，每个 token 同时只允许一个 Client 在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
+邀请 15 分钟有效，单设备模式只能兑换一次，多设备模式可重复兑换。在 Server 控制台按回车可替换启动时生成的未用邀请，不影响已有连接或 MCP 创建的邀请。兑换后的 Client token 可重复使用，Server 重启后失效，单设备 token 同时只允许一个 Client 在线，多设备 token 允许多台设备同时在线。凭证应私下分享；邀请命令可能留在 shell 历史中。
 
 目标电脑只需访问 `-public-url`，连接和下载过程均无需访问 GitHub；`127.0.0.1` 仅适用于同机。反向代理只需统一转发 `/agenterm/`，保留此前缀，并允许 WebSocket 升级及 Authorization 请求头。探测失败时停止下载；探测成功后，每次运行都会从 Server 获取校验清单并校验缓存的 CLI，缺失或损坏时重新下载。缓存按版本、系统和架构存放：
 
@@ -146,13 +167,13 @@ Server 默认监听 `127.0.0.1:8080`，每次启动生成 10 位小写字母和�
 
 MCP 接受 `Authorization: Bearer <管理密钥>` 或 `Authorization: Bearer <Client token>`。管理模式用参数 `client_token` 选择目标；普通 Client token 无权调用 `create_client`。也可为每个目标单独配置 MCP。Agent 需支持 Streamable HTTP 和自定义请求头。
 
-`create_client` 返回 `client_token`、`invitation`、`expires_at` 和 `display_text`。发布版还返回 `macos_linux_command` 与 `windows_powershell_command`，两条命令共用同一个邀请，任选其一。即使管理密钥固定，所有 token 和邀请仍在重启后失效。
+`create_client` 返回 `client_token`、`multi_device`、`invitation`、`expires_at` 和 `display_text`。发布版还返回 `macos_linux_command` 与 `windows_powershell_command`，两条命令共用同一个邀请，每台设备按其系统选择。即使管理密钥固定，所有 token 和邀请仍在重启后失效。
 
 `-no-password` 关闭 MCP 管理认证，任何能访问接口的人都能创建和控制连接，仅限私有环境。不能与 `--passwd` 同用。
 
 ### 按创建者 IP 限制客户端
 
-`--max-clients-per-ip 5` 将每个创建者 IP 的在线客户端限制为 5 个，默认 `0` 表示不限制。配额按调用 MCP `create_client` 的 IP 计算，而不是受邀电脑的 IP。此功能适用于两种认证模式。
+`--max-clients-per-ip 5` 将每个创建者 IP 的在线客户端限制为 5 个，默认 `0` 表示不限制。配额按调用 MCP `create_client` 的 IP 计算，而不是受邀电脑的 IP。多设备 token 下的每台在线设备都占一个名额。此功能适用于两种认证模式。
 
 在线连接未满时可以创建邀请；在线数加上尚未连接过的 token 数最多为 5。待使用名额已满时，新邀请会撤销该 IP 最早创建且从未连接过的 token 及对应邀请，即使邀请已兑换。未兑换的邀请过期时，其从未连接过的 token 在下次创建邀请时回收。在线数已满时不能创建；客户端重连时也会检查上限。已连接过的 token 不会因为断线或新邀请被回收；Server 重启后所有 token 失效。`--generate` 在启动时生成的 token 没有创建者 IP，不受此配额限制。
 
@@ -176,7 +197,7 @@ Client token 包含 Server 地址和 128 位随机凭证。所有接口统一使
 <details>
 <summary>会话行为与平台限制</summary>
 
-- `create_client` 成功后，Agent 必须先展示 `display_text`，再使用返回的 `client_token` 调用 `wait_for_client`；仅在返回 `{"status":"connected"}` 后执行命令或启动会话。`wait_for_client` 也可能返回 `{"status":"timeout"}`。`timeout_ms` 默认 90000（90 秒），范围 0–300000，0 表示立即检查。Agent 宿主需允许对应时长，超时后可按需再次调用。调用顺序通过工具描述提示，不由服务端强制校验。
+- `create_client` 成功后，Agent 先展示 `display_text`，再使用返回的 `client_token` 以合理间隔轮询 `list_clients`（例如每 2 秒一次）。没有设备在线时返回 `{"clients":[]}`；目标上线后才执行命令或启动会话。等待工具已移除。
 - `session_read` 通过轮询获取输出，`wait_ms` 最多等待 20000 毫秒；`done: true` 时返回 `exit_code`。每个会话保留最近 1 MiB 输出，读取落后时返回 `truncated: true`。已结束会话保留至少 30 分钟，新建会话时清理。
 - macOS/Linux 会话使用 PTY。Windows 使用管道，支持简单提示交互，不支持要求真实终端的程序。暂不支持远程图形界面。
 - 全屏终端程序输出的控制序列可能无法被 Agent 正确理解。CLI 会过滤本地日志中的控制序列，它是日志查看器。输入可能被回显，避免通过 Agent 输入敏感信息。

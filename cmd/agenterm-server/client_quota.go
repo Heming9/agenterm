@@ -16,8 +16,8 @@ type clientOwner struct {
 // The caller holds s.mu for both helpers.
 func (s *server) onlineForIP(ip string) int {
 	n := 0
-	for secret, owner := range s.clientOwners {
-		if owner.ip == ip && s.clients[secret] != nil {
+	for _, c := range s.clients {
+		if owner := s.clientOwners[c.secret]; owner != nil && owner.ip == ip {
 			n++
 		}
 	}
@@ -50,6 +50,7 @@ func (s *server) trimPending(ip string, max int) {
 		}
 		delete(s.tokens, oldest.token)
 		delete(s.clientOwners, oldestSecret)
+		delete(s.multiDevice, oldestSecret)
 	}
 }
 

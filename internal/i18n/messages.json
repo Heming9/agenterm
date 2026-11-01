@@ -387,10 +387,6 @@
     "en": "valid client_token is required",
     "zh-CN": "需要有效的 client_token"
   },
-  "timeout.ms.must.be.between.0.and.300000": {
-    "en": "timeout_ms must be between 0 and 300000",
-    "zh-CN": "timeout_ms 必须在 0 到 300000 之间"
-  },
   "command.is.required": {
     "en": "command is required",
     "zh-CN": "必须提供 command"
@@ -575,14 +571,6 @@
     "en": "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. %s",
     "zh-CN": "WebSocket 连通性检查失败，请检查服务器地址、网络、代理和邀请有效性。%s"
   },
-  "mcp.after.sharing.the.invitation.or.token.call.this": {
-    "en": "After create_client succeeds, you must first present display_text to the user, then call wait_for_client with the returned client_token. Also call this tool after sharing an existing invitation or token. Waits up to 90 seconds by default and returns connected or timeout. Only execute commands or start sessions after connected; a timeout does not mean the client is connected, and you may call again if appropriate.",
-    "zh-CN": "create_client 成功后，必须先向用户展示 display_text，再使用返回的 client_token 调用 wait_for_client。分享已有邀请或 Token 后也应调用此工具。默认最多等待 90 秒，返回 connected 或 timeout。仅在返回 connected 后执行命令或启动会话；timeout 不代表客户端已连接，可按需再次调用。"
-  },
-  "mcp.maximum.wait.in.milliseconds.default.30000.0.checks": {
-    "en": "Maximum wait in milliseconds (default 90000, i.e. 90 seconds; 0 checks immediately)",
-    "zh-CN": "最长等待时间，单位毫秒（默认 90000，即 90 秒；0 表示立即检查）"
-  },
   "mcp.execute.a.non.interactive.command.and.return.output": {
     "en": "Execute a non-interactive command and return output when it finishes.",
     "zh-CN": "执行非交互命令，并在完成后返回输出。"
@@ -628,8 +616,8 @@
     "zh-CN": "停止运行中的会话。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Create a client connection token and a one-time invitation. After success, you must first present display_text to the user, preserving its token and both platform commands, then call wait_for_client with the returned client_token (default wait: 90 seconds). Only execute commands or start sessions after wait_for_client returns connected. The commands are alternative ways to redeem the same single-use invitation; expires_at is its expiration time. If commands are unavailable, explain that a release build is required. Use client_token with client tools to select this client. Treat tokens and commands as credentials and share privately.",
-    "zh-CN": "创建客户端连接 Token 和一次性邀请。成功后，必须先向用户展示 display_text，完整保留 Token 和两个平台的命令，再使用返回的 client_token 调用 wait_for_client（默认等待 90 秒）。仅在 wait_for_client 返回 connected 后执行命令或启动会话。这些命令是兑换同一邀请的不同方式；expires_at 为过期时间。命令不可用时，请说明需要发布版。调用客户端工具时使用 client_token 选择此客户端。Token 和命令均为凭据，请私密分享。"
+    "en": "Create a client connection token and a 15-minute invitation. Set multi_device=true for multiple simultaneous devices and a reusable invitation; otherwise the invitation is single-use and only one device may connect. First show display_text including both platform commands, then poll list_clients using client_token. Use client_id to target devices for multi-device tokens. Session tools use session_id after starting a session. If commands are unavailable, explain that a release build is required. Treat tokens and commands as credentials and share privately.",
+    "zh-CN": "创建客户端连接 Token 和 15 分钟有效的邀请。设置 multi_device=true 可让多台设备同时在线且邀请可重复兑换；否则邀请仅可兑换一次、仅允许一台设备在线。先展示包含两个平台命令的 display_text，再使用 client_token 轮询 list_clients。多设备 Token 通过 client_id 选择设备，启动会话后通过 session_id 操作。命令不可用时说明需要发布版。Token 和命令均为凭据，请私密分享。"
   },
   "mcp.target.client.connection.token.required.when.authenticated.with": {
     "en": "Target client connection token (required when authenticated with the management key)",
@@ -690,5 +678,29 @@
   "client.connection.lock.failed": {
     "en": "Cannot reserve the local connection: %v",
     "zh-CN": "无法获取本机连接锁：%v"
+  },
+  "mcp.list.clients": {
+    "en": "List currently online devices belonging to this client_token. After creating a token, first show display_text to the user, then poll list_clients at reasonable intervals until the desired devices appear. Use their client_id to execute commands or start sessions. Returns an empty clients array when none are online.",
+    "zh-CN": "列出当前 client_token 下在线的设备。创建 Token 后先展示 display_text，再以合理间隔轮询 list_clients，直到所需设备出现。使用返回的 client_id 执行命令或启动会话。没有设备在线时返回空 clients 数组。"
+  },
+  "mcp.client.id": {
+    "en": "Six lowercase letters or digits from list_clients. Required for multi-device tokens, even when only one device is online; optional for single-device tokens.",
+    "zh-CN": "list_clients 返回的 6 位小写字母或数字 ID。多设备 Token 必填，即使只有一台设备在线；单设备 Token 可省略。"
+  },
+  "mcp.multi.device": {
+    "en": "Allow multiple devices to connect simultaneously and reuse the invitation until it expires. Default false.",
+    "zh-CN": "允许多台设备同时在线，并在邀请有效期内重复兑换。默认 false。"
+  },
+  "unknown.client.id": {
+    "en": "Unknown or offline client_id for this token.",
+    "zh-CN": "此 Token 下没有该 client_id，或设备已离线。"
+  },
+  "client.id.required": {
+    "en": "client_id is required for multi-device tokens. Call list_clients to select a device.",
+    "zh-CN": "多设备 Token 必须提供 client_id，请调用 list_clients 选择设备。"
+  },
+  "multi.device.display.notice": {
+    "en": "Multi-device token: multiple devices may connect simultaneously. The invitation commands can be reused for 15 minutes.",
+    "zh-CN": "多设备 Token：允许多台设备同时在线，一键连接命令可在 15 分钟内重复使用。"
   }
 }

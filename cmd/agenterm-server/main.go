@@ -25,6 +25,8 @@ import (
 )
 
 type client struct {
+	info    clientInfo
+	secret  string
 	conn    *websocket.Conn
 	write   sync.Mutex
 	mu      sync.Mutex
@@ -43,8 +45,8 @@ type server struct {
 	noPassword      bool
 	clientURL       string
 	tokens          map[string]string  // full token -> client credential
-	clients         map[string]*client // client credential -> connection
-	waiters         map[string]map[chan struct{}]struct{}
+	clients         map[string]*client // six-character client ID -> connection
+	multiDevice     map[string]bool    // client credential -> multi-device mode
 	mu              sync.Mutex
 	sessions        map[string]*session
 	limiter         authLimiter
@@ -80,7 +82,9 @@ func (s *server) redeemInvitation(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		return
 	}
-	delete(s.invitations, secret)
+	if !s.multiDevice[s.tokens[entry.token]] {
+		delete(s.invitations, secret)
+	}
 	s.mu.Unlock()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
@@ -151,7 +155,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
 		return
 	}
-	if s.clients[secret] != nil {
+	if !s.multiDevice[secret] && s.hasClientLocked(secret) {
 		http.Error(w, i18n.Text(i18n.Terminal(), "a.client.is.already.connected.with.this.token"), http.StatusConflict)
 		return
 	}
@@ -163,23 +167,25 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	c := &client{conn: conn, pending: make(map[string]chan protocol.Message)}
-	s.clients[secret] = c
+	id := s.newClientIDLocked()
+	c := &client{conn: conn, secret: secret, pending: make(map[string]chan protocol.Message), info: clientInfo{
+		ID: id, Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader), ConnectedAt: time.Now().UTC(),
+	}}
+	if s.clients == nil {
+		s.clients = make(map[string]*client)
+	}
+	s.clients[id] = c
 	if owner := s.clientOwners[secret]; owner != nil {
 		owner.used = true
 		s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
 	}
-	for ch := range s.waiters[secret] {
-		close(ch)
-	}
-	delete(s.waiters, secret)
 	log.Println(serverText("client.connected"))
 	go func() {
 		defer func() {
 			conn.Close()
 			s.mu.Lock()
-			if s.clients[secret] == c {
-				delete(s.clients, secret)
+			if s.clients[id] == c {
+				delete(s.clients, id)
 			}
 			s.mu.Unlock()
 			c.mu.Lock()
@@ -213,53 +219,12 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// waitForClient checks and subscribes under the same lock so a connection
-// cannot arrive between the two operations and go unnoticed.
-func (s *server) waitForClient(ctx context.Context, secret string, timeout time.Duration) (string, error) {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
-		s.mu.Lock()
-		if s.clients[secret] != nil {
-			s.mu.Unlock()
-			return "connected", nil
-		}
-		ch := make(chan struct{})
-		if s.waiters == nil {
-			s.waiters = make(map[string]map[chan struct{}]struct{})
-		}
-		if s.waiters[secret] == nil {
-			s.waiters[secret] = make(map[chan struct{}]struct{})
-		}
-		s.waiters[secret][ch] = struct{}{}
-		s.mu.Unlock()
-
-		var status string
-		var err error
-		select {
-		case <-ch:
-		case <-timer.C:
-			status = "timeout"
-		case <-ctx.Done():
-			err = ctx.Err()
-		}
-		s.mu.Lock()
-		delete(s.waiters[secret], ch)
-		if len(s.waiters[secret]) == 0 {
-			delete(s.waiters, secret)
-		}
-		s.mu.Unlock()
-		if status != "" || err != nil {
-			return status, err
-		}
-	}
-}
-func (s *server) execute(ctx context.Context, secret, command string) (string, error) {
+func (s *server) execute(ctx context.Context, secret, clientID, command string) (string, error) {
 	s.mu.Lock()
-	c := s.clients[secret]
+	c, err := s.targetClientLocked(secret, clientID)
 	s.mu.Unlock()
-	if c == nil {
-		return "", i18n.NewError("no.client.connected")
+	if err != nil {
+		return "", err
 	}
 	id := random()
 	ch := make(chan protocol.Message, 256)
@@ -369,15 +334,21 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		respond(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
 		tools := []any{
-			tool("wait_for_client", serverText("mcp.after.sharing.the.invitation.or.token.call.this"), map[string]any{"timeout_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 300000, "description": serverText("mcp.maximum.wait.in.milliseconds.default.30000.0.checks")}}, []string{}),
+			tool("list_clients", serverText("mcp.list.clients"), map[string]any{}, []string{}),
 			tool("execute_command", serverText("mcp.execute.a.non.interactive.command.and.return.output"), map[string]any{"command": stringField(serverText("mcp.shell.command"))}, []string{"command"}),
 			tool("session_start", serverText("mcp.start.an.interactive.terminal.session.then.use.session"), map[string]any{"command": stringField(serverText("mcp.shell.command.to.run"))}, []string{"command"}),
 			tool("session_read", serverText("mcp.read.new.output.while.the.session.is.running"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier")), "cursor": map[string]any{"type": "integer", "minimum": 0, "description": serverText("mcp.byte.cursor.initially.0")}, "wait_ms": map[string]any{"type": "integer", "minimum": 0, "maximum": 20000, "description": serverText("mcp.wait.up.to.this.many.milliseconds.for.output")}}, []string{"session_id"}),
 			tool("session_write", serverText("mcp.send.input.to.a.running.session.include.a"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier")), "input": stringField(serverText("mcp.input.bytes.as.text.e.g.yes.n"))}, []string{"session_id", "input"}),
 			tool("session_stop", serverText("mcp.stop.a.running.session"), map[string]any{"session_id": stringField(serverText("mcp.session.identifier"))}, []string{"session_id"}),
 		}
+		for _, item := range tools {
+			t := item.(map[string]any)
+			if t["name"] == "execute_command" || t["name"] == "session_start" {
+				t["inputSchema"].(map[string]any)["properties"].(map[string]any)["client_id"] = map[string]any{"type": "string", "pattern": "^[a-z0-9]{6}$", "description": serverText("mcp.client.id")}
+			}
+		}
 		if admin {
-			tools = append(tools, tool("create_client", serverText("mcp.create.a.client.connection.token.and.a.one"), map[string]any{}, []string{}))
+			tools = append(tools, tool("create_client", serverText("mcp.create.a.client.connection.token.and.a.one"), map[string]any{"multi_device": map[string]any{"type": "boolean", "default": false, "description": serverText("mcp.multi.device")}}, []string{}))
 			for _, item := range tools[:len(tools)-1] {
 				t := item.(map[string]any)
 				schema := t["inputSchema"].(map[string]any)
@@ -397,12 +368,13 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 		}
 		var a struct {
 			ClientToken string `json:"client_token"`
+			ClientID    string `json:"client_id"`
+			MultiDevice bool   `json:"multi_device"`
 			Command     string `json:"command"`
 			SessionID   string `json:"session_id"`
 			Input       string `json:"input"`
 			Cursor      int64  `json:"cursor"`
 			WaitMS      int    `json:"wait_ms"`
-			TimeoutMS   *int   `json:"timeout_ms"`
 		}
 		if err := json.Unmarshal(p.Arguments, &a); err != nil {
 			respond(w, req.ID, nil, map[string]any{"code": -32602, "message": serverText("mcp.invalid.arguments")})
@@ -428,35 +400,23 @@ func (s *server) mcp(w http.ResponseWriter, r *http.Request) {
 					owner, err = s.requestIP(r)
 				}
 				if err == nil {
-					result, err = s.createClient(owner)
+					result, err = s.createClientMode(owner, a.MultiDevice)
 				}
 
-			case "wait_for_client":
-				timeout := 90000
-				if a.TimeoutMS != nil {
-					timeout = *a.TimeoutMS
-				}
-				if timeout < 0 || timeout > 300000 {
-					err = i18n.NewError("timeout.ms.must.be.between.0.and.300000")
-				} else {
-					var status string
-					status, err = s.waitForClient(r.Context(), secret, time.Duration(timeout)*time.Millisecond)
-					if err == nil {
-						result = map[string]any{"status": status}
-					}
-				}
+			case "list_clients":
+				result = map[string]any{"clients": s.listClients(secret)}
 			case "execute_command":
 				if strings.TrimSpace(a.Command) == "" {
 					err = i18n.NewError("command.is.required")
 				} else {
-					result, err = s.execute(r.Context(), secret, a.Command)
+					result, err = s.execute(r.Context(), secret, a.ClientID, a.Command)
 				}
 			case "session_start":
 				if strings.TrimSpace(a.Command) == "" {
 					err = i18n.NewError("command.is.required")
 				} else {
 					var sess *session
-					sess, err = s.startSession(secret, a.Command)
+					sess, err = s.startSession(secret, a.ClientID, a.Command)
 					if err == nil {
 						result = map[string]any{"session_id": sess.id, "cursor": 0}
 					}
