@@ -13,19 +13,20 @@ const maxSessionOutput = 1 << 20
 const maxSessionsPerToken = 6
 
 type session struct {
-	id       string
-	owner    string
-	client   *client
-	mu       sync.Mutex
-	output   []byte
-	offset   int64
-	done     bool
-	exitCode int
-	err      string
-	timedOut bool
-	canceled bool
-	ended    time.Time
-	changed  chan struct{}
+	id            string
+	owner         string
+	client        *client
+	mu            sync.Mutex
+	output        []byte
+	offset        int64
+	done          bool
+	exitCode      int
+	err           string
+	timedOut      bool
+	canceled      bool
+	ended         time.Time
+	changed       chan struct{}
+	stopRequested bool
 }
 
 func (p *session) signal() { close(p.changed); p.changed = make(chan struct{}) }
@@ -171,4 +172,50 @@ func (p *session) send(typ, input string) error {
 		return i18n.NewError("session.already.ended")
 	}
 	return p.client.send(protocol.Message{Type: typ, ID: p.id, Input: input})
+}
+
+// A successful write only confirms delivery of the request to the connection.
+// Completion is confirmed exclusively by the session's terminal state.
+func (p *session) stop(ctx context.Context, wait time.Duration) (sessionStopResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sessionStopResult{}, err
+	}
+	p.mu.Lock()
+	alreadyDone := p.done
+	if !p.done && !p.stopRequested {
+		if err := p.client.send(protocol.Message{Type: "cancel", ID: p.id}); err != nil {
+			p.mu.Unlock()
+			return sessionStopResult{}, err
+		}
+		p.stopRequested = true
+	}
+	p.mu.Unlock()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
+		p.mu.Lock()
+		out := sessionStopResult{SessionID: p.id, Accepted: !alreadyDone, AlreadyDone: alreadyDone, Done: p.done, Status: "stopping"}
+		if p.done {
+			out.Status = "finished"
+			if p.canceled {
+				out.Status = "stopped"
+			}
+			out.ExitCode, out.TimedOut, out.Canceled = new(p.exitCode), new(p.timedOut), new(p.canceled)
+			out.Error = p.err
+		} else {
+			out.NextAction = serverText("mcp.stop.keep.reading")
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		if out.Done || wait <= 0 {
+			return out, nil
+		}
+		select {
+		case <-ctx.Done():
+			return out, ctx.Err()
+		case <-timer.C:
+			wait = 0
+		case <-changed:
+		}
+	}
 }

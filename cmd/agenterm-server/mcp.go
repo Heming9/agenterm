@@ -89,6 +89,7 @@ type writeSessionArgs struct {
 type stopSessionArgs struct {
 	targetArgs
 	SessionID string `json:"session_id"`
+	WaitMS    int    `json:"wait_ms,omitempty"`
 }
 type createClientArgs struct {
 	MultiDevice bool `json:"multi_device,omitempty"`
@@ -127,6 +128,10 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *server, ms 
 			if name == "list_clients" {
 				property.Description = serverText("mcp.wait.for.connection")
 			}
+			if name == "session_stop" {
+				property.Default = json.RawMessage("1000")
+				property.Description = serverText("mcp.stop.wait")
+			}
 		case "timeout_ms":
 			property.Minimum, property.Maximum = new(float64(0)), new(float64(protocol.MaxCommandTimeoutMS))
 			property.Default = json.RawMessage("0")
@@ -135,7 +140,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *server, ms 
 			}
 		}
 	}
-	mcp.AddTool(ms, &mcp.Tool{Name: name, Description: serverText(description), InputSchema: schema}, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+	mcp.AddTool(ms, toolDefinition(name, description, schema), func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
 		principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
 		secret := principal.secret
@@ -212,16 +217,21 @@ func (s *server) newMCPServer(admin bool) *mcp.Server {
 		err = p.send("input", a.Input)
 		return nil, map[string]any{"accepted": err == nil}, err
 	})
-	addTargetTool(s, ms, admin, "session_stop", "mcp.stop.a.running.session", func(_ context.Context, secret string, a stopSessionArgs) (*mcp.CallToolResult, map[string]any, error) {
+	addTargetTool(s, ms, admin, "session_stop", "mcp.stop.a.running.session", func(ctx context.Context, secret string, a stopSessionArgs) (*mcp.CallToolResult, sessionStopResult, error) {
 		p, err := s.getSession(secret, a.SessionID)
 		if err != nil {
-			return nil, nil, err
+			return nil, sessionStopResult{}, err
 		}
-		err = p.send("cancel", "")
-		return nil, map[string]any{"accepted": err == nil}, err
+		out, err := p.stop(ctx, time.Duration(a.WaitMS)*time.Millisecond)
+		return nil, out, err
 	})
 	if admin {
-		mcp.AddTool(ms, &mcp.Tool{Name: "create_client", Description: serverText("mcp.create.a.client.connection.token.and.a.one")}, func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, map[string]any, error) {
+		input, err := jsonschema.For[createClientArgs](nil)
+		if err != nil {
+			panic(err)
+		}
+		input.Properties["multi_device"].Description = serverText("mcp.result.multi_device")
+		mcp.AddTool(ms, toolDefinition("create_client", "mcp.create.a.client.connection.token.and.a.one", input), func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, map[string]any, error) {
 			principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
 			out, err := s.createClientMode(principal.ip, a.MultiDevice)
 			return nil, out, err

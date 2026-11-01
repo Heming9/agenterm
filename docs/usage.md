@@ -29,6 +29,32 @@ Invitations expire after 15 minutes and are single-use by default. For several c
 
 The hosted service currently requires no management authentication and allows up to four online devices per invitation creator's public IP. People on the same network share that allowance. Keep invitations and connection tokens private. Self-host to control management access yourself.
 
+## MCP tool contracts
+
+Current source builds publish explicit output schemas and behavior annotations for all seven tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
+
+| Tool | When to use it | Main result fields |
+| --- | --- | --- |
+| `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`, `next_action`. |
+| `list_clients` | Inspect devices or wait for a connection. | `clients`; polling also returns `status` and `next_action`. |
+| `execute_command` | Run a short non-interactive command and wait for its result. | `stdout`, `stderr`, `exit_code`, `timed_out`, `canceled`, `truncated`, optional `error`. |
+| `session_start` | Start an interactive or long-running process. | `session_id`, initial `cursor=0`. |
+| `session_read` | Read incremental output and check completion. | `output`, `next_cursor`, `truncated`, `done`; terminal results add exit, timeout, cancellation and error fields. |
+| `session_write` | Send input, including a newline to submit a prompt response. | `accepted`: input was sent, not confirmation it was consumed. |
+| `session_stop` | Request cancellation and wait briefly for confirmation. | `accepted`, `done`, `status`, `already_done`, terminal fields when available, or `next_action`. |
+
+Each `execute_command` starts a fresh shell. Set `cwd` and `env` explicitly; they do not persist across calls. Its timeout defaults to 60 seconds, with `timeout_ms=0` disabling it. Captured stdout/stderr share a 1 MiB limit. Use session tools for prompts, incremental output or long jobs, and retain the `session_id` and the byte-based `next_cursor`. Session buffers retain the latest 1 MiB; inspect `truncated` to detect missing older output.
+
+`session_stop` waits up to `wait_ms` milliseconds for a terminal result (default 1000, range 0–20000). Setting 0 returns immediately. Interpret its result as follows:
+
+| Status | Meaning and next step |
+| --- | --- |
+| `stopping` | Request sent or already pending, but termination is not confirmed. Continue `session_read` until `done=true`. |
+| `stopped` | The target reported a terminal result with `canceled=true`. Read any remaining session output. |
+| `finished` | The session ended for another reason. Inspect `exit_code`, `timed_out`, `canceled` and `error`; a disconnect does not confirm a remote cancellation. |
+
+`accepted=true` alone never means the process has stopped. Repeating a stop while cancellation is pending does not send it again. A session already ended before the call returns `already_done=true` and `accepted=false` without an error; unknown or unauthorized sessions are errors. Stopping does not undo completed operations, revoke the device credential or stop other sessions. Do not blindly retry commands or input writes: they can repeat side effects.
+
 ## Client controls
 
 **Terminal client (CLI):** opens a terminal interface by default. Multiline commands and output are folded; click to expand or collapse them.

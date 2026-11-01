@@ -29,6 +29,32 @@ url = "https://agenterm.net/mcp"
 
 托管服务目前无需管理认证，按邀请创建者的公网 IP 限制最多 4 台在线设备；同一网络下的使用者共享额度。请私密保管邀请和连接 token。需要自行控制管理访问时，使用自托管方式。
 
+## MCP 工具与返回结果
+
+当前源码构建会为全部七个工具提供明确的返回 Schema 和行为标注。请以实际连接 Server 的 `tools/list` 响应为准，既有部署或较旧发布的二进制可能仍提供旧版 Schema。
+
+| 工具 | 使用场景 | 主要返回字段 |
+| --- | --- | --- |
+| `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`、`next_action`。 |
+| `list_clients` | 查看设备或等待连接。 | `clients`；轮询时还返回 `status`、`next_action`。 |
+| `execute_command` | 运行短时非交互命令并等待结果。 | `stdout`、`stderr`、`exit_code`、`timed_out`、`canceled`、`truncated`，以及可选 `error`。 |
+| `session_start` | 启动交互或长时间运行的进程。 | `session_id`、初始 `cursor=0`。 |
+| `session_read` | 增量读取输出并检查是否完成。 | `output`、`next_cursor`、`truncated`、`done`；终态还包含退出、超时、取消及错误字段。 |
+| `session_write` | 发送输入；提交提示回答时包含换行符。 | `accepted` 仅表示已发送，不表示程序已读取。 |
+| `session_stop` | 请求取消并短暂等待确认。 | `accepted`、`done`、`status`、`already_done`，以及可用的终态字段或 `next_action`。 |
+
+每次 `execute_command` 都启动独立 shell，请显式设置 `cwd` 和 `env`，它们不会跨命令保留。默认超时为 60 秒，`timeout_ms=0` 表示不限时，stdout/stderr 共用 1 MiB 上限。交互提示、增量输出或长任务应使用会话工具，保留 `session_id` 和按字节计数的 `next_cursor`。会话缓冲区只保留最近 1 MiB，出现 `truncated` 时应检查是否丢失较旧输出。
+
+`session_stop` 最多等待 `wait_ms` 毫秒取得终态，默认 1000，范围 0–20000；设为 0 时立即返回。按以下方式判断结果：
+
+| 状态 | 含义及下一步 |
+| --- | --- |
+| `stopping` | 请求已发出或正在等待处理，尚未确认停止，继续 `session_read` 直到 `done=true`。 |
+| `stopped` | 目标已返回 `canceled=true` 的终态，可继续读取剩余会话输出。 |
+| `finished` | 会话因其他原因结束，应检查 `exit_code`、`timed_out`、`canceled` 和 `error`；断线不代表远程取消已确认。 |
+
+不能仅凭 `accepted=true` 宣布进程已停止。取消待确认时重复调用不会再次发送停止请求；调用前已结束的会话会返回 `already_done=true`、`accepted=false`，无需报错。未知或无权限的会话仍会报错。停止不能撤销已完成操作，也不会撤销设备凭据或停止其他会话。命令和输入写入不要盲目重试，否则可能重复产生副作用。
+
 ## 客户端操作
 
 **终端客户端（CLI）**默认进入终端界面。多行命令和输出会折叠，点击展开或收起。
