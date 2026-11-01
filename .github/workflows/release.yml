@@ -156,13 +156,10 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.25 preview release.
+          Agenterm v0.2.26 preview release.
 
-          - Increase CLI and GUI log history to 10 MiB.
-          - Support click-to-expand, drag-to-copy, and edge scrolling together in the TUI while preserving folds and dividers.
-          - Fix emoji width handling in macOS Terminal to prevent wrapped rows and stale content, and simplify the TUI footer.
-          - Unify disconnected and failed-connection TUI layouts with the main screen, keeping both dividers and the footer.
-          - Add six-character invitation codes and configurable server URL prefixes.
+          - Use a Windows connection command that works in both CMD and PowerShell while skipping user profiles.
+          - Skip PowerShell profiles when executing remote commands to avoid profile errors in command output.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF
