@@ -156,11 +156,11 @@ jobs:
         run: |
           (cd artifacts && rm SHA256SUMS && sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .)
           gh release create "$TAG" artifacts/* --verify-tag --prerelease --title "Agenterm $TAG" --notes "$(cat <<'EOF'
-          Agenterm v0.2.22 preview release.
+          Agenterm v0.2.23 preview release.
 
-          - Show the running version immediately beside Agenterm in the TUI header.
-          - Keep connection status and latency aligned on the right, including narrow terminals.
-          - Include the heartbeat, automatic reconnection, latency display, and disconnect logging improvements from v0.2.21.
+          - Collapse multiline commands and output to one-line previews; click to expand or collapse.
+          - Add selection mode (s) for native terminal selection and copying while continuing to collect output.
+          - Simplify the TUI footer and preserve expansion state during streaming output and terminal resizing.
 
           HTTP and WebSocket traffic is unencrypted by default; use only on a trusted network. See the README for setup and security details.
           EOF

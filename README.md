@@ -122,7 +122,7 @@ Make concurrent calls with different IDs to operate in parallel. Output, cancell
 
 ## Clients
 
-- **CLI:** terminal UI by default. Arrow keys scroll, `c` clears the log, `q` / Ctrl+C disconnects. Use `-plain` for text output; redirected input or output selects it automatically.
+- **CLI:** terminal UI by default. Commands and output that take more than one display line collapse to a one-line preview; click to expand, then click again to collapse. Press `s` for selection mode: the screen pauses and mouse capture turns off, so you can drag to select and use your terminal's copy shortcut. Press `s` again to resume; output continues to be collected meanwhile. Arrow keys or the mouse wheel scroll, `c` clears the log, `q` / Ctrl+C disconnects. Use `-plain` for text output; redirected input or output selects it automatically.
 - **GUI:** paste a token, connect, watch commands and live output. Follows the system theme; interface text is currently Chinese. [Build instructions below](#details).
 
 Both clients keep recent logs in memory (~64 KiB) and never save tokens to disk. Temporary connection failures retry automatically after 1, 2, 4, 8, 16, then at most every 30 seconds; a connection lasting 60 seconds resets this backoff. Rate-limit responses honor `Retry-After`. Invalid credentials and incompatible versions stop retries. Closing the client or choosing Disconnect cancels retries immediately.

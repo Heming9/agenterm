@@ -21,7 +21,14 @@ import (
 
 const maxTUILog = 64 * 1024
 
-type logSpan struct{ kind, text string }
+type logSpan struct {
+	kind, text string
+	expanded   bool
+}
+
+type tuiFold struct {
+	span, start, end int // Rendered row range, excluding surrounding blank lines.
+}
 
 var logStyles = map[string]lipgloss.Style{
 	"system":  lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#4b677a", Dark: "#99b1c3"}),
@@ -62,6 +69,9 @@ type tuiModel struct {
 	shells                        map[string]int
 	nextShell                     int
 	spans                         []logSpan
+	folds                         []tuiFold
+	selecting                     bool
+	selectionView                 string
 	lastID                        string
 	width, height                 int
 	connectionProgress            bool
@@ -88,7 +98,7 @@ func runTUI(token string, connectionProgress bool) error {
 		m.invitation = token
 	}
 	defer m.cancel()
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 func (m *tuiModel) Init() tea.Cmd {
@@ -119,9 +129,11 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.everConnected = false
 	m.logs, m.lastID = "", ""
 	m.spans = nil
+	m.folds = nil
 	m.completed, m.nextShell = 0, 0
 	m.spacing = logview.Spacing{}
 	m.viewport.SetContent("")
+	m.viewport.GotoTop()
 	m.input.Blur()
 	token := strings.TrimSpace(m.input.Value())
 	run := client.RunWithCallbacks
@@ -160,10 +172,10 @@ func (m *tuiModel) appendLog(kind, s string) {
 	}
 	m.spacing.Observe(s)
 	m.logs += s
-	if len(m.spans) > 0 && m.spans[len(m.spans)-1].kind == kind {
+	if len(m.spans) > 0 && kind != "system" && m.spans[len(m.spans)-1].kind == kind {
 		m.spans[len(m.spans)-1].text += s
 	} else {
-		m.spans = append(m.spans, logSpan{kind, s})
+		m.spans = append(m.spans, logSpan{kind: kind, text: s})
 	}
 	if len(m.logs) > maxTUILog {
 		excess := len(m.logs) - maxTUILog
@@ -188,27 +200,6 @@ func (m *tuiModel) appendLog(kind, s string) {
 	}
 	m.refreshLog()
 }
-func (m *tuiModel) refreshLog() {
-	atBottom := m.viewport.AtBottom()
-	var b strings.Builder
-	for _, span := range m.spans {
-		if style, ok := logStyles[span.kind]; ok {
-			lines := strings.Split(span.text, "\n")
-			for i, line := range lines {
-				if line != "" {
-					lines[i] = style.Render(line)
-				}
-			}
-			b.WriteString(strings.Join(lines, "\n"))
-		} else {
-			b.WriteString(span.text)
-		}
-	}
-	m.viewport.SetContent(ansi.Hardwrap(b.String(), max(1, m.viewport.Width), true))
-	if atBottom {
-		m.viewport.GotoBottom()
-	}
-}
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -221,6 +212,19 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		}
 		m.input.Width = max(1, msg.Width-4)
+		if m.selecting {
+			m.selectionView = ""
+			m.selectionView = m.View()
+		}
+	case tea.MouseMsg:
+		// The log begins below the header and divider, at screen row 2.
+		if m.selecting || m.state == "disconnected" || msg.X < 0 || msg.X >= m.viewport.Width || msg.Y < 2 || msg.Y >= 2+m.viewport.Height {
+			return m, nil
+		}
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			m.toggleFold(m.viewport.YOffset + msg.Y - 2)
+			return m, nil
+		}
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			m.cancel()
@@ -235,15 +239,33 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				m.cancel()
 				return m, tea.Quit
+			case "s":
+				m.selecting = !m.selecting
+				if m.selecting {
+					// Hold the rendered screen steady while the terminal owns selection.
+					// Incoming events still update the model and are shown on return.
+					m.selectionView = m.View()
+					return m, tea.DisableMouse
+				}
+				m.selectionView = ""
+				return m, tea.EnableMouseCellMotion
 			case "c":
+				if m.selecting {
+					return m, nil
+				}
 				m.logs = ""
 				m.spans = nil
+				m.folds = nil
 				m.lastID = ""
 				m.spacing = logview.Spacing{}
 				for _, decoder := range m.decoders {
 					decoder.output = logview.Output{}
 				}
 				m.viewport.SetContent("")
+				m.viewport.GotoTop()
+				return m, nil
+			}
+			if m.selecting {
 				return m, nil
 			}
 		}
@@ -317,6 +339,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.message = tr("disconnected.2")
 			}
+			if m.selecting {
+				m.selecting, m.selectionView = false, ""
+				return m, tea.Batch(textinput.Blink, tea.EnableMouseCellMotion)
+			}
 			return m, textinput.Blink
 		}
 		return m, m.waitEvent()
@@ -338,6 +364,9 @@ func (m *tuiModel) switchSource(id string) {
 	}
 }
 func (m *tuiModel) View() string {
+	if m.selectionView != "" {
+		return m.selectionView
+	}
 	view := m.view()
 	if m.width <= 0 {
 		return view
@@ -376,7 +405,11 @@ func (m *tuiModel) view() string {
 		return header + "\n\n " + tr("connection.token") + "\n " + m.input.View() + "\n\n " + m.message + "\n\n " + tr("enter.connect.ctrl.c.quit")
 	}
 	line := strings.Repeat("─", max(1, m.width-2))
-	return header + "\n " + line + "\n" + m.viewport.View() + "\n " + line + fmt.Sprintf(tr("d.commands.scroll.c.clear.q.quit"), m.completed)
+	help := fmt.Sprintf(tr("d.commands.scroll.c.clear.q.quit"), m.completed)
+	if m.selecting {
+		help = "\n " + tr("tui.selection.help")
+	}
+	return header + "\n " + line + "\n" + m.viewport.View() + "\n " + line + help
 }
 func (m *tuiModel) header(status string) string {
 	width := m.width

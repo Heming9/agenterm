@@ -208,8 +208,16 @@
     "zh-CN": "Enter 连接  ·  Ctrl+C 退出"
   },
   "d.commands.scroll.c.clear.q.quit": {
-    "en": "\n %d commands  ·  ↑↓ scroll  ·  c clear  ·  q quit",
-    "zh-CN": "\n %d 条命令  ·  ↑↓ 滚动  ·  c 清空  ·  q 退出"
+    "en": "\n %d commands · s select mode · c clear · q quit",
+    "zh-CN": "\n %d 条 · s 选择模式 · c 清空 · q 退出"
+  },
+  "tui.selection.help": {
+    "en": "Selection · s return",
+    "zh-CN": "选择模式 · s 返回"
+  },
+  "tui.fold.lines": {
+    "en": "[%d lines]",
+    "zh-CN": "[%d 行]"
   },
   "4.4.connected": {
     "en": "[4/4] Connected",
