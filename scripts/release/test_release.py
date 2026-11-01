@@ -38,16 +38,17 @@ class ReleaseTests(unittest.TestCase):
                 (self.base / name).write_text("original bytes: " + name)
         self.metadata = {"tag_name": "v0.2.26", "draft": False,
                          "published_at": "2026-11-01T10:20:42Z", "assets": []}
-        self.refresh_hashes()
+        self.refresh_digests()
         self.releases = [self.metadata]
         self.tag_commit = "commit"
         self.tags = ""
         self.downloads = []
 
-    def refresh_hashes(self):
-        (self.base / "SHA256SUMS").write_text("".join(
-            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
-            for path in sorted(self.base.iterdir()) if path.name != "SHA256SUMS"))
+    def refresh_digests(self):
+        self.metadata["assets"] = [
+            {"name": path.name, "digest": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()}
+            for path in sorted(self.base.iterdir()) if path.is_file()
+        ]
 
     def mock_run(self, *args):
         if args[:3] == ("git", "rev-parse", "HEAD"):
@@ -62,6 +63,8 @@ class ReleaseTests(unittest.TestCase):
 
     def mock_download(self, tag, directory, names):
         self.assertEqual(tag, "v0.2.26")
+        if not names:
+            return
         directory.mkdir(exist_ok=True)
         self.downloads.extend(names)
         for name in names:
@@ -82,17 +85,17 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(manifest["components"]["cli"]["version"], "0.2.26")
         self.assertEqual(manifest["components"]["gui"]["version"], "0.2.26")
         self.assertIn("cli=false\nserver=true\ngui=false", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), {"SHA256SUMS", *release.assets("cli"), *release.assets("gui")})
+        self.assertEqual(set(self.downloads), {*release.assets("cli"), *release.assets("gui")})
 
     def test_cli_also_builds_server(self):
         self.prepare("cli")
         self.assertIn("cli=true\nserver=true\ngui=false", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), {"SHA256SUMS", *release.assets("gui")})
+        self.assertEqual(set(self.downloads), set(release.assets("gui")))
 
     def test_gui_only_reuses_server_and_cli(self):
         self.prepare("gui")
         self.assertIn("cli=false\nserver=false\ngui=true", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), {"SHA256SUMS", *release.assets("cli"), *release.assets("server")})
+        self.assertEqual(set(self.downloads), {*release.assets("cli"), *release.assets("server")})
 
     def test_client_rebuilds_everything_without_downloads(self):
         self.prepare("client")
@@ -107,7 +110,7 @@ class ReleaseTests(unittest.TestCase):
     def test_incompatible_base_falls_back_before_downloading_programs(self):
         self.prepare("server", compatibility=False)
         self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
-        self.assertEqual(self.downloads, ["SHA256SUMS"])
+        self.assertEqual(self.downloads, [])
 
     def test_explicit_missing_or_unrelated_base_fails(self):
         for base, is_ancestor in [("v0.2.25", True), ("v0.2.26", False)]:
@@ -148,28 +151,76 @@ class ReleaseTests(unittest.TestCase):
         components = {c: {"version": "0.2.24", "source_tag": "v0.2.24"} for c in release.COMPONENTS}
         (self.base / release.MANIFEST).write_text(json.dumps({
             "schema": 1, "release_tag": "v0.2.26", "components": components}))
-        self.metadata["assets"] = [{"name": release.MANIFEST}]
-        self.refresh_hashes()
+        self.refresh_digests()
         manifest = self.prepare("server")
         self.assertEqual(manifest["components"]["cli"], components["cli"])
         self.assertEqual(manifest["components"]["gui"], components["gui"])
 
-    def test_manifest_must_be_checksummed(self):
+    def test_manifest_must_match_github_digest(self):
         (self.base / release.MANIFEST).write_text("{}")
-        self.metadata["assets"] = [{"name": release.MANIFEST}]
+        self.refresh_digests()
+        (self.base / release.MANIFEST).write_text('{"changed": true}')
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             self.prepare("server")
 
-    def test_complete_release_and_checksums(self):
+    def test_missing_github_digest_rejects_reuse(self):
+        name = release.assets("cli")[0]
+        asset = next(a for a in self.metadata["assets"] if a["name"] == name)
+        asset["digest"] = None
+        with self.assertRaisesRegex(ValueError, "Missing GitHub SHA256 digest"):
+            self.prepare("server")
+
+    def test_only_valid_github_sha256_digests_are_used(self):
+        valid = "a" * 64
+        for value in [None, "", "sha256:invalid", "sha256:" + "g" * 64, "sha512:" + valid]:
+            with self.subTest(digest=value):
+                self.assertEqual(release.asset_digests([{"name": "client", "digest": value}]), {})
+        self.assertEqual(release.asset_digests([{"name": "client", "digest": "sha256:" + valid}]), {"client": valid})
+
+    def test_legacy_checksum_file_is_not_downloaded(self):
+        (self.base / "SHA256SUMS").write_text("obsolete checksum file")
+        self.refresh_digests()
+        self.prepare("cli")
+        self.assertEqual(set(self.downloads), set(release.assets("gui")))
+
+    def test_full_build_needs_no_reused_files(self):
+        self.prepare("all")
+        self.assertEqual(list(Path("release-plan/reused").iterdir()), [])
+        directory = Path("artifacts")
+        directory.mkdir()
+        for component in release.COMPONENTS:
+            for name in release.assets(component):
+                (directory / name).write_text("new bytes: " + name)
+        release.finalize(directory, Path("release-plan"))
+        self.assertEqual(len(list(directory.iterdir())), 22)
+
+    def test_obsolete_release_attachments_are_rejected(self):
+        self.prepare("all")
+        directory = Path("artifacts")
+        directory.mkdir()
+        for component in release.COMPONENTS:
+            for name in release.assets(component):
+                (directory / name).write_text("new bytes: " + name)
+        for name in ["install.sh", "install.ps1", "SHA256SUMS"]:
+            with self.subTest(attachment=name):
+                (directory / name).write_text("obsolete")
+                with self.assertRaisesRegex(ValueError, "Release assets differ"):
+                    release.finalize(directory, Path("release-plan"))
+                (directory / name).unlink()
+
+    def test_complete_release_and_reused_digests(self):
         self.prepare("server")
         directory = Path("artifacts")
         shutil.copytree("release-plan/reused", directory)
-        for name in release.assets("server") + ["install.sh", "install.ps1"]:
+        for name in release.assets("server"):
             (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
-        hashes = release.checksums(directory)
-        self.assertEqual(len(hashes), 24)  # 21 program files, 2 scripts, 1 manifest.
+        hashes = json.loads((Path("release-plan") / release.REUSED_DIGESTS).read_text())
+        self.assertEqual(len(list(directory.iterdir())), 22)  # 21 program files and the manifest.
+        self.assertEqual(set(hashes), {*release.assets("cli"), *release.assets("gui")})
         release.verify(directory, list(hashes), hashes)
+        for name in ["install.sh", "install.ps1", "SHA256SUMS", release.REUSED_DIGESTS]:
+            self.assertFalse((directory / name).exists())
         (directory / release.assets("gui")[0]).write_text("changed after reuse")
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             release.finalize(directory, Path("release-plan"))

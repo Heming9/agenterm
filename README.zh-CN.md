@@ -300,7 +300,7 @@ gh workflow run release.yml --ref main -f scope=server -f base_tag=v0.2.26
 
 当前由发布者手动选择范围，不会自动分析代码变更。需包含所有受影响的程序：仅安装脚本或服务端变化可选 `server`；客户端公共代码变化选 `client`；公共依赖、协议、翻译或打包逻辑变化通常选 `all`。升级 Go 后的首次发布必须使用 `all`，确保所有程序都由新工具链重新构建。复用产物不会跳过相关测试，Windows 安装脚本及客户端测试仍会执行。
 
-复用程序保留原始二进制版本号。流程按实际连接兼容规则检查这些版本，只要有一个与新版本不兼容，就改为全量构建。下载时验证校验和，复用文件保持字节一致，新构建的 Server 内嵌选定的 CLI，发布前检查各平台产物完整。文件缺失或损坏时停止发布。`release-manifest.json` 记录每种程序的原始来源 tag 和版本，连续复用也不会丢失来源；Release 说明列出构建／复用情况并附上自动生成的变更记录。每次发布重新生成安装脚本及完整的 `SHA256SUMS`。
+复用程序保留原始二进制版本号。流程按实际连接兼容规则检查这些版本，只要有一个与新版本不兼容，就改为全量构建。复用下载文件时，对照 GitHub 附件元数据中的 SHA256 校验，复用文件保持字节一致，新构建的 Server 内嵌选定的 CLI，发布前检查各平台产物完整。文件缺失或损坏时停止发布。`release-manifest.json` 记录每种程序的原始来源 tag 和版本，连续复用也不会丢失来源；Release 说明列出构建／复用情况并附上自动生成的变更记录。Release 附件只包含程序文件和 `release-manifest.json`，SHA256 由 GitHub 提供。安装脚本及供安装程序使用的 `SHA256SUMS` 仍由 Server 内嵌或生成，并通过 Server 下载接口提供。
 
 工作流需先进入默认分支，才会显示手动运行入口。参见 [GitHub 手动运行工作流说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)。
 

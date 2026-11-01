@@ -18,6 +18,7 @@ SCOPES = {
     "gui": {"gui"},
 }
 MANIFEST = "release-manifest.json"
+REUSED_DIGESTS = "reused-digests.json"
 
 
 def assets(component):
@@ -49,18 +50,19 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def checksums(directory):
+def asset_digests(release_assets):
     result = {}
-    for line in (directory / "SHA256SUMS").read_text().splitlines():
-        match = re.fullmatch(r"([a-f0-9]{64})  ([^/\\]+)", line)
-        if not match or match[2] in result:
-            raise ValueError("Malformed or duplicate SHA256SUMS entry")
-        result[match[2]] = match[1]
+    for asset in release_assets:
+        match = re.fullmatch(r"sha256:([a-f0-9]{64})", asset.get("digest") or "")
+        if match:
+            result[asset["name"]] = match[1]
     return result
 
 
 def verify(directory, names, hashes):
     for name in names:
+        if name not in hashes:
+            raise ValueError(f"Missing GitHub SHA256 digest: {name}")
         path = directory / name
         if not path.is_file() or hashes.get(name) != digest(path):
             raise ValueError(f"Missing asset or checksum mismatch: {name}")
@@ -148,11 +150,11 @@ def prepare(scope, requested_base):
     (output / "reused").mkdir()
     hashes = {}
     if base:
-        names = ["SHA256SUMS"]
+        hashes = asset_digests(base["assets"])
+        names = []
         if any(asset["name"] == MANIFEST for asset in base["assets"]):
             names.append(MANIFEST)
         download(base["tag_name"], cache, names)
-        hashes = checksums(cache)
         previous = base_components(cache, base["tag_name"], hashes)
     selected = select_builds(scope, tag, previous)
     if "gui" in selected:
@@ -175,16 +177,15 @@ def prepare(scope, requested_base):
         for name in reused:
             shutil.copyfile(cache / name, output / "reused" / name)
     (output / MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n")
-    # This is an internal checksum list; publish generates the complete one.
-    (output / "reused" / "SHA256SUMS").write_text(
-        "".join(f"{hashes[name]}  {name}\n" for name in sorted(reused)))
+    # Retain GitHub's expected digests for the publish job, not as release assets.
+    (output / REUSED_DIGESTS).write_text(json.dumps({name: hashes[name] for name in reused}) + "\n")
     notes = [f"Agenterm {tag} preview release.", "",
              "| Program | Action | Binary version | Source tag |",
              "| --- | --- | --- | --- |"]
     for component, info in manifest["components"].items():
         action = "Built" if component in selected else "Reused"
         notes.append(f"| {component} | {action} | {info['version']} | {info['source_tag']} |")
-    notes += ["", "Reused programs retain their original version. Installers are generated from this release's source."]
+    notes += ["", "Reused programs retain their original version. Installation scripts and download checksums are served by the Server."]
     (output / "notes.md").write_text("\n".join(notes) + "\n")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
@@ -198,21 +199,19 @@ def prepare(scope, requested_base):
 def finalize(directory, plan):
     manifest = json.loads((plan / MANIFEST).read_text())
     # Ensure artifacts advertised as reused are still byte-for-byte identical.
-    reused_hashes = checksums(plan / "reused")
+    reused_hashes = json.loads((plan / REUSED_DIGESTS).read_text())
     verify(directory, list(reused_hashes), reused_hashes)
     shutil.copyfile(plan / MANIFEST, directory / MANIFEST)
-    expected = {MANIFEST, "install.sh", "install.ps1"}
+    expected = {MANIFEST}
     for component in COMPONENTS:
         expected.update(assets(component))
-    actual = {path.name for path in directory.iterdir()} - {"SHA256SUMS"}
+    actual = {path.name for path in directory.iterdir()}
     if actual != expected:
         raise ValueError(f"Release assets differ: missing={expected - actual}, extra={actual - expected}")
     for name in expected:
         if (directory / name).stat().st_size == 0:
             raise ValueError(f"Empty release asset: {name}")
-    (directory / "SHA256SUMS").write_text("".join(
-        f"{digest(directory / name)}  {name}\n" for name in sorted(expected)))
-    print(f"Verified {manifest['release_tag']}: {len(expected) + 1} assets")
+    print(f"Verified {manifest['release_tag']}: {len(expected)} assets")
 
 
 if __name__ == "__main__":

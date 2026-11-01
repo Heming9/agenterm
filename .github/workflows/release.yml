@@ -211,12 +211,8 @@ jobs:
               GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.releaseTag=$RELEASE_TAG" -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
             done
           done
-      - name: Generate installers for the new release
-        env:
-          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+      - name: Report artifact sizes
         run: |
-          sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.sh > dist/install.sh
-          sed "s/@RELEASE_TAG@/$RELEASE_TAG/g" internal/installer/install.ps1 > dist/install.ps1
           # Keep distribution sizes visible when dependencies or assets change.
           {
             printf '| Artifact | Bytes |\n| --- | ---: |\n'
@@ -227,7 +223,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-server
-          path: dist/*
+          path: dist/agenterm-*
           if-no-files-found: error
 
   publish:
@@ -257,7 +253,7 @@ jobs:
           merge-multiple: true
       - name: Merge reused files and verify complete release
         run: |
-          cp release-plan/reused/* artifacts/
+          cp -R release-plan/reused/. artifacts/
           python3 scripts/release/release.py finalize
       - name: Publish prerelease
         env:
