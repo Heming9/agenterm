@@ -115,11 +115,11 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	}
 	ws, _ := h.connect(t, token, "schema device")
 	go serveTestDevice(ws, "schema", nil, nil)
-	connected := call("list_clients", map[string]any{"client_token": token, "wait_ms": 60000})
+	connected := call("list_clients", map[string]any{"client_token": token, "wait_ms": 300000})
 	if connected["status"] != "connected" || len(connected["clients"].([]any)) != 1 {
-		t.Fatalf("unexpected 60-second connection check result: %v", connected)
+		t.Fatalf("unexpected 300-second connection check result: %v", connected)
 	}
-	for _, wait := range []int{-1, 60001} {
+	for _, wait := range []int{-1, 300001} {
 		h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, true)
 	}
 	call("execute_command", map[string]any{"client_token": token, "command": "example"})

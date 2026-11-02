@@ -138,7 +138,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 		case "wait_ms":
 			property.Minimum, property.Maximum, property.Default = new(float64(0)), new(float64(20000)), json.RawMessage("0")
 			if name == "list_clients" {
-				property.Maximum = new(float64(60000))
+				property.Maximum = new(float64(300000))
 				property.Description = serverText("mcp.wait.for.connection")
 			}
 			if name == "session_control" {
