@@ -27,6 +27,8 @@ Reload the MCP configuration or restart your agent, then:
 
 Invitations expire after 5 minutes and are single-use by default. Set the optional `timeout_seconds` parameter to a positive integer when calling `create_client` to customize the lifetime; for example, `{"timeout_seconds": 60}` creates an invitation valid for 60 seconds. Expiry prevents invitation redemption and does not disconnect devices that have already connected. For several computers, ask the agent to create a multi-device invitation and clearly identify the target before each operation.
 
+After a token has successfully connected, it remains valid while any of its devices is online. Once its last device disconnects, it is retained for 30 minutes for reconnection. Reconnecting within that period clears the offline expiry; otherwise the token expires and a new invitation is required. This retention period is separate from the invitation lifetime.
+
 The hosted service currently requires no management authentication and allows up to four online devices per invitation creator's public IP. People on the same network share that allowance. Keep invitations and connection tokens private. Self-host to control management access yourself.
 
 ## MCP tool contracts

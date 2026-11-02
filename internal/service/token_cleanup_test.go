@@ -80,10 +80,12 @@ func TestMultiDeviceTokenOfflineExpiryAndReconnect(t *testing.T) {
 	if !retained || !multi {
 		t.Fatal("online multi-device token reclaimed")
 	}
+	disconnectedBefore := time.Now()
 	second.Close()
 	expires := waitForClients(0)
-	if remaining := time.Until(expires); remaining < tokenOfflineTTL-time.Minute || remaining > tokenOfflineTTL {
-		t.Fatalf("unexpected offline expiry: %s", remaining)
+	disconnectedAfter := time.Now()
+	if expires.Before(disconnectedBefore.Add(30*time.Minute)) || expires.After(disconnectedAfter.Add(30*time.Minute)) {
+		t.Fatalf("offline token must expire 30 minutes after disconnection: %s", expires)
 	}
 	h.s.mu.Lock()
 	h.s.cleanupTokensLocked(expires.Add(-time.Nanosecond))
