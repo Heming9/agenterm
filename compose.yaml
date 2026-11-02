@@ -12,8 +12,16 @@ services:
       - "${AGENTERM_PUBLIC_URL:?Set AGENTERM_PUBLIC_URL in .env}"
       - -passwd
       - "${AGENTERM_MANAGEMENT_KEY:?Set AGENTERM_MANAGEMENT_KEY in .env}"
+    healthcheck:
+      test: ["CMD", "/agenterm-server", "status"]
+      start_period: 90s
+      interval: 5s
+      timeout: 4s
+      retries: 5
+    # Only IPC sockets are written here; session state stays in process memory.
+    tmpfs:
+      - /tmp:mode=1777
     read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 80s

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
+  <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>Let an AI agent assist with a remote computer through one authorized connection command.</strong></p>
   <p>macOS / Linux / Windows · CLI / GUI · Multiple devices · No SSH service required</p>
@@ -66,7 +66,7 @@ Use the hosted service or [deploy your own server](docs/deployment.md).
 <details>
 <summary>What if a connection fails or an invitation expires?</summary>
 
-Check that both sides can reach the server. Ask the agent for a new invitation if one has expired, been used, or the server has restarted. For version mismatches, use server and client binaries from the same release. [Connection troubleshooting](docs/usage.md#connection-failures-or-expired-invitations).
+Check that both sides can reach the server. Ask the agent for a new invitation if one has expired, been used, or Runtime has restarted. For version mismatches, use server and client binaries from the same release. [Connection troubleshooting](docs/usage.md#connection-failures-or-expired-invitations).
 
 </details>
 

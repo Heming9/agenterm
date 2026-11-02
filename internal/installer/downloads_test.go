@@ -99,7 +99,7 @@ func TestDownloadsRoundTrip(t *testing.T) {
 		}
 	}
 	// A fixed digest also runs on Windows CI to catch host-dependent metadata.
-	const wantManifestHash = "2febbbb49b2a8e86b1649e3a57bcf240ed8b9be550e1d5c44a6d82dcc6bc22d1"
+	const wantManifestHash = "3edcfda1d392ccd8a297b1059ddd1c2296a35c88629bc4d4fba730d5459b4232"
 	if got := fmt.Sprintf("%x", sha256.Sum256(files["SHA256SUMS"])); got != wantManifestHash {
 		t.Fatalf("download encoding changed: manifest hash %s", got)
 	}

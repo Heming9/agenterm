@@ -101,8 +101,8 @@ awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pP
 }
 say installer.server.reachable.invitation.and.version.verified
 say installer.2.4.preparing.client
-asset="agenterm-cli-$os-$arch.tar.gz"
-name="agenterm-cli-$os-$arch"
+asset="agenterm-client-cli-$os-$arch.tar.gz"
+name="agenterm-client-cli-$os-$arch"
 binary="$cache/$name"
 curl -fsS --connect-timeout 5 --max-time 15 "$base/SHA256SUMS" -o "$work/SHA256SUMS"
 checksum() {

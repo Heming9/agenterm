@@ -1086,5 +1086,17 @@
   "session.control.invalid.arguments": {
     "en": "Use action=input with input, interrupt/eof without input or wait_ms, or stop with optional wait_ms (0–20000). A nonempty session_id is required.",
     "zh-CN": "action=input 必须带 input；interrupt/eof 不得带 input 或 wait_ms；stop 仅可附带 wait_ms（0–20000）。session_id 必须非空。"
+  },
+  "runtime.compatibility.error": {
+    "en": "Incompatible runtime: server %s (API %s), runtime %s (API %s), runtime PID %s.\nThe running runtime will not be stopped or restarted automatically.\nUse a server compatible with runtime API %s to stop this instance, for example:\n  %s\nOr stop runtime manually in the same user and host/container environment:\n  %s\nStopping runtime disconnects clients and clears in-memory credentials and sessions.",
+    "zh-CN": "Runtime 不兼容：server %s（API %s），runtime %s（API %s），runtime PID %s。\n不会自动停止或重启运行中的 runtime。\n请使用兼容 runtime API %s 的 server 停止当前实例，例如：\n  %s\n或在相同用户及主机/容器环境中手动停止 runtime：\n  %s\n停止 runtime 会断开客户端连接，并清空内存中的凭证和会话。"
+  },
+  "runtime.compatibility.unknown": {
+    "en": "unknown (not reported)",
+    "zh-CN": "未知（未报告）"
+  },
+  "runtime.compatibility.manual.unknown": {
+    "en": "Confirm the runtime PID first, then run: kill -TERM <PID>",
+    "zh-CN": "先确认 runtime PID，再执行：kill -TERM <PID>"
   }
 }

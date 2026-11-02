@@ -87,8 +87,8 @@ New-Item -ItemType Directory -Path $cache -Force | Out-Null
 $work = Join-Path $cache ('.tmp-' + [System.Guid]::NewGuid())
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
-  $asset = "agenterm-cli-windows-$arch.zip"
-  $binary = "agenterm-cli-windows-$arch.exe"
+  $asset = "agenterm-client-cli-windows-$arch.zip"
+  $binary = "agenterm-client-cli-windows-$arch.exe"
   $program = Join-Path $cache $binary
   $file = Join-Path $work $asset
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 "$base/SHA256SUMS" -OutFile (Join-Path $work 'SHA256SUMS')

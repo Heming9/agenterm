@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="cmd/agenterm-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
+  <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>通过一条授权命令，让 AI Agent 协助操作远程电脑。</strong></p>
   <p>macOS / Linux / Windows · CLI / GUI · 多设备 · 无需 SSH 服务</p>
@@ -57,7 +57,7 @@ https://agenterm.net/mcp
   <img src="docs/design/architecture-blue.gif" alt="Agenterm 架构：AI Agent 通过 MCP 接入 Server，经 WebSocket 向 Client 和本地 shell 下发命令并接收结果" width="1000">
 </p>
 
-Server 转发命令与结果；Client 在目标电脑运行并主动连接 Server，再由本地 shell 执行任务。Agent 和目标电脑都需要能访问 Server，目标电脑无需开放入站端口。
+只需启动 Server，它会自动管理内部 Runtime：Runtime 保留连接与内存会话，Server 提供 MCP 和下载接口并负责 Runtime 的启动、接管和停止。Client 在目标电脑运行并主动连接 Server，再由本地 shell 执行任务。Agent 和目标电脑都需要能访问 Server，目标电脑无需开放入站端口。
 
 可以使用托管服务，也可以[部署自己的 Server](docs/deployment.zh-CN.md)。
 
@@ -66,7 +66,7 @@ Server 转发命令与结果；Client 在目标电脑运行并主动连接 Serve
 <details>
 <summary>连接失败或邀请过期怎么办？</summary>
 
-确认双方都能访问 Server；邀请过期、已使用或 Server 重启后，让 Agent 重新创建邀请。出现版本不兼容提示时，使用同一 Release 的 Server 和客户端。[连接排查](docs/usage.zh-CN.md#连接失败或邀请过期)。
+确认双方都能访问 Server；邀请过期、已使用或 Runtime 重启后，让 Agent 重新创建邀请。出现版本不兼容提示时，使用同一 Release 的 Server 和客户端。[连接排查](docs/usage.zh-CN.md#连接失败或邀请过期)。
 
 </details>
 

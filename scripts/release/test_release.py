@@ -25,8 +25,8 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(os.chdir, self.original)
         Path("internal/version").mkdir(parents=True)
         Path("internal/version/version.go").write_text('const Current = "0.2.27"\n')
-        Path("cmd/agenterm-gui").mkdir(parents=True)
-        Path("cmd/agenterm-gui/FyneApp.toml").write_text('Version = "0.2.27"\n')
+        Path("cmd/agenterm-client-gui").mkdir(parents=True)
+        Path("cmd/agenterm-client-gui/FyneApp.toml").write_text('Version = "0.2.27"\n')
         self.env = patch.dict(os.environ, {"GH_REPO": "test/repo", "GITHUB_OUTPUT": "outputs",
                                          "GITHUB_REF_TYPE": "branch", "GITHUB_STEP_SUMMARY": "summary"})
         self.env.start()
@@ -36,6 +36,12 @@ class ReleaseTests(unittest.TestCase):
         for component in release.COMPONENTS:
             for name in release.assets(component):
                 (self.base / name).write_text("original bytes: " + name)
+        (self.base / release.MANIFEST).write_text(json.dumps({
+            "schema": 1, "release_tag": "v0.2.26", "components": {
+                c: {"version": "0.2.26", "source_tag": "v0.2.26"}
+                for c in release.COMPONENTS
+            },
+        }))
         self.metadata = {"tag_name": "v0.2.26", "draft": False,
                          "published_at": "2026-11-01T10:20:42Z", "assets": []}
         self.refresh_digests()
@@ -66,7 +72,7 @@ class ReleaseTests(unittest.TestCase):
         if not names:
             return
         directory.mkdir(exist_ok=True)
-        self.downloads.extend(names)
+        self.downloads.extend(name for name in names if name != release.MANIFEST)
         for name in names:
             shutil.copyfile(self.base / name, directory / name)
 
@@ -90,7 +96,7 @@ class ReleaseTests(unittest.TestCase):
     def test_cli_also_builds_server(self):
         self.prepare("cli")
         self.assertIn("cli=true\nserver=true\ngui=false", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), set(release.assets("gui")))
+        self.assertEqual(set(self.downloads), {*release.assets("gui")})
 
     def test_gui_only_reuses_server_and_cli(self):
         self.prepare("gui")
@@ -106,6 +112,16 @@ class ReleaseTests(unittest.TestCase):
         self.releases = []
         self.prepare("server")
         self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
+
+    def test_old_asset_layout_falls_back_before_downloading_programs(self):
+        for scope in ("server", "cli", "gui"):
+            with self.subTest(scope=scope):
+                self.metadata["assets"] = [a for a in self.metadata["assets"]
+                                           if a["name"] == release.MANIFEST or a["name"].startswith("agenterm-server-")]
+                self.prepare(scope)
+                self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
+                self.assertEqual(self.downloads, [])
+                shutil.rmtree("release-plan")
 
     def test_incompatible_base_falls_back_before_downloading_programs(self):
         self.prepare("server", compatibility=False)
@@ -143,7 +159,7 @@ class ReleaseTests(unittest.TestCase):
             self.prepare("server")
 
     def test_gui_version_must_match_when_built(self):
-        Path("cmd/agenterm-gui/FyneApp.toml").write_text('Version = "0.2.26"\n')
+        Path("cmd/agenterm-client-gui/FyneApp.toml").write_text('Version = "0.2.26"\n')
         with self.assertRaisesRegex(ValueError, "GUI version"):
             self.prepare("all")
 
@@ -181,7 +197,7 @@ class ReleaseTests(unittest.TestCase):
         (self.base / "SHA256SUMS").write_text("obsolete checksum file")
         self.refresh_digests()
         self.prepare("cli")
-        self.assertEqual(set(self.downloads), set(release.assets("gui")))
+        self.assertEqual(set(self.downloads), {*release.assets("gui")})
 
     def test_full_build_needs_no_reused_files(self):
         self.prepare("all")

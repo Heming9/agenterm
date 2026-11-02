@@ -23,12 +23,13 @@ REUSED_DIGESTS = "reused-digests.json"
 
 def assets(component):
     if component == "gui":
-        return ["agenterm-client-macos-arm64.zip", "agenterm-client-windows-amd64.exe",
-                "agenterm-client-windows-amd64.zip"]
+        return ["agenterm-client-gui-macos-arm64.zip", "agenterm-client-gui-windows-amd64.exe",
+                "agenterm-client-gui-windows-amd64.zip"]
     names = []
     for platform in ("macos", "linux", "windows"):
         for arch in ("amd64", "arm64"):
-            stem = f"agenterm-{component}-{platform}-{arch}"
+            prefix = "agenterm-client-cli" if component == "cli" else "agenterm-server"
+            stem = f"{prefix}-{platform}-{arch}"
             names.append(stem + (".exe" if platform == "windows" else ""))
             if component == "cli":
                 names.append(stem + (".zip" if platform == "windows" else ".tar.gz"))
@@ -157,8 +158,14 @@ def prepare(scope, requested_base):
         download(base["tag_name"], cache, names)
         previous = base_components(cache, base["tag_name"], hashes)
     selected = select_builds(scope, tag, previous)
+    # Naming/layout migrations require rebuilding instead of reusing binaries
+    # or archives whose embedded names still follow the old release layout.
+    if base and any(name not in {asset["name"] for asset in base["assets"]}
+                    for component in set(COMPONENTS) - selected for name in assets(component)):
+        print("Base release uses a different asset layout; rebuilding all programs")
+        selected = set(COMPONENTS)
     if "gui" in selected:
-        config = Path("cmd/agenterm-gui/FyneApp.toml").read_text()
+        config = Path("cmd/agenterm-client-gui/FyneApp.toml").read_text()
         gui_version = re.search(r'^Version = "([^"]+)"$', config, re.M)[1]
         if "v" + gui_version != tag:
             raise ValueError("GUI version must match internal/version.Current")

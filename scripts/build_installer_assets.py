@@ -31,11 +31,11 @@ def main():
                 goos, arch = target
                 platform = "macos" if goos == "darwin" else goos
                 suffix = ".exe" if goos == "windows" else ""
-                name = f"agenterm-cli-{platform}-{arch}{suffix}"
+                name = f"agenterm-client-cli-{platform}-{arch}{suffix}"
                 print(f"Building {name}", flush=True)
                 env = dict(os.environ, GOOS=goos, GOARCH=arch, CGO_ENABLED="0")
                 subprocess.run(["go", "build", "-trimpath", "-gcflags=all=-l", "-ldflags", "-s -w",
-                                "-o", str(work / name), "./cmd/agenterm-client"], cwd=root, env=env, check=True)
+                                "-o", str(work / name), "./cmd/agenterm-client-cli"], cwd=root, env=env, check=True)
 
             targets = [(goos, arch) for goos in ("darwin", "linux", "windows") for arch in ("amd64", "arm64")]
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:

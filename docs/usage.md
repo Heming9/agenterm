@@ -87,9 +87,11 @@ Before interrupt or EOF, check `list_clients.client_info.session_controls` (`int
 | Clear logs | `c`. |
 | Disconnect and exit | `q`, or Ctrl+C when no text is selected. |
 
-Use `./agenterm-client -plain` for plain text; redirecting input or output selects it automatically. Copying over SSH requires a terminal that supports OSC 52 clipboard access.
+Use `./agenterm-client-cli -plain` for plain text; redirecting input or output selects it automatically. Copying over SSH requires a terminal that supports OSC 52 clipboard access.
 
 **Desktop client (GUI):** paste a token, connect or disconnect, and watch live commands and output. It follows the system theme and shows connection latency and command statistics.
+
+Both clients accept `-token <token>` or `-invite <invitation>` (including the `-name=value` form), and `-help` lists the available flags. Use only one connection option at a time. An invitation requires authorization in the terminal or a GUI dialog. The CLI alone supports `-plain` and the installer's `-consent-confirmed` flag; the GUI rejects these flags and always requests authorization for invitations.
 
 Clients keep up to 10 MiB of recent logs in memory and do not save connection tokens. Clearing logs affects only the local display.
 
@@ -99,7 +101,7 @@ Clients keep up to 10 MiB of recent logs in memory and do not save connection to
 
 - Check that both the agent and target computer can reach the server. `127.0.0.1` only works on the same computer.
 - Ask the agent for a new invitation if one has expired or already been used.
-- A server restart invalidates invitations and tokens; create a new connection afterward.
+- A Runtime restart invalidates invitations and tokens; create a new connection afterward. Restarting Server alone preserves connections and sessions.
 - If versions are incompatible, update the server and clients from the same release.
 - If a connection is already active, close the other CLI or GUI connected to that server under the same OS account.
 

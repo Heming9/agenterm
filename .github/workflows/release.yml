@@ -72,15 +72,17 @@ jobs:
         with:
           go-version: '1.26.10'
       - run: go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
+      - name: Test GUI client
+        run: go test -gcflags=all=-l ./cmd/agenterm-client-gui
       - name: Build client
         run: |
-          cd cmd/agenterm-gui
+          cd cmd/agenterm-client-gui
           "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon --release
-          ditto -c -k --keepParent Agenterm.app ../../agenterm-client-macos-arm64.zip
+          ditto -c -k --keepParent Agenterm.app ../../agenterm-client-gui-macos-arm64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: build-macos
-          path: agenterm-client-macos-arm64.zip
+          path: agenterm-client-gui-macos-arm64.zip
           if-no-files-found: error
 
   windows-tests:
@@ -94,11 +96,11 @@ jobs:
         with:
           go-version: '1.26.10'
       - name: Test Windows installer and connection probes
-        run: go test ./cmd/agenterm-server -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
+        run: go test ./internal/service -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
       - name: Test Windows CLI client and reconnection
-        run: go test -gcflags=all=-l ./cmd/agenterm-client ./internal/client
+        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./internal/client
       - name: Test MCP execution and session lifecycle on Windows
-        run: go test ./cmd/agenterm-server -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
+        run: go test ./internal/service -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
 
@@ -124,17 +126,17 @@ jobs:
       - name: Build client
         shell: pwsh
         run: |
-          Set-Location cmd/agenterm-gui
+          Set-Location cmd/agenterm-client-gui
           & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Move-Item Agenterm.exe ../../agenterm-client-windows-amd64.exe
-          Compress-Archive -Path ../../agenterm-client-windows-amd64.exe -DestinationPath ../../agenterm-client-windows-amd64.zip -CompressionLevel Optimal
+          Move-Item Agenterm.exe ../../agenterm-client-gui-windows-amd64.exe
+          Compress-Archive -Path ../../agenterm-client-gui-windows-amd64.exe -DestinationPath ../../agenterm-client-gui-windows-amd64.zip -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
           name: build-windows
           path: |
-            agenterm-client-windows-amd64.exe
-            agenterm-client-windows-amd64.zip
+            agenterm-client-gui-windows-amd64.exe
+            agenterm-client-gui-windows-amd64.zip
           if-no-files-found: error
 
   server:
@@ -155,7 +157,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          for asset in release-plan/reused/agenterm-cli-* release-plan/reused/agenterm-server-*; do
+          for asset in release-plan/reused/agenterm-client-cli-* release-plan/reused/agenterm-server-*; do
             [ ! -f "$asset" ] || cp "$asset" dist/
           done
       - name: Install release compression tools
@@ -163,7 +165,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xz-utils
       - name: Test CLI, server, and installers
-        run: go test -gcflags=all=-l ./cmd/agenterm-client ./cmd/agenterm-server ./internal/...
+        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./cmd/agenterm-server ./internal/...
       - name: Build or reuse CLI, bundle it, then build servers
         if: needs.plan.outputs.server == 'true'
         env:
@@ -175,7 +177,7 @@ jobs:
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
           mkdir -p dist
-          rm -f internal/installer/assets/agenterm-cli-* internal/installer/assets/SHA256SUMS
+          rm -f internal/installer/assets/agenterm-client-cli-* internal/installer/assets/SHA256SUMS
           if [ "$BUILD_CLI" = true ]; then
             for os in darwin linux windows; do
               for arch in amd64 arm64; do
@@ -183,26 +185,26 @@ jobs:
                 extension=""
                 if [ "$os" = darwin ]; then platform=macos; fi
                 if [ "$os" = windows ]; then extension=.exe; fi
-                name="agenterm-cli-${platform}-${arch}${extension}"
-                GOOS="$os" GOARCH="$arch" go build -trimpath -gcflags=all=-l -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client
+                name="agenterm-client-cli-${platform}-${arch}${extension}"
+                GOOS="$os" GOARCH="$arch" go build -trimpath -gcflags=all=-l -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client-cli
               done
             done
           fi
           # Share the server's deterministic gzip/ZIP writer and checksum rules.
           go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
           if [ "$BUILD_CLI" != true ]; then
-            for archive in release-plan/reused/agenterm-cli-*.tar.gz release-plan/reused/agenterm-cli-*.zip; do
+            for archive in release-plan/reused/agenterm-client-cli-*.tar.gz release-plan/reused/agenterm-client-cli-*.zip; do
               cmp "$archive" "dist/$(basename "$archive")"
             done
           fi
           # Only the solid archive is embedded, never the individual downloads.
           xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
           # Verify the exact executable bytes before hashing and embedding.
-          for archive in dist/agenterm-cli-*.tar.gz; do
+          for archive in dist/agenterm-client-cli-*.tar.gz; do
             name=$(basename "$archive" .tar.gz)
             tar -xOzf "$archive" "$name" | cmp - "dist/$name"
           done
-          for archive in dist/agenterm-cli-*.zip; do
+          for archive in dist/agenterm-client-cli-*.zip; do
             name=$(basename "$archive" .zip).exe
             unzip -p "$archive" "$name" | cmp - "dist/$name"
           done

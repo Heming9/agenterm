@@ -4,80 +4,138 @@
 
 ## 启动 Server
 
-从 [Releases](https://github.com/Heming9/agenterm/releases) 下载适合系统的 Server。以下示例用于可信局域网：
+只需要构建或下载 **`agenterm-server` 一个程序**，启动命令仍可沿用原来的参数：
 
 ```sh
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-将 `SERVER_IP` 换成 Agent 和目标电脑都能访问的服务器地址。Server 启动后会显示 MCP 地址和管理密钥，在 Agent 的远程 MCP 配置中填写：
+Server 自动启动或复用内部 Runtime，不需要手动启动第二个进程。Runtime 没有独立的可执行文件、启动命令或部署服务，它的创建、接管、停止和重建统一由 Server 管理。
+
+- **内部 Runtime** 保留公网 TCP 入口，直接管理客户端 WebSocket、认证凭证、邀请、设备和会话；其他 HTTP 请求转给 Server。
+- **Server** 提供 MCP、安装脚本和下载，通过私有 Unix Socket 操作 Runtime。
+
+首次启动会显示 MCP 地址；未指定 `-passwd` 时会生成并显示管理密钥。重启 Server 会复用 Runtime 中的原密钥：
 
 ```text
 URL:            http://SERVER_IP:8080/agenterm/mcp
-Authorization:  Bearer 服务器显示的管理密钥
+Authorization:  Bearer 首次启动时显示的管理密钥
 ```
 
-接入后，按[首页的邀请与授权流程](../README.zh-CN.md#快速开始)连接目标电脑。公网部署请配置支持 WebSocket 的 HTTPS 反向代理；`-public-url` 只声明对外地址，本身不会启用 HTTPS。
+两个进程以同一用户运行。默认 socket 位于系统临时目录的 `agenterm-<uid>/` 下，目录权限 `0700`，socket 权限 `0600`。内部路径由 `-instance` 自动管理，无需指定 socket 参数。
 
-已有连接 token 时，也可以直接启动 CLI 或 GUI 客户端并粘贴 token：
+所有凭证、邀请和会话只在 Runtime 内存中，不写数据库或状态文件。socket 是通信入口，不保存业务状态。公网使用支持 WebSocket 的 HTTPS 反向代理，继续转发到 8080 并保留 `/agenterm` 路径。`-public-url` 不会启用 TLS。托管服务目前要求 Linux/macOS，Windows 目标客户端不受影响。
+
+## 命令和参数
 
 ```sh
-./agenterm-client
+agenterm-server [start|stop|restart|status] [参数]
 ```
 
-Server 和客户端建议使用同一发布版本。Windows 下运行对应的 `.exe` 文件。
+不写子命令时默认 `start`。仅保留以下九个参数：
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `-listen` | `127.0.0.1:8080` | 对外 TCP 监听地址 |
+| `-public-url` | `http://127.0.0.1:8080` | 双方可达的公开地址 |
+| `-url-prefix` | `/agenterm` | 品牌及部署路径前缀，`/` 表示根路径 |
+| `-passwd` | 首次创建 Runtime 时自动生成 | MCP 管理密钥 |
+| `-no-password` | `false` | 明确开启免密管理 |
+| `-stdio` | `false` | 同时提供 stdio MCP |
+| `-max-clients-per-ip` | `0`，不限 | 每个邀请创建者 IP 的在线设备限额 |
+| `-client-ip-header` | 空 | 使用可信代理提供的单个来源 IP；为空时使用直接连接 IP |
+| `-instance` | `default` | 区分同一用户运行的多个实例 |
+
+实例名支持 1–40 个小写字母、数字、连字符或下划线，首位需为字母或数字。不同实例需使用不同的监听端口，并配置对应的公开地址。`stop` 和 `status` 只接受 `-instance`。
+
+| 操作 | 行为 |
+| --- | --- |
+| `agenterm-server` 或 `agenterm-server start` | 自动创建或复用 Runtime；新版 Server 就绪后自动切换入口并排空旧版 |
+| Ctrl+C / SIGTERM | 最多等待 70 秒排空 Server 请求；Runtime 保留，等待接管 |
+| `agenterm-server status` | 检查当前实例，不创建目录或启动进程；完全就绪返回退出码 0，否则非 0 |
+| `agenterm-server stop` | 完整停止当前实例的 Server 和 Runtime，清空内存状态 |
+| `agenterm-server restart` 加完整启动参数 | 完整停止后按本次配置重建；连接和会话会清空 |
+
+运行中的 Runtime 保留原配置。再次启动时，未指定的 Runtime 参数不会覆盖已有值；显式指定的值若有冲突则报错。改变这些参数需使用 `restart` 并重新提供完整配置。首次生成的管理密钥也会随 Runtime 复用。
+
+```sh
+# 首次启动，或运行新版 Server 接管原 Runtime。
+./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080 -passwd YOUR_KEY
+
+# 检查状态、完整停止。
+./agenterm-server status
+./agenterm-server stop
+
+# 明确修改 Runtime 配置：会清空原凭证、连接和会话。
+./agenterm-server restart -listen 0.0.0.0:8080 \
+  -public-url http://SERVER_IP:8080 -passwd YOUR_KEY -max-clients-per-ip 8
+
+# 单独运行并管理测试实例。
+./agenterm-server -instance staging -listen 127.0.0.1:8081 -public-url http://localhost:8081
+./agenterm-server status -instance staging
+./agenterm-server stop -instance staging
+```
+
+Runtime 脱离终端进程组，启动信息回传后关闭启动管道；Server 退出或崩溃后，它会继续保留连接和任务，直到 Server 管理命令明确停止它或机器重启，不设置自动回收超时。
+
+新版 Server 在自己的临时 socket 上就绪后，自动切换内部入口，再让旧版排空在途请求。不再需要手动指定或切换 socket。已经运行的 Runtime 代码不会被替换；确实需要升级它时使用 `restart`。Server 已经退出时，Runtime 会继续缓存会话输出，新的 MCP 请求暂时返回 503，直到 Server 再次启动。
+
+Server 接管或停止 Runtime 前会检查内部 API 版本；API 版本相同时，发布版本可以不同。不兼容的 Server 以非零退出码退出，报错显示双方发布版本、API 版本、Runtime PID 和处理命令，不重启 Runtime，也不切换旧 Server。该不兼容可执行文件的 `stop`、`restart`、`status` 同样会拒绝操作。
+
+请使用兼容版本的 Server 停止同一实例，例如 `/path/to/compatible/agenterm-server stop -instance staging`，再启动新版本。也可以根据报错提示，以相同用户在同一主机或容器内执行 `kill -TERM <PID>`。停止 Runtime 会断开客户端连接，并清空内存中的凭证和会话。旧 Runtime 未报告的发布版本或 PID 会显示“未知”，手动发送信号前应先确认 PID。
+
+首次从旧版单进程架构迁移需要重新邀请连接。交互会话可通过原 `session_id`、游标和 `session_list` 恢复；同步命令在 Server 崩溃后继续执行，但已中断的 MCP 响应无法自动恢复，确认任务状态后再决定是否重试。
+
+旧版参数迁移：`-stop` 改为 `stop`，`-restart-runtime` 改为 `restart`，`-check` 改为 `status`。三个 socket 参数合并为 `-instance`；退出等待时间固定为 70 秒。`-generate` 已删除，邀请统一通过 MCP `create_client` 创建。如果旧实例曾使用自定义 socket 路径，应先用旧版命令完整停止它，再切换到新实例命名方式。
 
 ## 使用 Docker
 
-容器只运行 Server，客户端仍运行在需要协助的电脑上，无需挂载宿主机目录或 Docker socket。镜像和独立 Server 一样，内含一键安装脚本和六个平台的 CLI 下载资源。
-
-安装 Docker 和 Compose 插件后，在仓库根目录执行：
+Compose 只声明一个 Server 服务，由 Server 在容器内管理 Runtime。没有单独的 Runtime 镜像、容器或命令。非 root 容器通过 `/tmp` 的 tmpfs 放置通信 socket，业务状态仍只在内存中，无需宿主机目录或 Docker socket。
 
 ```sh
 cp .env.example .env
 openssl rand -hex 24
 ```
 
-编辑 `.env`：将生成的值填入 `AGENTERM_MANAGEMENT_KEY`，并将 `AGENTERM_PUBLIC_URL` 设为 Agent 和目标电脑都能访问的地址。默认的 `http://localhost:8080` 仅适用于双方都在 Docker 宿主机上使用的情况。随后启动：
+编辑 `.env`，设置 `AGENTERM_MANAGEMENT_KEY` 和双方可达的 `AGENTERM_PUBLIC_URL`：
 
 ```sh
 docker compose up -d --build
 docker compose logs -f server
 ```
 
-Agent 的 MCP 地址为 `AGENTERM_PUBLIC_URL` 加上 `/agenterm/mcp`，认证头为 `Authorization: Bearer 你的管理密钥`。请妥善保管 `.env`，它已被 Git 和镜像构建上下文排除。Compose 要求填写非空管理密钥，因此重建容器后管理认证保持不变。
+默认在 `127.0.0.1` 发布 8080；可信局域网直连可设置 `AGENTERM_BIND_ADDRESS=0.0.0.0`。容器中的 HTTPS 代理转发到 `server:8080`。
 
-Compose 默认只在 `127.0.0.1` 发布 8080 端口。可信局域网直连时，将 `AGENTERM_BIND_ADDRESS` 设为 `0.0.0.0`，并在 `AGENTERM_PUBLIC_URL` 使用 Docker 宿主机的局域网 IP。公网使用时，配置支持 WebSocket 的 HTTPS 反向代理，并填写对应的公网 URL。如果反向代理也运行在容器里，需要共享 Docker 网络并转发到 `server:8080`；代理容器里的 `127.0.0.1` 指向代理自身。转发时保留 `/agenterm` 路径。
+**重启或重建整个容器会同时结束内部 Runtime，无法保留内存连接。** 普通的 `docker compose restart/up/down` 属于完整容器生命周期，不等同于宿主机上只替换 Server 进程。需要跨 Server 更新保留连接时，使用下面的宿主机/systemd 部署方式。
 
-不使用 Compose 时，也可以手动构建和启动：
+## 使用 systemd
 
-```sh
-docker build -t agenterm-server:local .
-docker run -d --name agenterm-server --restart unless-stopped \
-  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-  -p 127.0.0.1:8080:8080 agenterm-server:local \
-  -listen 0.0.0.0:8080 -public-url http://localhost:8080
-docker logs agenterm-server
+仓库只提供 [Server unit](../deploy/systemd/agenterm-server.service)。创建 `agenterm` 用户，将唯一的 Server 二进制放到 `/opt/agenterm/`，将 unit 放到 `/etc/systemd/system/`，创建仅管理员可读的 `/etc/agenterm.env`：
+
+```text
+AGENTERM_PUBLIC_URL=https://YOUR_HOST
+AGENTERM_MANAGEMENT_KEY=YOUR_FIXED_KEY
 ```
 
-这种方式每次重启会生成并显示新的管理密钥；追加 `-passwd 你的管理密钥` 可以固定密钥，也可以使用上面的 Compose 配置。其他[启动选项](#启动选项)同样可作为容器参数传入。覆盖参数时保留 `-listen 0.0.0.0:8080`，确保 Docker 能将请求转发到 Server。
-
-镜像采用[多阶段构建](https://docs.docker.com/build/building/multi-stage/)、静态 Go 二进制和非 root 运行用户，不需要可写文件系统或数据卷。邀请、客户端凭据和会话都保存在内存中，Server 重启后会清空，需要重新生成邀请并连接客户端。请运行单个 Server 实例，多个独立副本之间不会共享连接状态。
-
-通过 Buildx 构建 Linux amd64 和 arm64 镜像，将示例仓库地址替换为你自己的地址：
-
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t YOUR_REGISTRY/agenterm-server:YOUR_TAG --push .
+sudo systemctl daemon-reload
+sudo systemctl enable --now agenterm-server
 ```
 
-更新时切换到需要的源码版本，再执行 `docker compose up -d --build`；停止服务用 `docker compose down`。
+更新时原子替换 Server 二进制，再执行 `sudo systemctl restart agenterm-server`。unit 使用 `KillMode=process`，只停止主 Server，内部 Runtime 留给新版接管。
+
+完整关闭时，通过 Server 管理命令停止内部 Runtime：
+
+```sh
+sudo systemctl stop agenterm-server
+sudo -u agenterm /opt/agenterm/agenterm-server stop
+```
+
+临时目录只存放通信 socket 和入口链接，不保存凭证和输出。修改 Runtime 参数时，需要先按上述命令完整停止，再更新环境配置并启动服务。
 
 ## 接入 stdio MCP 客户端
 
-此选项需要从当前源码构建，v0.3.1 发布的二进制尚未包含 stdio 支持。
-
-如果 Agent 通过启动本地进程接入 MCP，可以使用以下配置，将程序路径和 `SERVER_IP` 替换为实际值：
+Agent 仍可只启动一个程序，Runtime 会自动启动或复用：
 
 ```json
 {
@@ -90,23 +148,16 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 }
 ```
 
-stdio 信任启动该进程的用户，直接提供管理权限，无需填写 Bearer 认证头；HTTP 管理接口仍保留认证。HTTP 监听继续提供邀请兑换、安装资源和目标客户端 WebSocket，目标电脑需要能访问配置的公开地址。公网部署请按前文配置 HTTPS 反向代理。
+stdio 信任本地进程用户，提供管理权限；HTTP 管理接口仍需认证。stdout 只输出 MCP 消息，启动信息和管理密钥写入 stderr。关闭 stdio 后 Server 退出，Runtime 保留；下次启动自动接管。相同的真实监听 socket 同时只能由一个 Server 使用。
 
-此模式下 stdout 只输出 MCP 消息，启动信息写入 stderr。stdio 连接关闭后，HTTP 服务也会停止。按回车重新生成邀请的交互快捷方式只在纯 HTTP 模式下启用。
-
-## 启动选项
-
-查看可用启动选项：
+## 健康检查
 
 ```sh
 ./agenterm-server -h
-./agenterm-client -h
+./agenterm-server status
 ```
 
-- 用 `--passwd` 设置固定的管理密钥，避免每次启动重新配置 Agent。
-- 用 `-url-prefix` 自定义部署路径，Agent 配置和反向代理路径需同步调整。
-- 用 `--max-clients-per-ip` 限制每个邀请创建者 IP 的在线设备数量。
-- 反向代理后需要识别访客 IP 时，用 `--client-ip-header` 指定代理覆盖的请求头，并限制 Server 只接受可信代理访问。
+`GET /livez` 检查内部 Runtime；`GET /healthz` 检查 Server 和内部 API。Server 不会自动重启不兼容的 Runtime。配置可信代理 IP 头时使用 `-client-ip-header`，并确保入口只接受会覆盖该头的可信代理。
 
 ## 从源码构建
 
@@ -116,14 +167,16 @@ stdio 信任启动该进程的用户，直接提供管理权限，无需填写 B
 git clone https://github.com/Heming9/agenterm.git
 cd agenterm
 go build -o agenterm-server ./cmd/agenterm-server
-go build -o agenterm-client ./cmd/agenterm-client
+go build -o agenterm-client-cli ./cmd/agenterm-client-cli
 ```
 
 构建桌面客户端需要 CGo 和 C 编译器；Linux 还需安装图形开发库，参见 [Fyne 环境配置](https://docs.fyne.io/started/)。
 
 ```sh
-go build -o agenterm-gui ./cmd/agenterm-gui
+go build -o agenterm-client-gui ./cmd/agenterm-client-gui
 ```
+
+CLI 和 GUI 使用独立的入口包，共用连接与启动逻辑位于 `internal/client`。发布产物分别使用 `agenterm-client-cli-<平台>-<架构>` 和 `agenterm-client-gui-<平台>-<架构>` 前缀。选择性发布如果以旧产物名称的 Release 为基线，发布计划会自动完整构建，让整套产物一起迁移。
 
 普通源码构建默认内嵌随仓库提供的 macOS、Linux、Windows（amd64/arm64）六个平台 CLI 资源包，并提供两条一键连接命令。下载地址自动使用 `internal/version.Current`，无需额外发布标记或链接参数。Server 单个二进制即可提供安装脚本、客户端压缩包和校验清单。
 

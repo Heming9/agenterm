@@ -19,8 +19,8 @@ import (
 
 // Group by architecture so the solid archive can reuse similar machine code.
 var clientNames = []string{
-	"agenterm-cli-macos-amd64", "agenterm-cli-linux-amd64", "agenterm-cli-windows-amd64.exe",
-	"agenterm-cli-macos-arm64", "agenterm-cli-linux-arm64", "agenterm-cli-windows-arm64.exe",
+	"agenterm-client-cli-macos-amd64", "agenterm-client-cli-linux-amd64", "agenterm-client-cli-windows-amd64.exe",
+	"agenterm-client-cli-macos-arm64", "agenterm-client-cli-linux-arm64", "agenterm-client-cli-windows-arm64.exe",
 }
 
 // DownloadFiles is immutable after construction. Each Open gets its own seek

@@ -25,3 +25,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Local user research and outreach records
+/docs/research/

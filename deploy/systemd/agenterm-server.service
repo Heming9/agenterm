@@ -1,0 +1,22 @@
+[Unit]
+Description=Agenterm server and managed runtime
+After=network.target
+
+[Service]
+User=agenterm
+Group=agenterm
+EnvironmentFile=/etc/agenterm.env
+ExecStart=/opt/agenterm/agenterm-server -listen 127.0.0.1:8080 -public-url ${AGENTERM_PUBLIC_URL} -passwd ${AGENTERM_MANAGEMENT_KEY}
+# Preserve the managed runtime while the main server process is replaced.
+KillMode=process
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=80
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
