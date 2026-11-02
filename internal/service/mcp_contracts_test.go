@@ -51,6 +51,9 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 			}
 		}
 		checkDescriptions(&schema)
+		if strings.Contains(string(data), `"next_action"`) {
+			t.Fatalf("%s still publishes next_action", tool.Name)
+		}
 		if tool.Annotations == nil {
 			t.Fatalf("%s missing behavior annotations", tool.Name)
 		}
@@ -89,15 +92,28 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		if err := schemas[name].Validate(structured); err != nil {
 			t.Fatalf("%s violates its result schema: %v", name, err)
 		}
+		if _, exists := structured["next_action"]; exists {
+			t.Fatalf("%s still returns next_action", name)
+		}
 		seen[name] = true
 		return structured
 	}
 	created := call("create_client", map[string]any{})
 	token := created["client_token"].(string)
 	call("list_clients", map[string]any{"client_token": token})
+	waited := call("list_clients", map[string]any{"client_token": token, "wait_ms": 20})
+	if waited["status"] != "waiting" || len(waited["clients"].([]any)) != 0 {
+		t.Fatalf("unexpected connection timeout result: %v", waited)
+	}
 	ws, _ := h.connect(t, token, "schema device")
 	go serveTestDevice(ws, "schema", nil, nil)
-	call("list_clients", map[string]any{"client_token": token, "wait_ms": 20})
+	connected := call("list_clients", map[string]any{"client_token": token, "wait_ms": 60000})
+	if connected["status"] != "connected" || len(connected["clients"].([]any)) != 1 {
+		t.Fatalf("unexpected 60-second connection check result: %v", connected)
+	}
+	for _, wait := range []int{-1, 60001} {
+		h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, true)
+	}
 	call("execute_command", map[string]any{"client_token": token, "command": "example"})
 	started := call("session_start", map[string]any{"client_token": token, "command": "interactive"})
 	id := started["session_id"].(string)

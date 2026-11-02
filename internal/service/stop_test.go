@@ -43,12 +43,12 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 		h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": wait}, true)
 	}
 	first := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": 0}, false).(map[string]any)
-	if first["accepted"] != true || first["done"] != false || first["status"] != "stopping" || first["already_done"] != false || first["next_action"] == "" {
+	if first["accepted"] != true || first["done"] != false || first["status"] != "stopping" || first["already_done"] != false {
 		t.Fatalf("unconfirmed cancellation: %v", first)
 	}
-	for _, field := range []string{"exit_code", "canceled", "timed_out"} {
+	for _, field := range []string{"exit_code", "canceled", "timed_out", "next_action"} {
 		if _, exists := first[field]; exists {
-			t.Fatalf("unconfirmed stop invented terminal field %s", field)
+			t.Fatalf("unconfirmed stop returned unexpected field %s", field)
 		}
 	}
 	select {

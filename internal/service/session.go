@@ -330,8 +330,6 @@ func (p *session) stop(ctx context.Context, wait time.Duration) (sessionStopResu
 			}
 			out.ExitCode, out.TimedOut, out.Canceled = new(p.exitCode), new(p.timedOut), new(p.canceled)
 			out.Error = p.err
-		} else {
-			out.NextAction = serverText("mcp.stop.keep.reading")
 		}
 		changed := p.changed
 		p.mu.Unlock()

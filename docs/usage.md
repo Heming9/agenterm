@@ -35,13 +35,15 @@ Current source builds publish explicit output schemas and behavior annotations f
 
 | Tool | When to use it | Main result fields |
 | --- | --- | --- |
-| `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`, `next_action`. |
-| `list_clients` | Inspect devices or wait for a connection. | `clients`; polling also returns `status` and `next_action`. |
+| `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
+| `list_clients` | Inspect devices or wait for a connection. | `clients`; waiting calls also return `status`. |
 | `execute_command` | Run a short non-interactive command and wait for its result. | `stdout`, `stderr`, `exit_code`, `timed_out`, `canceled`, `truncated`, optional `error`. |
 | `session_start` | Start an interactive or long-running process. | `session_id`, initial `cursor=0`. |
 | `session_read` | Read paginated output and check session completion. | `output`, `next_cursor`, `has_more`, `truncated`, `done`; terminal results add exit, timeout, cancellation and error fields. |
 | `session_control` | Send input, interrupt, EOF or stop using `action`. | `action`; input returns `accepted`, interrupt/EOF return `delivered`, stop returns confirmation and terminal fields. |
 | `session_list` | Rediscover this token's retained sessions, optionally filtered by `client_id`, even for offline devices. | `sessions`: session, device, original command, timestamps, lifecycle status and retained output cursor range. |
+
+After generating connection instructions with `create_client`, the agent must show them to the user and call `list_clients` with the returned `client_token` and `wait_ms: 60000` to check for a successful connection, with a 60-second timeout. The call returns immediately when any device is online. If no device connects within 60 seconds, report the timeout to the user. These requirements are published in the MCP tool descriptions.
 
 `session_control` requires `session_id` and `action`. Only `action=input` accepts and requires `input`; only `action=stop` accepts optional `wait_ms` (default 1000). Unrelated parameters are rejected. Every successful result includes its `action`, with separate result schemas for sent input, acknowledged control and stop confirmation. The tool is conservatively marked non-idempotent because input and interruption can repeat side effects; repeated stop remains safe as described below. Management access exposes seven tools; device-scoped access exposes six, excluding `create_client`.
 

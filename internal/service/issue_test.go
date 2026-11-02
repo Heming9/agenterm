@@ -51,9 +51,8 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			if err != nil || !expires.Equal(entry.expires.Truncate(time.Second)) {
 				t.Fatalf("expires_at: %v %v", created["expires_at"], err)
 			}
-			next := created["next_action"].(map[string]any)
-			if next["until"] != created["expires_at"] {
-				t.Fatalf("wait deadline differs from invitation expiry: %v", next)
+			if _, exists := created["next_action"]; exists {
+				t.Fatal("create_client must not return next_action")
 			}
 			if tc.args["multi_device"] == true && !strings.Contains(created["display_text"].(string), fmt.Sprintf("%d", int64(tc.want/time.Second))) {
 				t.Fatalf("multi-device notice does not show configured lifetime: %v", created["display_text"])

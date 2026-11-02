@@ -137,6 +137,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 		case "wait_ms":
 			property.Minimum, property.Maximum, property.Default = new(float64(0)), new(float64(20000)), json.RawMessage("0")
 			if name == "list_clients" {
+				property.Maximum = new(float64(60000))
 				property.Description = serverText("mcp.wait.for.connection")
 			}
 			if name == "session_control" {
@@ -245,9 +246,9 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		}
 		out := map[string]any{"clients": clients}
 		if a.WaitMS > 0 {
-			out["status"], out["next_action"] = "waiting", serverText("mcp.connection.keep.waiting")
+			out["status"] = "waiting"
 			if len(clients) > 0 {
-				out["status"], out["next_action"] = "connected", serverText("mcp.connection.notify.user")
+				out["status"] = "connected"
 			}
 		}
 		return nil, out, nil

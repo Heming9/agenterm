@@ -53,10 +53,6 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, order: s.nextClientOrder, expires: expires}
 	result := map[string]any{"client_token": token, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
-	result["next_action"] = map[string]any{
-		"tool": "list_clients", "arguments": map[string]any{"client_token": token, "wait_ms": 20000},
-		"until": result["expires_at"], "instructions": serverText("mcp.connection.workflow"),
-	}
 	shell, powershell := installCommands(value)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell

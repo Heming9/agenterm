@@ -35,13 +35,15 @@ url = "https://agenterm.net/mcp"
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
-| `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`、`next_action`。 |
-| `list_clients` | 查看设备或等待连接。 | `clients`；轮询时还返回 `status`、`next_action`。 |
+| `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
+| `list_clients` | 查看设备或等待连接。 | `clients`；等待时还返回 `status`。 |
 | `execute_command` | 运行短时非交互命令并等待结果。 | `stdout`、`stderr`、`exit_code`、`timed_out`、`canceled`、`truncated`，以及可选 `error`。 |
 | `session_start` | 启动交互或长时间运行的进程。 | `session_id`、初始 `cursor=0`。 |
 | `session_read` | 分页读取输出并检查会话是否完成。 | `output`、`next_cursor`、`has_more`、`truncated`、`done`；终态还包含退出、超时、取消及错误字段。 |
 | `session_control` | 用 `action` 选择输入、中断、EOF 或停止。 | `action`；输入返回 `accepted`，中断/EOF 返回 `delivered`，停止返回确认状态及终态字段。 |
 | `session_list` | 找回所选 token 的保留会话，可按 `client_id` 筛选，无需设备在线。 | `sessions`：会话、设备、原始启动命令、时间、状态及保留输出游标范围。 |
+
+通过 `create_client` 生成连接说明后，agent 必须先向用户展示说明，再使用返回的 `client_token` 调用 `list_clients`，设置 `wait_ms: 60000`，以 60 秒为超时时间检查是否连接成功。任一设备在线时立即返回；60 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
 
 `session_control` 必须提供 `session_id` 和 `action`。仅 `action=input` 可带且必须带 `input`；仅 `action=stop` 可附带 `wait_ms`（默认 1000）。其他 action 不得带这些参数，混用会被拒绝。每个成功结果均带 `action`，发送输入、控制送达和停止确认使用不同的返回 Schema。由于输入和中断可能重复产生副作用，整个工具保守标注为非幂等；重复 stop 仍按下文语义处理。管理访问可见七个工具；设备范围访问可见六个，不含 `create_client`。
 

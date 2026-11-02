@@ -12,9 +12,8 @@ import (
 // Legacy map-based handlers keep their JSON shape and are checked against these
 // explicit schemas by the MCP SDK.
 type clientsResult struct {
-	Clients    []clientInfo `json:"clients"`
-	Status     string       `json:"status,omitempty"`
-	NextAction string       `json:"next_action,omitempty"`
+	Clients []clientInfo `json:"clients"`
+	Status  string       `json:"status,omitempty"`
 }
 
 type sessionStartResult struct {
@@ -71,30 +70,16 @@ type sessionStopResult struct {
 	TimedOut    *bool  `json:"timed_out,omitempty"`
 	Canceled    *bool  `json:"canceled,omitempty"`
 	Error       string `json:"error,omitempty"`
-	NextAction  string `json:"next_action,omitempty"`
 }
 
 type invitationResult struct {
-	ClientToken              string               `json:"client_token"`
-	MultiDevice              bool                 `json:"multi_device"`
-	Invitation               string               `json:"invitation"`
-	ExpiresAt                string               `json:"expires_at"`
-	NextAction               invitationNextAction `json:"next_action"`
-	MacOSLinuxCommand        string               `json:"macos_linux_command"`
-	WindowsPowerShellCommand string               `json:"windows_powershell_command"`
-	DisplayText              string               `json:"display_text"`
-}
-
-type invitationNextAction struct {
-	Tool         string                  `json:"tool"`
-	Arguments    invitationWaitArguments `json:"arguments"`
-	Until        string                  `json:"until"`
-	Instructions string                  `json:"instructions"`
-}
-
-type invitationWaitArguments struct {
-	ClientToken string `json:"client_token"`
-	WaitMS      int    `json:"wait_ms"`
+	ClientToken              string `json:"client_token"`
+	MultiDevice              bool   `json:"multi_device"`
+	Invitation               string `json:"invitation"`
+	ExpiresAt                string `json:"expires_at"`
+	MacOSLinuxCommand        string `json:"macos_linux_command"`
+	WindowsPowerShellCommand string `json:"windows_powershell_command"`
+	DisplayText              string `json:"display_text"`
 }
 
 func resultSchema[T any]() *jsonschema.Schema {
