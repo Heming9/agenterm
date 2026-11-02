@@ -15,7 +15,7 @@ import (
 )
 
 type selectionTestOutput struct {
-	bytes.Buffer
+	buffer   bytes.Buffer
 	mu       sync.Mutex
 	selected chan struct{}
 	once     sync.Once
@@ -24,8 +24,8 @@ type selectionTestOutput struct {
 func (w *selectionTestOutput) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	n, err := w.Buffer.Write(p)
-	if strings.Contains(w.Buffer.String(), "48;2;") {
+	n, err := w.buffer.Write(p)
+	if strings.Contains(w.buffer.String(), "48;2;") {
 		w.once.Do(func() { close(w.selected) })
 	}
 	return n, err
@@ -34,7 +34,7 @@ func (w *selectionTestOutput) Write(p []byte) (int, error) {
 func (w *selectionTestOutput) String() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.Buffer.String()
+	return w.buffer.String()
 }
 
 // Exercise Bubble Tea's actual SGR decoder and renderer, rather than constructing

@@ -24,6 +24,7 @@ const maxTUILog = 10 * 1024 * 1024
 type logSpan struct {
 	kind, text string
 	expanded   bool
+	layout     *tuiLogLayout
 }
 
 type tuiFold struct {
@@ -72,6 +73,8 @@ type tuiModel struct {
 	logRows                 []string
 	softWraps               map[int]bool
 	logDirty                bool
+	batchingLogs            bool
+	logLayoutStyle          tuiLogLayoutStyle
 	selection               *tuiSelection
 	selectionID             uint64
 	clipboard               *tuiClipboard
@@ -166,7 +169,30 @@ func (m *tuiModel) waitEvent() tea.Cmd {
 	return func() tea.Msg {
 		select {
 		case e := <-m.events:
-			return e
+			if len(e.output) == 0 {
+				return e
+			}
+			// Collect one frame of output, preserving command/source order.
+			// Lifecycle events end the frame immediately; batches stay bounded.
+			batch := tuiLogBatch{e}
+			size := len(e.output)
+			timer := time.NewTimer(time.Second / 60)
+			defer timer.Stop()
+			for len(batch) < 256 && size < 64<<10 {
+				select {
+				case next := <-m.events:
+					batch = append(batch, next)
+					size += len(next.output)
+					if len(next.output) == 0 {
+						return batch
+					}
+				case <-timer.C:
+					return batch
+				case <-m.ctx.Done():
+					return batch
+				}
+			}
+			return batch
 		case <-m.ctx.Done():
 			return nil
 		}
@@ -204,10 +230,28 @@ func (m *tuiModel) appendLog(kind, s string) {
 			excess = 0
 		}
 	}
-	m.refreshLog()
+	if m.batchingLogs {
+		m.logDirty = true
+	} else {
+		m.refreshLog()
+	}
 }
+
+type tuiLogBatch []tuiEvent
+
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tuiLogBatch:
+		m.batchingLogs = true
+		var cmd tea.Cmd
+		for _, event := range msg {
+			_, cmd = m.Update(event)
+		}
+		m.batchingLogs = false
+		if m.logDirty {
+			m.refreshLog()
+		}
+		return m, cmd
 	case tea.WindowSizeMsg:
 		// Rewrapping changes content coordinates; dismiss the old selection.
 		m.selection = nil
