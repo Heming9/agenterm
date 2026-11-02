@@ -39,7 +39,7 @@ func TestSessionLimitPerTokenAndFinishedReplacement(t *testing.T) {
 			h.call(t, token, "session_start", map[string]any{"client_id": firstID, "command": "seventh"}, true)
 			h.call(t, other, "session_start", map[string]any{"command": "independent"}, false)
 
-			h.call(t, token, "session_stop", map[string]any{"session_id": sessions[0]}, false)
+			h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": sessions[0]}, false)
 			deadline := time.Now().Add(2 * time.Second)
 			cursor := float64(0)
 			for {
@@ -107,7 +107,7 @@ func TestSessionIncrementalReadAndExit(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		s.accept(protocol.Message{Type: "output", Output: "prompt> "})
 	}()
-	first, err := s.read(context.Background(), 0, time.Second)
+	first, err := s.read(context.Background(), 0, time.Second, defaultSessionReadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestSessionIncrementalReadAndExit(t *testing.T) {
 	cursor := first["next_cursor"].(int64)
 	s.accept(protocol.Message{Type: "output", Output: "answer"})
 	s.accept(protocol.Message{Type: "done", ExitCode: 7})
-	last, err := s.read(context.Background(), cursor, 0)
+	last, err := s.read(context.Background(), cursor, 0, defaultSessionReadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,11 +128,22 @@ func TestSessionIncrementalReadAndExit(t *testing.T) {
 func TestSessionBufferReportsTruncation(t *testing.T) {
 	s := &session{id: "test", changed: make(chan struct{})}
 	s.accept(protocol.Message{Type: "output", Output: strings.Repeat("x", maxSessionOutput+10)})
-	r, err := s.read(context.Background(), 0, 0)
+	r, err := s.read(context.Background(), 0, 0, maxSessionReadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r["truncated"] != true || len(r["output"].(string)) != maxSessionOutput || r["next_cursor"] != int64(maxSessionOutput+10) {
+	if r["truncated"] != true || len(r["output"].(string)) != maxSessionReadBytes || r["next_cursor"] != int64(maxSessionReadBytes+10) || r["has_more"] != true {
 		t.Fatalf("bad retained output metadata")
+	}
+	retained := len(r["output"].(string))
+	for r["has_more"] == true {
+		r, err = s.read(context.Background(), r["next_cursor"].(int64), 0, maxSessionReadBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained += len(r["output"].(string))
+	}
+	if retained != maxSessionOutput || r["next_cursor"] != int64(maxSessionOutput+10) {
+		t.Fatal("lost retained output across pages")
 	}
 }

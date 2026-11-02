@@ -39,15 +39,32 @@ Current source builds publish explicit output schemas and behavior annotations f
 | `list_clients` | Inspect devices or wait for a connection. | `clients`; polling also returns `status` and `next_action`. |
 | `execute_command` | Run a short non-interactive command and wait for its result. | `stdout`, `stderr`, `exit_code`, `timed_out`, `canceled`, `truncated`, optional `error`. |
 | `session_start` | Start an interactive or long-running process. | `session_id`, initial `cursor=0`. |
-| `session_read` | Read incremental output and check completion. | `output`, `next_cursor`, `truncated`, `done`; terminal results add exit, timeout, cancellation and error fields. |
-| `session_write` | Send input, including a newline to submit a prompt response. | `accepted`: input was sent, not confirmation it was consumed. |
-| `session_stop` | Request cancellation and wait briefly for confirmation. | `accepted`, `done`, `status`, `already_done`, terminal fields when available, or `next_action`. |
+| `session_read` | Read paginated output and check session completion. | `output`, `next_cursor`, `has_more`, `truncated`, `done`; terminal results add exit, timeout, cancellation and error fields. |
+| `session_control` | Send input, interrupt, EOF or stop using `action`. | `action`; input returns `accepted`, interrupt/EOF return `delivered`, stop returns confirmation and terminal fields. |
+| `session_list` | Rediscover this token's retained sessions, optionally filtered by `client_id`, even for offline devices. | `sessions`: session, device, original command, timestamps, lifecycle status and retained output cursor range. |
+
+`session_control` requires `session_id` and `action`. Only `action=input` accepts and requires `input`; only `action=stop` accepts optional `wait_ms` (default 1000). Unrelated parameters are rejected. Every successful result includes its `action`, with separate result schemas for sent input, acknowledged control and stop confirmation. The tool is conservatively marked non-idempotent because input and interruption can repeat side effects; repeated stop remains safe as described below. Management access exposes seven tools; device-scoped access exposes six, excluding `create_client`.
+
+```json
+{"session_id":"…","action":"input","input":"pwd\n"}
+```
 
 `list_clients` returns `status`, `client_id`, `connected_at`, and a `client_info` object for each device. The device `status` displays `Connected`, with the latest server-client heartbeat RTT when available, such as `Connected · 203ms`. `client_info` contains `hostname`, `platform`, `arch` (client process architecture), `shell` (the interpreter path used for commands and sessions), `default_cwd` (the client working directory inherited when `cwd` is omitted), and `client_version` (the client application version reported during the handshake). Empty metadata fields mean unknown or not reported by the client. Both server and client must be updated to expose the new metadata.
 
 Each `execute_command` starts a fresh shell. Set `cwd` and `env` explicitly; they do not persist across calls. Its timeout defaults to 60 seconds, with `timeout_ms=0` disabling it. Captured stdout/stderr share a 1 MiB limit. Use session tools for prompts, incremental output or long jobs, and retain the `session_id` and the byte-based `next_cursor`. Session buffers retain the latest 1 MiB; inspect `truncated` to detect missing older output.
 
-`session_stop` waits up to `wait_ms` milliseconds for a terminal result (default 1000, range 0–20000). Setting 0 returns immediately. Interpret its result as follows:
+To preserve working directory, variables, functions or an activated environment, explicitly launch a persistent shell with `session_start` (for example, `bash -i` where installed on Linux/macOS), then send commands through `session_control(action="input")` using the same `session_id`. Each `session_start` creates an independent process; a one-shot command leaves no persistent shell behind. Client disconnection ends sessions; reconnect does not restore shell state.
+
+`session_read.max_bytes` defaults to 16384, with a range of 4–65536 bytes. Output never splits a UTF-8 character. Continue from each returned `next_cursor`. `has_more=true` means retained output remains; even with `done=true`, keep reading until `has_more=false`. `done` and `exit_code` describe the whole session process, not individual commands in a persistent shell. Pagination alone does not set `truncated`.
+
+`session_list` returns this token's sessions in start-time order, including retained results for offline devices. `output_start_cursor` points to the earliest retained output; `output_end_cursor` points after the latest output, so reading from it skips existing output. Session `status` is `running`, `stopping` or `finished`; it does not infer shell idleness, current directory or individual command state. Finished records are retained for up to 30 minutes and may be evicted when new sessions start.
+
+Before interrupt or EOF, check `list_clients.client_info.session_controls` (`interrupt` and/or `eof`). An empty list means unavailable; older clients may need updating. Both operations wait up to 5 seconds for client acknowledgment. `delivered=true` does not guarantee the program handled the operation; read output to verify. A timeout or cancellation leaves delivery uncertain, so do not blindly retry.
+
+- `session_control(action="interrupt")` sends SIGINT to the current terminal foreground process group on Linux/macOS. An interactive shell may remain usable after its foreground command exits; the program may also ignore the signal or exit. This does not forcibly cancel the entire session like `session_control(action="stop")`. Windows pipe mode does not support interrupt.
+- `session_control(action="eof")` follows previously queued input. On Linux/macOS canonical terminals it sends the configured VEOF character: pending input may be delivered first, requiring another EOF, and stdin is not permanently closed. Raw mode or disabled VEOF returns an error. On Windows pipes it permanently closes stdin while output remains readable; subsequent writes fail and repeated EOF is harmless. EOF at an idle shell prompt may exit the shell.
+
+`session_control(action="stop")` waits up to `wait_ms` milliseconds for a terminal result (default 1000, range 0–20000). Setting 0 returns immediately. Interpret its result as follows:
 
 | Status | Meaning and next step |
 | --- | --- |

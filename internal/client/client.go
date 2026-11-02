@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -90,13 +91,16 @@ func (c *connection) send(m protocol.Message) error {
 }
 
 type process struct {
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	ready     chan struct{}
-	readyOnce sync.Once
-	input     io.WriteCloser
-	output    io.ReadCloser
-	stopped   bool
+	cancel     context.CancelFunc
+	mu         sync.Mutex
+	inputMu    sync.Mutex
+	ready      chan struct{}
+	readyOnce  sync.Once
+	input      io.WriteCloser
+	output     io.ReadCloser
+	stopped    bool
+	inputEOF   bool
+	inputQueue chan protocol.Message
 }
 
 func (p *process) stop() {
@@ -127,16 +131,74 @@ func (p *process) setIO(input io.WriteCloser, output io.ReadCloser) {
 }
 
 func (p *process) write(input string) error {
-	// session_write may arrive before the shell has finished starting.
+	// Session input may arrive before the shell has finished starting.
 	<-p.ready
+	p.inputMu.Lock()
+	defer p.inputMu.Unlock()
 	p.mu.Lock()
 	writer := p.input
+	closed := p.stopped || p.inputEOF
 	p.mu.Unlock()
-	if writer == nil {
-		return nil
+	if writer == nil || closed {
+		return io.ErrClosedPipe
 	}
 	_, err := io.WriteString(writer, input)
 	return err
+}
+
+func (p *process) control(action string) error {
+	<-p.ready
+	// Interrupt must not wait for a blocked stdin write; it is an OS signal.
+	if action == "eof" {
+		p.inputMu.Lock()
+		defer p.inputMu.Unlock()
+	}
+	p.mu.Lock()
+	input, stopped, eof := p.input, p.stopped, p.inputEOF
+	p.mu.Unlock()
+	if input == nil || stopped {
+		return i18n.NewError("session.already.ended")
+	}
+	if action == "eof" && eof {
+		return nil // Closing a pipe's stdin a second time is harmless.
+	}
+	closed, err := controlInteractive(input, action)
+	if closed && err == nil {
+		p.mu.Lock()
+		p.inputEOF = true
+		p.mu.Unlock()
+	}
+	return err
+}
+
+func (c *connection) replyControl(p *process, m protocol.Message) {
+	err := error(i18n.NewError("session.already.ended"))
+	if p != nil {
+		err = p.control(m.Type)
+	}
+	reply := protocol.Message{Type: "control_done", ID: m.RequestID}
+	if err != nil {
+		reply.Error = err.Error()
+	}
+	_ = c.send(reply)
+}
+
+// Serialize input and EOF per process without blocking the WebSocket reader.
+// Interrupt/cancel must remain usable while a program is not consuming stdin.
+func (c *connection) inputWorker(ctx context.Context, p *process) {
+	defer c.workers.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case m := <-p.inputQueue:
+			if m.Type == "eof" {
+				c.replyControl(p, m)
+			} else if err := p.write(m.Input); err != nil {
+				_ = c.send(protocol.Message{Type: "output", ID: m.ID, Stream: "stderr", Output: fmt.Sprintf(i18n.Text(i18n.Terminal(), "client.input.error"), err)})
+			}
+		}
+	}
 }
 
 type outputWriter struct {
@@ -165,11 +227,15 @@ func (c *connection) run(m protocol.Message) {
 		cancel()
 		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(m.TimeoutMS)*time.Millisecond)
 	}
-	p := &process{cancel: cancel, ready: make(chan struct{})}
+	p := &process{cancel: cancel, ready: make(chan struct{}), inputQueue: make(chan protocol.Message, 32)}
 	c.mu.Lock()
 	c.running[m.ID] = p
 	c.mu.Unlock()
 	c.workers.Add(1)
+	if m.Interactive {
+		c.workers.Add(1)
+		go c.inputWorker(ctx, p)
+	}
 	go func() {
 		defer c.workers.Done()
 		defer func() { p.stop(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
@@ -287,6 +353,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	headers.Set(protocol.HostnameHeader, base64.RawURLEncoding.EncodeToString([]byte(hostname)))
 	headers.Set(protocol.PlatformHeader, runtime.GOOS)
 	headers.Set(protocol.ArchHeader, runtime.GOARCH)
+	headers.Set(protocol.SessionControlsHeader, strings.Join(interactiveControls(), ","))
 	headers.Set(protocol.ShellHeader, base64.RawURLEncoding.EncodeToString([]byte(Shell())))
 	cwd, _ := os.Getwd()
 	headers.Set(protocol.DefaultCwdHeader, base64.RawURLEncoding.EncodeToString([]byte(cwd)))
@@ -377,14 +444,29 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			if p != nil {
 				p.stop()
 			}
-		case "input":
+		case "interrupt":
 			c.mu.Lock()
 			p := c.running[m.ID]
 			c.mu.Unlock()
+			c.workers.Add(1)
+			go func() { defer c.workers.Done(); c.replyControl(p, m) }()
+		case "input", "eof":
+			c.mu.Lock()
+			p := c.running[m.ID]
+			c.mu.Unlock()
+			detail := i18n.Text(i18n.Terminal(), "session.already.ended")
 			if p != nil {
-				if err := p.write(m.Input); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-					_ = c.send(protocol.Message{Type: "output", ID: m.ID, Stream: "stderr", Output: fmt.Sprintf(i18n.Text(i18n.Terminal(), "client.input.error"), err)})
+				select {
+				case p.inputQueue <- m:
+					continue
+				default:
+					detail = i18n.Text(i18n.Terminal(), "session.input.queue.full")
 				}
+			}
+			if m.Type == "eof" {
+				_ = c.send(protocol.Message{Type: "control_done", ID: m.RequestID, Error: detail})
+			} else {
+				_ = c.send(protocol.Message{Type: "output", ID: m.ID, Stream: "stderr", Output: detail})
 			}
 		}
 	}

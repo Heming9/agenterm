@@ -93,6 +93,7 @@ func (h *multiHarness) dial(token, hostname string) (*websocket.Conn, *http.Resp
 	return websocket.DefaultDialer.Dial(h.s.clientURL, http.Header{
 		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 		protocol.HostnameHeader: {base64.RawURLEncoding.EncodeToString([]byte(hostname))}, protocol.PlatformHeader: {"linux"},
+		protocol.SessionControlsHeader: {"interrupt,eof"},
 	})
 }
 
@@ -144,6 +145,10 @@ func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, re
 			}
 		case "cancel":
 			if ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID}) != nil {
+				return
+			}
+		case "interrupt", "eof":
+			if ws.WriteJSON(protocol.Message{Type: "control_done", ID: m.RequestID}) != nil {
 				return
 			}
 		}
@@ -220,9 +225,9 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 			t.Fatal(out)
 		}
 		h.call(t, other, "session_read", map[string]any{"session_id": sid}, true)
-		h.call(t, other, "session_write", map[string]any{"session_id": sid, "input": "bad"}, true)
-		h.call(t, other, "session_stop", map[string]any{"session_id": sid}, true)
-		h.call(t, token, "session_write", map[string]any{"session_id": sid, "input": "hello"}, false)
+		h.call(t, other, "session_control", map[string]any{"action": "input", "session_id": sid, "input": "bad"}, true)
+		h.call(t, other, "session_control", map[string]any{"action": "stop", "session_id": sid}, true)
+		h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": sid, "input": "hello"}, false)
 		out = h.call(t, token, "session_read", map[string]any{"session_id": sid, "cursor": len(target.label + ":interactive"), "wait_ms": 1000}, false).(map[string]any)
 		if out["output"] != target.label+":hello" {
 			t.Fatal(out)
@@ -244,7 +249,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	if !strings.HasPrefix(out.(map[string]any)["stdout"].(string), "B:still online") {
 		t.Fatal(out)
 	}
-	h.call(t, token, "session_stop", map[string]any{"session_id": sessions["B"]}, false)
+	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": sessions["B"]}, false)
 	_, replacement := h.connect(t, token, "设备 A 重连")
 	if replacement == a {
 		t.Fatal("reconnect reused old ID")

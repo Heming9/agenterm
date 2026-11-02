@@ -3,14 +3,20 @@ package main
 import (
 	"agenterm/internal/i18n"
 	"context"
+	"fmt"
+	"slices"
+	"sort"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"agenterm/internal/protocol"
 )
 
 const maxSessionOutput = 1 << 20
 const maxSessionsPerToken = 6
+const defaultSessionReadBytes = 16 << 10
+const maxSessionReadBytes = 64 << 10
 
 type session struct {
 	id            string
@@ -27,6 +33,8 @@ type session struct {
 	ended         time.Time
 	changed       chan struct{}
 	stopRequested bool
+	command       string
+	started       time.Time
 }
 
 func (p *session) signal() { close(p.changed); p.changed = make(chan struct{}) }
@@ -41,6 +49,9 @@ func (p *session) accept(m protocol.Message) {
 		p.output = append(p.output, []byte(m.Output)...)
 		if len(p.output) > maxSessionOutput {
 			n := len(p.output) - maxSessionOutput
+			for n < len(p.output) && !utf8.RuneStart(p.output[n]) {
+				n++
+			}
 			p.output = append([]byte(nil), p.output[n:]...)
 			p.offset += int64(n)
 		}
@@ -50,11 +61,17 @@ func (p *session) accept(m protocol.Message) {
 		p.exitCode = m.ExitCode
 		p.err = m.Error
 		p.timedOut, p.canceled = m.TimedOut, m.Canceled
-		p.ended = time.Now()
+		p.ended = time.Now().UTC()
 		p.signal()
 	}
 }
-func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (map[string]any, error) {
+func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, maxBytes int) (map[string]any, error) {
+	if maxBytes < 4 || maxBytes > maxSessionReadBytes {
+		return nil, i18n.NewError("session.read.invalid.limit")
+	}
+	if cursor < 0 || wait < 0 || wait > 20*time.Second {
+		return nil, i18n.NewError("session.read.invalid.arguments")
+	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	for {
@@ -69,8 +86,16 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration) (m
 			cursor = p.offset
 		}
 		if cursor < end || p.done || wait == 0 {
-			text := string(p.output[cursor-p.offset:])
-			result := map[string]any{"session_id": p.id, "output": text, "next_cursor": end, "truncated": truncated, "done": p.done}
+			if cursor < end && !utf8.RuneStart(p.output[cursor-p.offset]) {
+				p.mu.Unlock()
+				return nil, i18n.NewError("session.cursor.invalid.boundary")
+			}
+			next := min(end, cursor+int64(maxBytes))
+			for next < end && !utf8.RuneStart(p.output[next-p.offset]) {
+				next--
+			}
+			text := string(p.output[cursor-p.offset : next-p.offset])
+			result := map[string]any{"session_id": p.id, "output": text, "next_cursor": next, "has_more": next < end, "truncated": truncated, "done": p.done}
 			if p.done {
 				result["exit_code"] = p.exitCode
 				result["timed_out"] = p.timedOut
@@ -123,7 +148,7 @@ func (s *server) startSession(secret, clientID, command string, options protocol
 	if owned >= maxSessionsPerToken && oldestFinishedID == "" {
 		return nil, i18n.NewError("session.limit.reached.try.again.later")
 	}
-	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{})}
+	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{}), command: command, started: time.Now().UTC()}
 	ch := make(chan protocol.Message, 256)
 	c.mu.Lock()
 	if c.closed {
@@ -172,6 +197,96 @@ func (p *session) send(typ, input string) error {
 		return i18n.NewError("session.already.ended")
 	}
 	return p.client.send(protocol.Message{Type: typ, ID: p.id, Input: input})
+}
+
+// Listing also includes disconnected devices' retained results and does not
+// require a currently connected target device. The token is the access boundary.
+func (s *server) listSessions(secret, clientID string) []sessionInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]sessionInfo, 0)
+	for id, p := range s.sessions {
+		if p.owner != secret {
+			continue
+		}
+		p.mu.Lock()
+		if p.done && time.Since(p.ended) > 30*time.Minute {
+			delete(s.sessions, id)
+			p.mu.Unlock()
+			continue
+		}
+		if clientID == "" || clientID == p.client.info.ID {
+			info := sessionInfo{SessionID: p.id, ClientID: p.client.info.ID, Command: p.command,
+				StartedAt: p.started, Status: "running", Done: p.done,
+				OutputStartCursor: p.offset, OutputEndCursor: p.offset + int64(len(p.output))}
+			if p.stopRequested {
+				info.Status = "stopping"
+			}
+			if p.done {
+				info.Status, info.EndedAt, info.ExitCode, info.Error = "finished", new(p.ended), new(p.exitCode), p.err
+			}
+			items = append(items, info)
+		}
+		p.mu.Unlock()
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].StartedAt.Equal(items[j].StartedAt) {
+			return items[i].SessionID < items[j].SessionID
+		}
+		return items[i].StartedAt.Before(items[j].StartedAt)
+	})
+	return items
+}
+
+// Controls wait for acknowledgment of the OS operation. Old clients without
+// advertised support are rejected rather than silently ignoring new messages.
+func (p *session) control(ctx context.Context, action string) (sessionControlResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sessionControlResult{}, err
+	}
+	if action != "interrupt" && action != "eof" {
+		return sessionControlResult{}, i18n.NewError("session.control.unsupported")
+	}
+	p.mu.Lock()
+	done := p.done
+	p.mu.Unlock()
+	if done {
+		return sessionControlResult{}, i18n.NewError("session.already.ended")
+	}
+	c := p.client
+	if !slices.Contains(c.info.Environment.SessionControls, action) {
+		return sessionControlResult{}, i18n.NewError("session.control.unsupported")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	id := random()
+	ch := make(chan protocol.Message, 1)
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return sessionControlResult{}, i18n.NewError("client.disconnected")
+	}
+	c.pending[id] = ch
+	c.mu.Unlock()
+	defer func() { c.mu.Lock(); delete(c.pending, id); c.mu.Unlock() }()
+	if err := c.send(protocol.Message{Type: action, ID: p.id, RequestID: id}); err != nil {
+		return sessionControlResult{}, err
+	}
+	select {
+	case m, ok := <-ch:
+		if !ok {
+			return sessionControlResult{}, i18n.NewError("client.disconnected")
+		}
+		if m.Type != "control_done" {
+			return sessionControlResult{}, i18n.NewError("session.control.invalid.response")
+		}
+		if m.Error != "" {
+			return sessionControlResult{}, fmt.Errorf("%s", m.Error)
+		}
+		return sessionControlResult{Delivered: true}, nil
+	case <-ctx.Done():
+		return sessionControlResult{}, i18n.NewError("session.control.unconfirmed", ctx.Err())
+	}
 }
 
 // A successful write only confirms delivery of the request to the connection.

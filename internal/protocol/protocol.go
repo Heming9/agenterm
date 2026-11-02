@@ -34,6 +34,9 @@ const ShellHeader = "X-Agenterm-Shell"
 // DefaultCwdHeader carries the base64url-encoded client working directory.
 const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 
+// SessionControlsHeader advertises supported acknowledged session operations.
+const SessionControlsHeader = "X-Agenterm-Session-Controls"
+
 // Advertised by servers that send Ping frames and latency measurements.
 const HeartbeatHeader = "X-Agenterm-Heartbeat"
 const HeartbeatInterval = 20 * time.Second
@@ -201,9 +204,10 @@ func NormalizePathPrefix(prefix string) (string, error) {
 }
 
 type Message struct {
-	Type    string `json:"type"`
-	ID      string `json:"id,omitempty"`
-	Command string `json:"command,omitempty"`
+	Type      string `json:"type"`
+	ID        string `json:"id,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+	Command   string `json:"command,omitempty"`
 	ExecOptions
 	Interactive bool   `json:"interactive,omitempty"`
 	Input       string `json:"input,omitempty"`

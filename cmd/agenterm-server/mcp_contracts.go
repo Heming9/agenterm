@@ -2,6 +2,7 @@ package main
 
 import (
 	"agenterm/internal/protocol"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,6 +27,7 @@ type sessionReadResult struct {
 	Output     string `json:"output"`
 	NextCursor int64  `json:"next_cursor"`
 	Truncated  bool   `json:"truncated"`
+	HasMore    bool   `json:"has_more"`
 	Done       bool   `json:"done"`
 	ExitCode   *int   `json:"exit_code,omitempty"`
 	TimedOut   *bool  `json:"timed_out,omitempty"`
@@ -35,6 +37,28 @@ type sessionReadResult struct {
 
 type sessionWriteResult struct {
 	Accepted bool `json:"accepted"`
+}
+
+type sessionListResult struct {
+	Sessions []sessionInfo `json:"sessions"`
+}
+
+type sessionInfo struct {
+	SessionID         string     `json:"session_id"`
+	ClientID          string     `json:"client_id"`
+	Command           string     `json:"command"`
+	StartedAt         time.Time  `json:"started_at"`
+	EndedAt           *time.Time `json:"ended_at,omitempty"`
+	Status            string     `json:"status"`
+	Done              bool       `json:"done"`
+	OutputStartCursor int64      `json:"output_start_cursor"`
+	OutputEndCursor   int64      `json:"output_end_cursor"`
+	ExitCode          *int       `json:"exit_code,omitempty"`
+	Error             string     `json:"error,omitempty"`
+}
+
+type sessionControlResult struct {
+	Delivered bool `json:"delivered"`
 }
 
 type sessionStopResult struct {
@@ -90,6 +114,10 @@ func describeResult(schema *jsonschema.Schema) {
 		property.Description = serverText("mcp.result." + name)
 		if name == "status" && schema.Properties["client_id"] != nil {
 			property.Description = serverText("mcp.client.status")
+			if schema.Properties["session_id"] != nil {
+				property.Description = serverText("mcp.session.status")
+				property.Enum = []any{"running", "stopping", "finished"}
+			}
 		}
 		describeResult(property)
 	}
@@ -97,6 +125,34 @@ func describeResult(schema *jsonschema.Schema) {
 	for _, definition := range schema.Defs {
 		describeResult(definition)
 	}
+}
+
+func sessionActionResultSchema() *jsonschema.Schema {
+	// Each action has a distinct closed result shape. In particular an input
+	// acknowledgment cannot be confused with delivery or confirmed termination.
+	output := &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{
+		"action": {Type: "string", Enum: []any{"input", "interrupt", "eof", "stop"}, Description: serverText("mcp.result.action")},
+	}, Required: []string{"action"}}
+	for _, action := range []string{"input", "interrupt", "eof", "stop"} {
+		var branch *jsonschema.Schema
+		switch action {
+		case "input":
+			branch = resultSchema[sessionWriteResult]()
+		case "interrupt", "eof":
+			branch = resultSchema[sessionControlResult]()
+		case "stop":
+			branch = resultSchema[sessionStopResult]()
+			branch.Properties["status"].Enum = []any{"stopping", "stopped", "finished"}
+			branch.Properties["accepted"].Description = serverText("mcp.stop.accepted")
+			branch.Properties["done"].Description = serverText("mcp.stop.done")
+			branch.Properties["status"].Description = serverText("mcp.stop.status")
+		}
+		branch.Properties["action"] = &jsonschema.Schema{Type: "string", Enum: []any{action}, Description: serverText("mcp.result.action")}
+		branch.Required = append(branch.Required, "action")
+		branch.AdditionalProperties = &jsonschema.Schema{Not: &jsonschema.Schema{}}
+		output.OneOf = append(output.OneOf, branch)
+	}
+	return output
 }
 
 func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Tool {
@@ -112,23 +168,19 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 		output = resultSchema[sessionStartResult]()
 	case "session_read":
 		output = resultSchema[sessionReadResult]()
-	case "session_write":
-		output = resultSchema[sessionWriteResult]()
-	case "session_stop":
-		output = resultSchema[sessionStopResult]()
-		output.Properties["status"].Enum = []any{"stopping", "stopped", "finished"}
-		output.Properties["accepted"].Description = serverText("mcp.stop.accepted")
-		output.Properties["done"].Description = serverText("mcp.stop.done")
-		output.Properties["status"].Description = serverText("mcp.stop.status")
+	case "session_list":
+		output = resultSchema[sessionListResult]()
+	case "session_control":
+		output = sessionActionResultSchema()
 	}
-	readOnly := name == "list_clients" || name == "session_read"
-	destructive := name == "execute_command" || name == "session_start" || name == "session_write" || name == "session_stop"
-	openWorld := name == "execute_command" || name == "session_start" || name == "session_write" || name == "session_stop"
+	readOnly := name == "list_clients" || name == "session_read" || name == "session_list"
+	destructive := name == "execute_command" || name == "session_start" || name == "session_control"
+	openWorld := destructive
 	return &mcp.Tool{
 		Name: name, Description: serverText(description), InputSchema: input, OutputSchema: output,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: readOnly, DestructiveHint: &destructive,
-			IdempotentHint: readOnly || name == "session_stop", OpenWorldHint: &openWorld,
+			IdempotentHint: readOnly, OpenWorldHint: &openWorld,
 		},
 	}
 }

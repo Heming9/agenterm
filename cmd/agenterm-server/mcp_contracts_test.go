@@ -43,6 +43,9 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 				checkDescriptions(property)
 			}
 			checkDescriptions(s.Items)
+			for _, branch := range s.OneOf {
+				checkDescriptions(branch)
+			}
 			for _, definition := range s.Defs {
 				checkDescriptions(definition)
 			}
@@ -51,8 +54,13 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		if tool.Annotations == nil {
 			t.Fatalf("%s missing behavior annotations", tool.Name)
 		}
-		if tool.Name == "session_stop" && !tool.Annotations.IdempotentHint {
-			t.Fatal("stop does not advertise its idempotent behavior")
+		if tool.Name == "session_list" && (!tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint) {
+			t.Fatal("session_list must be read-only and idempotent")
+		}
+		if tool.Name == "session_control" {
+			if tool.Annotations.ReadOnlyHint || tool.Annotations.IdempotentHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
+				t.Fatalf("%s has incorrect mutation annotations", tool.Name)
+			}
 		}
 		resolved, err := schema.Resolve(nil)
 		if err != nil {
@@ -94,15 +102,18 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	started := call("session_start", map[string]any{"client_token": token, "command": "interactive"})
 	id := started["session_id"].(string)
 	call("session_read", map[string]any{"client_token": token, "session_id": id})
-	call("session_write", map[string]any{"client_token": token, "session_id": id, "input": "yes\n"})
-	stopped := call("session_stop", map[string]any{"client_token": token, "session_id": id})
+	call("session_control", map[string]any{"action": "input", "client_token": token, "session_id": id, "input": "yes\n"})
+	call("session_list", map[string]any{"client_token": token})
+	call("session_control", map[string]any{"action": "interrupt", "client_token": token, "session_id": id})
+	call("session_control", map[string]any{"action": "eof", "client_token": token, "session_id": id})
+	stopped := call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
 	// This fake device reports a normal exit, not cancellation. The server must
 	// expose that distinction even though a stop request preceded completion.
 	if stopped["status"] != "finished" || stopped["canceled"] != false || stopped["done"] != true {
 		t.Fatal(stopped)
 	}
 	call("session_read", map[string]any{"client_token": token, "session_id": id})
-	call("session_stop", map[string]any{"client_token": token, "session_id": id})
+	call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
 	if len(seen) != 7 {
 		t.Fatalf("validated %d tools", len(seen))
 	}

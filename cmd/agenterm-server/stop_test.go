@@ -37,12 +37,12 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 	defer close(finish)
 	started := h.call(t, token, "session_start", map[string]any{"command": "interactive"}, false).(map[string]any)
 	id := started["session_id"].(string)
-	h.call(t, other, "session_stop", map[string]any{"session_id": id}, true)
-	h.call(t, token, "session_stop", map[string]any{"session_id": "unknown"}, true)
+	h.call(t, other, "session_control", map[string]any{"action": "stop", "session_id": id}, true)
+	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": "unknown"}, true)
 	for _, wait := range []any{-1, 20001, 1.5} {
-		h.call(t, token, "session_stop", map[string]any{"session_id": id, "wait_ms": wait}, true)
+		h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": wait}, true)
 	}
-	first := h.call(t, token, "session_stop", map[string]any{"session_id": id, "wait_ms": 0}, false).(map[string]any)
+	first := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": 0}, false).(map[string]any)
 	if first["accepted"] != true || first["done"] != false || first["status"] != "stopping" || first["already_done"] != false || first["next_action"] == "" {
 		t.Fatalf("unconfirmed cancellation: %v", first)
 	}
@@ -61,7 +61,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 	}
 	// A pending request must not be sent twice, including while waiting for its
 	// terminal acknowledgement. The bounded wait must not invent completion.
-	again := h.call(t, token, "session_stop", map[string]any{"session_id": id, "wait_ms": 20}, false).(map[string]any)
+	again := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": 20}, false).(map[string]any)
 	if again["status"] != "stopping" || again["done"] != false {
 		t.Fatal(again)
 	}
@@ -69,7 +69,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 	errors := make(chan error, 1)
 	go func() {
 		// Omitted wait_ms uses the advertised 1000 ms confirmation window.
-		result, failed, err := h.request(token, "session_stop", map[string]any{"session_id": id})
+		result, failed, err := h.request(token, "session_control", map[string]any{"action": "stop", "session_id": id})
 		if err != nil || failed {
 			errors <- err
 			return
@@ -94,7 +94,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("stop did not observe the terminal acknowledgement")
 	}
-	ended := h.call(t, token, "session_stop", map[string]any{"session_id": id}, false).(map[string]any)
+	ended := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id}, false).(map[string]any)
 	if ended["already_done"] != true || ended["accepted"] != false || ended["done"] != true || ended["status"] != "stopped" {
 		t.Fatalf("repeat after completion: %v", ended)
 	}
@@ -152,7 +152,7 @@ func TestStopDisconnectDoesNotConfirmCancellation(t *testing.T) {
 		}
 	}()
 	started := h.call(t, token, "session_start", map[string]any{"command": "interactive"}, false).(map[string]any)
-	out := h.call(t, token, "session_stop", map[string]any{"session_id": started["session_id"]}, false).(map[string]any)
+	out := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": started["session_id"]}, false).(map[string]any)
 	if out["status"] != "finished" || out["done"] != true || out["canceled"] != false || out["accepted"] != true || out["error"] == nil || out["error"] == "" {
 		t.Fatalf("disconnect was confused with confirmed cancellation: %v", out)
 	}

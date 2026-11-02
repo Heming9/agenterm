@@ -192,8 +192,9 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		Environment: clientEnvironment{
 			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),
 			Arch: metadataHeader(r, protocol.ArchHeader), Shell: metadataHeader(r, protocol.ShellHeader),
-			DefaultCwd:    metadataHeader(r, protocol.DefaultCwdHeader),
-			ClientVersion: metadataHeader(r, version.Header),
+			DefaultCwd:      metadataHeader(r, protocol.DefaultCwdHeader),
+			ClientVersion:   metadataHeader(r, version.Header),
+			SessionControls: sessionControlsHeader(r),
 		},
 	}}
 	if s.clients == nil {

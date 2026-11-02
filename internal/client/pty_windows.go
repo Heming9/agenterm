@@ -1,6 +1,7 @@
 package client
 
 import (
+	"agenterm/internal/i18n"
 	"io"
 	"os"
 	"os/exec"
@@ -27,4 +28,13 @@ func startInteractive(cmd *exec.Cmd) (io.WriteCloser, io.ReadCloser, error) {
 	}
 	writer.Close()
 	return input, reader, nil
+}
+
+func interactiveControls() []string { return []string{"eof"} }
+
+func controlInteractive(input io.WriteCloser, action string) (bool, error) {
+	if action != "eof" {
+		return false, i18n.NewError("session.control.unsupported")
+	}
+	return true, input.Close()
 }

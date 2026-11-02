@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,12 +23,26 @@ type clientInfo struct {
 }
 
 type clientEnvironment struct {
-	Hostname      string `json:"hostname"`
-	Platform      string `json:"platform"`
-	Arch          string `json:"arch"`
-	Shell         string `json:"shell"`
-	DefaultCwd    string `json:"default_cwd"`
-	ClientVersion string `json:"client_version"`
+	Hostname        string   `json:"hostname"`
+	Platform        string   `json:"platform"`
+	Arch            string   `json:"arch"`
+	Shell           string   `json:"shell"`
+	DefaultCwd      string   `json:"default_cwd"`
+	ClientVersion   string   `json:"client_version"`
+	SessionControls []string `json:"session_controls"`
+}
+
+func sessionControlsHeader(r *http.Request) []string {
+	controls := make([]string, 0, 2)
+	for _, value := range strings.Split(r.Header.Get(protocol.SessionControlsHeader), ",") {
+		value = strings.TrimSpace(value)
+		if value == "interrupt" || value == "eof" {
+			if !slices.Contains(controls, value) {
+				controls = append(controls, value)
+			}
+		}
+	}
+	return controls
 }
 
 // Hostnames and paths are base64 encoded to support non-ASCII text.

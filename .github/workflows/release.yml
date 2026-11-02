@@ -98,7 +98,7 @@ jobs:
       - name: Test Windows CLI client and reconnection
         run: go test -gcflags=all=-l ./cmd/agenterm-client ./internal/client
       - name: Test MCP execution and session lifecycle on Windows
-        run: go test ./cmd/agenterm-server -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery'
+        run: go test ./cmd/agenterm-server -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
 

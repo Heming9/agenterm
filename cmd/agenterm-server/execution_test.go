@@ -213,7 +213,7 @@ stopped:
 	}
 	started = h.call(t, token, "session_start", map[string]any{"command": longCommand()}, false).(map[string]any)
 	id = started["session_id"].(string)
-	h.call(t, token, "session_stop", map[string]any{"session_id": id}, false)
+	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id}, false)
 	deadline = time.Now().Add(5 * time.Second)
 	for {
 		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "wait_ms": 1000}, false).(map[string]any)
@@ -224,7 +224,7 @@ stopped:
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("session_stop did not finish")
+			t.Fatal("session_control(action=stop) did not finish")
 		}
 	}
 }
@@ -327,7 +327,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	}, false).(map[string]any)
 	id := start["session_id"].(string)
 	// Send input immediately, without waiting for process startup or a prompt.
-	h.call(t, token, "session_write", map[string]any{"session_id": id, "input": "early-input\n"}, false)
+	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "early-input\n"}, false)
 	var output strings.Builder
 	var cursor float64
 	for {
