@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -296,6 +297,15 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
+			expires, err := time.Parse(time.RFC3339, out["expires_at"].(string))
+			if err != nil {
+				return nil, nil, err
+			}
+			timeoutSeconds := a.TimeoutSeconds
+			if timeoutSeconds == 0 {
+				timeoutSeconds = defaultInvitationTimeoutSeconds
+			}
+			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), timeoutSeconds, expires, out["multi_device"].(bool))
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})
 	}

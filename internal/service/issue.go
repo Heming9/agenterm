@@ -56,11 +56,17 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	shell, powershell := installCommands(value)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
-	// Return one canonical English template; agents localize only the prose for
-	// the conversation while preserving commands and credentials verbatim.
-	result["display_text"] = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
-	if multiDevice {
-		result["display_text"] = result["display_text"].(string) + "\n\n" + i18n.Text("en", "multi.device.display.notice")
-	}
+	result["display_text"] = connectionDisplayText(token, shell, powershell, timeoutSeconds, expires, multiDevice)
 	return result, nil
+}
+
+// Presentation belongs to the replaceable frontend too: a retained runtime may
+// still return an older display_text while its credentials and commands remain
+// valid. Never reconstruct or change those credentials when updating the prose.
+func connectionDisplayText(token, shell, powershell string, timeoutSeconds int64, expires time.Time, multiDevice bool) string {
+	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
+	if multiDevice {
+		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
+	}
+	return text
 }
