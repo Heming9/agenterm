@@ -6,21 +6,8 @@ import (
 	"testing"
 )
 
-func TestDefaultTokenCompatibility(t *testing.T) {
-	const existing = "agenterm:FTAxMjM0NTY3ODlhYmNkZWYfkH8AAAE"
-	want := Token{URL: "ws://127.0.0.1:8080/agenterm/client", Secret: base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef"))}
-	got, err := Decode(existing)
-	if err != nil || got != want {
-		t.Fatalf("existing token changed: %#v %v", got, err)
-	}
-	encoded, err := Encode(want)
-	if err != nil || encoded != existing {
-		t.Fatalf("default encoding changed: %q %v", encoded, err)
-	}
-}
-
 func TestCompactTokenRoundTrip(t *testing.T) {
-	secret := base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef"))
+	secret := base64.RawURLEncoding.EncodeToString([]byte("0123456789"))
 	for _, address := range []string{
 		"ws://127.0.0.1:8080/agenterm/client",
 		"ws://192.168.100.200:65535/agenterm/client",
@@ -47,8 +34,8 @@ func TestCompactTokenRoundTrip(t *testing.T) {
 			if !strings.HasPrefix(encoded, "agenterm:") {
 				t.Fatal("token must start with agenterm:")
 			}
-			if address == "ws://127.0.0.1:8080/agenterm/client" && len(encoded) != 40 {
-				t.Fatalf("default token length = %d, want 40", len(encoded))
+			if address == "ws://127.0.0.1:8080/agenterm/client" && len(encoded) != 32 {
+				t.Fatalf("default token length = %d, want 32", len(encoded))
 			}
 			got, err := Decode(encoded)
 			if err != nil {
@@ -58,6 +45,71 @@ func TestCompactTokenRoundTrip(t *testing.T) {
 				t.Fatalf("decoded token = %#v, want %#v", got, want)
 			}
 		})
+	}
+}
+
+func TestOptionalPortEncoding(t *testing.T) {
+	secret := base64.RawURLEncoding.EncodeToString(make([]byte, TokenSecretSize))
+	for _, tc := range []struct {
+		address string
+		flags   byte
+		suffix  string
+	}{
+		{"wss://example.com/agenterm/client", tokenFormat | tokenPackedHost | 2, "\x15\x80\x4d\x40\xc1\x66\x0c\xf3\x40"},
+		{"wss://example.com:8080/agenterm/client", tokenFormat | tokenPackedHost | tokenHasPort | 2, "\x1f\x90\x15\x80\x4d\x40\xc1\x66\x0c\xf3\x40"},
+		{"ws://127.0.0.1/agenterm/client", tokenFormat | tokenIPv4 | 1, "\x7f\x00\x00\x01"},
+		{"ws://127.0.0.1:8080/agenterm/client", tokenFormat | tokenIPv4 | tokenHasPort | 1, "\x1f\x90\x7f\x00\x00\x01"},
+	} {
+		encoded, err := Encode(Token{URL: tc.address, Secret: secret})
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encoded, tokenPrefix))
+		if err != nil || payload[0] != tc.flags || string(payload[1+TokenSecretSize:]) != tc.suffix {
+			t.Fatalf("unexpected payload for %s: %x, %v", tc.address, payload, err)
+		}
+	}
+}
+
+func TestPackedHostnames(t *testing.T) {
+	secret := base64.RawURLEncoding.EncodeToString(make([]byte, TokenSecretSize))
+	for _, tc := range []struct {
+		input, want string
+		length      int
+		packed      bool
+	}{
+		{"wss://agenterm.net/client", "wss://agenterm.net/client", 39, true},
+		{"wss://例子.中国/client", "wss://xn--fsqu00a.xn--fiqs8s/client", 49, true},
+		{"wss://Example.com/client", "wss://Example.com/client", 0, false},
+		{"ws://[fe80::1%25en0]:8080/client", "ws://[fe80::1%25en0]:8080/client", 0, false},
+	} {
+		encoded, err := Encode(Token{URL: tc.input, Secret: secret})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encoded, tokenPrefix))
+		if (data[0]&tokenPackedHost != 0) != tc.packed {
+			t.Fatalf("unexpected encoding for %s", tc.input)
+		}
+		if tc.length != 0 && len(encoded) != tc.length {
+			t.Fatalf("%s: length %d, want %d", tc.input, len(encoded), tc.length)
+		}
+		decoded, err := Decode(encoded)
+		if err != nil || decoded.URL != tc.want {
+			t.Fatalf("%s: got %#v, %v", tc.input, decoded, err)
+		}
+	}
+	for _, host := range []string{"a", "ab", "abc", "abcd", "abcde", hostnameAlphabet} {
+		packed, ok := packHostname(host)
+		got, valid := unpackHostname(packed)
+		if !ok || !valid || got != host {
+			t.Fatalf("host %q: got %q", host, got)
+		}
+	}
+	for _, invalid := range [][]byte{{0}, {0xff}, {0x05}, {0x04, 0x00}} {
+		if _, ok := unpackHostname(invalid); ok {
+			t.Fatalf("accepted malformed packed host %x", invalid)
+		}
 	}
 }
 
@@ -81,11 +133,13 @@ func TestDecodeRejectsInvalidAndLegacyTokens(t *testing.T) {
 		"host with query":    wrap(tokenFormat|1, "localhost?query"),
 		"host with user":     wrap(tokenFormat|1, "user@localhost"),
 		"host with no name":  wrap(tokenFormat|1, ":8080"),
-		"truncated IPv4":     wrap(tokenFormat|5, "short"),
+		"truncated IPv4":     wrap(tokenFormat|5, "abc"),
 		"truncated IPv6":     wrap(tokenFormat|9, "short"),
-		"extra IPv4 bytes":   wrap(tokenFormat|5, strings.Repeat("a", 7)),
-		"extra IPv6 bytes":   wrap(tokenFormat|9, strings.Repeat("a", 19)),
-		"unknown flags":      wrap(tokenFormat|65, "localhost"),
+		"extra IPv4 bytes":   wrap(tokenFormat|5, strings.Repeat("a", 5)),
+		"extra IPv6 bytes":   wrap(tokenFormat|9, strings.Repeat("a", 17)),
+		"missing port":       wrap(tokenFormat|tokenHasPort|1, "x"),
+		"zero port":          wrap(tokenFormat|tokenHasPort|1, "\x00\x00localhost"),
+		"unknown flags":      wrap(tokenFormat|tokenPackedHost|tokenIPv4|1, "localhost"),
 		"missing path size":  wrap(tokenFormat|tokenCustomPath|1, "x"),
 		"truncated path":     wrap(tokenFormat|tokenCustomPath|1, "\x00\x10/a"),
 		"unclean path":       wrap(tokenFormat|tokenCustomPath|1, "\x00\x04/a/.localhost"),
@@ -116,6 +170,8 @@ func TestEncodeRejectsInvalidFields(t *testing.T) {
 		{URL: "ws://localhost/agenterm/client", Secret: strings.Repeat("!", 32)},
 		{URL: "ws://127.0.0.1:65536/agenterm/client", Secret: secret},
 		{URL: "ws://127.0.0.1:0/agenterm/client", Secret: secret},
+		{URL: "ws://example.com:65536/agenterm/client", Secret: secret},
+		{URL: "ws://example.com:0/agenterm/client", Secret: secret},
 	} {
 		if _, err := Encode(token); err == nil {
 			t.Errorf("invalid token fields were accepted: %#v", token)

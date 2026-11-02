@@ -140,7 +140,7 @@ func TestInstallWrapperRetriesCodeCollisions(t *testing.T) {
 	first := make([]byte, protocol.TokenSecretSize)
 	first[len(first)-1] = 1
 	collision := make([]byte, protocol.TokenSecretSize)
-	binary.BigEndian.PutUint64(collision[8:], 2176782337) // 36^6 + 1 also maps to 000001.
+	binary.BigEndian.PutUint64(collision[len(collision)-8:], 2176782337) // 36^6 + 1 also maps to 000001.
 	retry := make([]byte, protocol.TokenSecretSize)
 	retry[len(retry)-1] = 2
 	originalReader := rand.Reader

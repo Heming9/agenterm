@@ -10,18 +10,22 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 const (
 	PathPrefix = "/agenterm"
 	ClientPath = PathPrefix + "/client"
 	// TokenSecretSize is the number of cryptographically random credential bytes.
-	TokenSecretSize = 16
+	TokenSecretSize = 10
 	tokenPrefix     = "agenterm:"
 	tokenIPv4       = 4
 	tokenIPv6       = 8
 	tokenFormat     = 16 // Namespaced routes; older token formats are unsupported.
 	tokenCustomPath = 32 // Length-prefixed URL prefix before the address data.
+	tokenHasPort    = 64
+	tokenPackedHost = 128
 )
 
 const HostnameHeader = "X-Agenterm-Hostname"
@@ -57,9 +61,7 @@ func Encode(t Token) (string, error) {
 	if err != nil || len(secret) != TokenSecretSize {
 		return "", i18n.NewError("invalid.token.expected.a.d.byte.secret", TokenSecretSize)
 	}
-	// Payload: scheme/address flags, raw secret, then address data.
-	// IP addresses use a two-byte port (0 = absent) and 4 or 16 address bytes.
-	// Domain names and scoped IPv6 addresses use the full host as text.
+	// Payload: flags, secret, optional path prefix, optional port, and address.
 	b := make([]byte, 1, 1+TokenSecretSize+len(u.Host))
 	b[0] = tokenFormat | 1
 	if u.Scheme == "wss" {
@@ -72,23 +74,34 @@ func Encode(t Token) (string, error) {
 		b = binary.BigEndian.AppendUint16(b, uint16(len(prefix)))
 		b = append(b, prefix...)
 	}
-	if ip, err := netip.ParseAddr(u.Hostname()); err == nil && ip.Zone() == "" {
-		var port uint64
-		if u.Port() != "" {
-			port, err = strconv.ParseUint(u.Port(), 10, 16)
-			if err != nil || port == 0 {
-				return "", i18n.NewError("invalid.token.port.must.be.between.1.and")
-			}
+	if u.Port() != "" {
+		port, err := strconv.ParseUint(u.Port(), 10, 16)
+		if err != nil || port == 0 {
+			return "", i18n.NewError("invalid.token.port.must.be.between.1.and")
 		}
+		b[0] |= tokenHasPort
+		b = binary.BigEndian.AppendUint16(b, uint16(port))
+	}
+	if ip, err := netip.ParseAddr(u.Hostname()); err == nil && ip.Zone() == "" {
 		if ip.Is4() {
 			b[0] |= tokenIPv4
 		} else {
 			b[0] |= tokenIPv6
 		}
-		b = binary.BigEndian.AppendUint16(b, uint16(port))
 		b = append(b, ip.AsSlice()...)
 	} else {
-		b = append(b, u.Host...)
+		hostname := u.Hostname()
+		if !isASCII(hostname) {
+			if ascii, err := idna.Lookup.ToASCII(hostname); err == nil {
+				hostname = ascii
+			}
+		}
+		if packed, ok := packHostname(hostname); ok {
+			b[0] |= tokenPackedHost
+			b = append(b, packed...)
+		} else {
+			b = append(b, hostname...)
+		}
 	}
 	return tokenPrefix + base64.RawURLEncoding.EncodeToString(b), nil
 }
@@ -133,37 +146,120 @@ func Decode(s string) (Token, error) {
 		}
 		address = address[2+size:]
 	}
-	host := string(address)
-	switch b[0] &^ (3 | tokenFormat | tokenCustomPath) {
+	var port uint16
+	if b[0]&tokenHasPort != 0 {
+		if len(address) < 2 {
+			return t, i18n.NewError("invalid.token.malformed.host")
+		}
+		port = binary.BigEndian.Uint16(address[:2])
+		if port == 0 {
+			return t, i18n.NewError("invalid.token.malformed.host")
+		}
+		address = address[2:]
+	}
+	hostname := string(address)
+	switch b[0] &^ (3 | tokenFormat | tokenCustomPath | tokenHasPort) {
 	case 0:
+	case tokenPackedHost:
+		var ok bool
+		hostname, ok = unpackHostname(address)
+		if !ok {
+			return t, i18n.NewError("invalid.token.malformed.host")
+		}
 	case tokenIPv4, tokenIPv6:
 		addressSize := 4
 		if b[0]&tokenIPv6 != 0 {
 			addressSize = 16
 		}
-		if len(address) != 2+addressSize {
+		if len(address) != addressSize {
 			return t, i18n.NewError("invalid.token.malformed.ip.address")
 		}
-		ip, _ := netip.AddrFromSlice(address[2:])
-		port := binary.BigEndian.Uint16(address[:2])
-		host = ip.String()
-		if port != 0 {
-			host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-		} else if ip.Is6() {
-			host = "[" + host + "]"
-		}
+		ip, _ := netip.AddrFromSlice(address)
+		hostname = ip.String()
 	default:
 		return t, i18n.NewError("invalid.token.unsupported.address.format")
+	}
+	host := hostname
+	if port != 0 {
+		host = net.JoinHostPort(hostname, strconv.Itoa(int(port)))
+	} else if strings.Contains(hostname, ":") {
+		host = "[" + hostname + "]"
 	}
 	rawURL := (&url.URL{Scheme: scheme, Host: host, Path: prefix + "/client"}).String()
 	u, err := parseTokenURL(rawURL)
 	if err != nil {
 		return t, err
 	}
-	if u.Host != host {
+	if u.Host != host || u.Hostname() != hostname {
 		return t, i18n.NewError("invalid.token.malformed.host")
 	}
 	return Token{URL: rawURL, Secret: base64.RawURLEncoding.EncodeToString(b[1 : 1+TokenSecretSize])}, nil
+}
+
+// Packed hosts use six-bit symbols; zero is reserved for padding.
+const hostnameAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789-."
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func packHostname(host string) ([]byte, bool) {
+	if host == "" {
+		return nil, false
+	}
+	var out []byte
+	var bits uint32
+	var count uint
+	for i := 0; i < len(host); i++ {
+		n := strings.IndexByte(hostnameAlphabet, host[i])
+		if n < 0 {
+			return nil, false
+		}
+		bits = bits<<6 | uint32(n+1)
+		count += 6
+		if count >= 8 {
+			count -= 8
+			out = append(out, byte(bits>>count))
+			bits &= (1 << count) - 1
+		}
+	}
+	if count > 0 {
+		out = append(out, byte(bits<<(8-count)))
+	}
+	return out, true
+}
+
+func unpackHostname(data []byte) (string, bool) {
+	var out strings.Builder
+	var bits uint32
+	var count uint
+	for i, b := range data {
+		bits = bits<<8 | uint32(b)
+		count += 8
+		for count >= 6 {
+			count -= 6
+			n := (bits >> count) & 63
+			if n == 0 && i == len(data)-1 && count == 0 {
+				bits = 0
+				break
+			}
+			if n == 0 || n > uint32(len(hostnameAlphabet)) {
+				return "", false
+			}
+			out.WriteByte(hostnameAlphabet[n-1])
+			bits &= (1 << count) - 1
+		}
+	}
+	// Unused padding bits must be zero.
+	if count >= 6 || bits != 0 || out.Len() == 0 {
+		return "", false
+	}
+	return out.String(), true
 }
 
 func parseTokenURL(raw string) (*url.URL, error) {

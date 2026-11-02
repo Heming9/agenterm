@@ -88,7 +88,7 @@ func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
 // Resolve short installer codes without changing the full invitation format.
-// Existing URLs carrying the full 128-bit secret remain supported.
+// URLs carrying the full invitation secret are also supported.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

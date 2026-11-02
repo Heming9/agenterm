@@ -17,6 +17,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/ulikunitz/xz v0.5.17
+	golang.org/x/net v0.35.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.34.0
 	golang.org/x/text v0.28.0
@@ -73,7 +74,6 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
 	golang.org/x/image v0.24.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.41.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
