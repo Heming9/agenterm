@@ -191,9 +191,6 @@ func TestEmbeddedReleaseDownloads(t *testing.T) {
 	if directory == "" {
 		t.Skip("release assets not requested")
 	}
-	if _, err := fs.Stat(content, "assets/clients.tar.xz"); err != nil {
-		t.Fatal(err)
-	}
 	files, err := Assets()
 	if err != nil {
 		t.Fatal(err)
@@ -219,5 +216,18 @@ func TestEmbeddedReleaseDownloads(t *testing.T) {
 	served, err := fs.ReadFile(files, "SHA256SUMS")
 	if err != nil || !bytes.Equal(served, manifest) {
 		t.Fatalf("embedded manifest differs from release: %v", err)
+	}
+}
+
+func BenchmarkAssets(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		files, err := Assets()
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := fs.ReadFile(files, "SHA256SUMS"); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

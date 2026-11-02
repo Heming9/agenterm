@@ -26,6 +26,16 @@ Authorization:  Bearer 首次启动时显示的管理密钥
 
 所有凭证、邀请和会话只在 Runtime 内存中，不写数据库或状态文件。socket 是通信入口，不保存业务状态。公网使用支持 WebSocket 的 HTTPS 反向代理，继续转发到 8080 并保留 `/agenterm` 路径。`-public-url` 不会启用 TLS。托管服务目前要求 Linux/macOS，Windows 目标客户端不受影响。
 
+## 构建时预生成下载包
+
+普通 `go build ./cmd/agenterm-server` 会在启动时解压内嵌资源并重新压缩六个平台的安装包。需要缩短 frontend 更新等待时间时，在仓库根目录执行：
+
+```sh
+python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
+```
+
+脚本先生成下载包，再通过 `agenterm_prebuilt` 构建标记将它们直接嵌入程序。启动时无需重新压缩，公开下载字节和校验和保持一致。产物仍是一个可执行文件，体积会增大。安装包缓存按资源内容、打包源码和 Go 版本失效，复用前校验哈希；生成目录不提交 Git。
+
 ## 命令和参数
 
 ```sh

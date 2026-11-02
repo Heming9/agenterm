@@ -25,6 +25,16 @@ Both processes run as the same user. Default sockets live under the system tempo
 
 All credentials, invitations, output and sessions stay in Runtime memory. Socket files are IPC endpoints, not saved business state. For public access, keep an HTTPS reverse proxy with WebSocket support forwarding to port 8080 and preserving `/agenterm`. `-public-url` does not enable TLS. Hosting currently requires Linux/macOS; Windows target clients remain supported.
 
+## Prepare downloads at build time
+
+An ordinary `go build ./cmd/agenterm-server` decompresses the embedded bundle and compresses six platform archives at startup. To shorten frontend replacement, run from the repository root:
+
+```sh
+python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
+```
+
+The script prepares downloads and embeds them directly with the `agenterm_prebuilt` build tag. Startup needs no archive compression, and public download bytes and checksums remain identical. The result is still one executable, with a larger file size. Prepared assets are cached by bundle contents, packer sources and Go version, with hashes checked before reuse; generated files are ignored by Git.
+
 ## Commands and options
 
 ```sh
