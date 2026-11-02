@@ -339,7 +339,7 @@ func main() {
 			}
 		}
 		for i, token := range issuedTokens {
-			value, err := s.newInvitation(token, time.Now().Add(15*time.Minute))
+			value, err := s.newInvitation(token, time.Now().Add(time.Duration(defaultInvitationTimeoutSeconds)*time.Second))
 			if err != nil {
 				s.mu.Unlock()
 				log.Fatal(err)

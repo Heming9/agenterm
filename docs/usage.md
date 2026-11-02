@@ -25,7 +25,7 @@ Reload the MCP configuration or restart your agent, then:
 4. Keep the agent conversation active while the device connects. Once connected, the agent can perform authorized work while the target computer displays progress.
 5. Close or disconnect the client when finished.
 
-Invitations expire after 15 minutes and are single-use by default. For several computers, ask the agent to create a multi-device invitation and clearly identify the target before each operation.
+Invitations expire after 5 minutes and are single-use by default. Set the optional `timeout_seconds` parameter to a positive integer when calling `create_client` to customize the lifetime; for example, `{"timeout_seconds": 60}` creates an invitation valid for 60 seconds. Expiry prevents invitation redemption and does not disconnect devices that have already connected. For several computers, ask the agent to create a multi-device invitation and clearly identify the target before each operation.
 
 The hosted service currently requires no management authentication and allows up to four online devices per invitation creator's public IP. People on the same network share that allowance. Keep invitations and connection tokens private. Self-host to control management access yourself.
 

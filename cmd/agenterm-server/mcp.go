@@ -92,7 +92,8 @@ type stopSessionArgs struct {
 	WaitMS    int    `json:"wait_ms,omitempty"`
 }
 type createClientArgs struct {
-	MultiDevice bool `json:"multi_device,omitempty"`
+	MultiDevice    bool  `json:"multi_device,omitempty"`
+	TimeoutSeconds int64 `json:"timeout_seconds,omitempty"`
 }
 
 func addTargetTool[In interface{ targetToken() string }, Out any](s *server, ms *mcp.Server, admin bool, name, description string, handle func(context.Context, string, In) (*mcp.CallToolResult, Out, error)) {
@@ -231,9 +232,14 @@ func (s *server) newMCPServer(admin bool) *mcp.Server {
 			panic(err)
 		}
 		input.Properties["multi_device"].Description = serverText("mcp.result.multi_device")
+		timeout := input.Properties["timeout_seconds"]
+		timeout.Description = serverText("mcp.invitation.timeout.seconds")
+		timeout.Minimum = new(float64(1))
+		timeout.Maximum = new(float64(maxInvitationTimeoutSeconds))
+		timeout.Default, _ = json.Marshal(defaultInvitationTimeoutSeconds)
 		mcp.AddTool(ms, toolDefinition("create_client", "mcp.create.a.client.connection.token.and.a.one", input), func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, map[string]any, error) {
 			principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
-			out, err := s.createClientMode(principal.ip, a.MultiDevice)
+			out, err := s.createClientMode(principal.ip, a.MultiDevice, a.TimeoutSeconds)
 			return nil, out, err
 		})
 	}

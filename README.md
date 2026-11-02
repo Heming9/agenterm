@@ -41,7 +41,7 @@ Run the invitation command for your operating system, read the notice, and autho
 
 Keep the agent conversation active while the device connects, then start the task. The target computer can disconnect at any time; close the client when finished.
 
-Invitations are single-use by default and expire after 15 minutes. Connections grant terminal access with the current user's permissions. Share invitations and tokens only with people you trust.
+Invitations are single-use by default and expire after 5 minutes. Set `timeout_seconds` when calling `create_client` to customize the invitation lifetime. Connections grant terminal access with the current user's permissions. Share invitations and tokens only with people you trust.
 
 ## What you can do
 

@@ -8,18 +8,24 @@ import (
 	"agenterm/internal/protocol"
 )
 
+const defaultInvitationTimeoutSeconds int64 = 300
+const maxInvitationTimeoutSeconds int64 = (1<<63 - 1) / int64(time.Second)
+
 // createClient issues a single-device credential and a single-use invitation.
 func (s *server) createClient(owner string) (map[string]any, error) {
-	return s.createClientMode(owner, false)
+	return s.createClientMode(owner, false, defaultInvitationTimeoutSeconds)
 }
 
-func (s *server) createClientMode(owner string, multiDevice bool) (map[string]any, error) {
+func (s *server) createClientMode(owner string, multiDevice bool, timeoutSeconds int64) (map[string]any, error) {
+	if timeoutSeconds < 1 || timeoutSeconds > maxInvitationTimeoutSeconds {
+		return nil, i18n.NewError("invitation.timeout.invalid", maxInvitationTimeoutSeconds)
+	}
 	secret := randomBytes(protocol.TokenSecretSize)
 	token, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret})
 	if err != nil {
 		return nil, err
 	}
-	expires := time.Now().Add(15 * time.Minute)
+	expires := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tokens == nil {
@@ -61,7 +67,7 @@ func (s *server) createClientMode(owner string, multiDevice bool) (map[string]an
 	result["windows_powershell_command"] = powershell
 	result["display_text"] = fmt.Sprintf(i18n.Text(i18n.Terminal(), "connection.token.s.without.a.client.macos"), token, shell, powershell)
 	if multiDevice {
-		result["display_text"] = serverText("multi.device.display.notice") + "\n\n" + result["display_text"].(string)
+		result["display_text"] = fmt.Sprintf(serverText("multi.device.display.notice"), timeoutSeconds) + "\n\n" + result["display_text"].(string)
 	}
 	return result, nil
 }

@@ -95,9 +95,13 @@
     "en": "Connection token:\n%s\n\nWithout a client\nmacOS / Linux connection command:\n%s\n\nWindows connection command:\n%s",
     "zh-CN": "连接 token：\n%s\n\n无客户端\nmacOS / Linux 一键连接命令：\n%s\n\nWindows 一键连接命令：\n%s"
   },
-  "invitation.d.expires.in.15.minutes.share": {
-    "en": "Invitation %d (expires in 15 minutes; share privately):\n",
-    "zh-CN": "邀请 %d（15 分钟后过期；请私密分享）：\n"
+  "invitation.d.expires.in.d.seconds.share": {
+    "en": "Invitation %d (expires in %d seconds; share privately):\n",
+    "zh-CN": "邀请 %d（%d 秒后过期；请私密分享）：\n"
+  },
+  "invitation.timeout.invalid": {
+    "en": "timeout_seconds must be an integer between 1 and %d.",
+    "zh-CN": "timeout_seconds 必须是 1 到 %d 之间的整数。"
   },
   "macos.linux.s.windows.powershell.s": {
     "en": "macOS / Linux:\n%s\nWindows PowerShell:\n%s\n\n",
@@ -648,8 +652,12 @@
     "zh-CN": "请求取消会话，并可等待其进入终态。取消可能中断写入，且不会撤销已完成的操作。待处理的取消请求只发送一次；会话结束后再次调用会返回终态，不再发送请求。未知或无权限的会话会返回错误。后续状态和输出可通过 session_read 获取。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Create a private client connection token and a 15-minute invitation. Returns connection commands and a next_action describing how to wait for a device. multi_device controls simultaneous connections and invitation reuse.",
-    "zh-CN": "创建私密的客户端连接 token 和 15 分钟有效的邀请，返回连接命令及描述等待设备方式的 next_action。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
+    "en": "Create a private client connection token and an invitation. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns connection commands and a next_action describing how to wait for a device. multi_device controls simultaneous connections and invitation reuse.",
+    "zh-CN": "创建私密的客户端连接 token 和邀请。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。返回连接命令及描述等待设备方式的 next_action。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
+  },
+  "mcp.invitation.timeout.seconds": {
+    "en": "Invitation lifetime in seconds, as a positive integer. Default 300 (5 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
+    "zh-CN": "邀请有效期，单位秒，必须为正整数。默认 300（5 分钟）。过期后不能兑换邀请，已连接的设备不会因此断开。"
   },
   "mcp.target.client.connection.token.required.when.authenticated.with": {
     "en": "Target client connection token, required with management access (including stdio and no-password mode). Device-scoped bearer access implicitly selects its own token.",
@@ -752,8 +760,8 @@
     "zh-CN": "多设备 Token 必须提供 client_id，请调用 list_clients 选择设备。"
   },
   "multi.device.display.notice": {
-    "en": "Multi-device token: multiple devices may connect simultaneously. The invitation commands can be reused for 15 minutes.",
-    "zh-CN": "多设备 Token：允许多台设备同时在线，一键连接命令可在 15 分钟内重复使用。"
+    "en": "Multi-device token: multiple devices may connect simultaneously. The invitation commands can be reused for %d seconds.",
+    "zh-CN": "多设备 Token：允许多台设备同时在线，一键连接命令可在 %d 秒内重复使用。"
   },
   "connection.retry": {
     "en": "Connection lost or failed (online %s): %s. Retry #%d in %s.",

@@ -9,11 +9,126 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestCreateClientInvitationTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want time.Duration
+	}{
+		{"default", map[string]any{}, 5 * time.Minute},
+		{"default multi-device", map[string]any{"multi_device": true}, 5 * time.Minute},
+		{"custom", map[string]any{"timeout_seconds": 60}, time.Minute},
+		{"custom multi-device", map[string]any{"timeout_seconds": 120, "multi_device": true}, 2 * time.Minute},
+		{"longer than default", map[string]any{"timeout_seconds": 600}, 10 * time.Minute},
+		{"minimum", map[string]any{"timeout_seconds": 1}, time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newMultiHarness(t, 0)
+			before := time.Now()
+			created := h.call(t, "admin-test", "create_client", tc.args, false).(map[string]any)
+			after := time.Now()
+			decoded, err := protocol.Decode(created["invitation"].(string))
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.s.mu.Lock()
+			entry := h.s.invitations[decoded.Secret]
+			ownerExpiry := h.s.clientOwners[h.s.tokens[created["client_token"].(string)]].expires
+			h.s.mu.Unlock()
+			if entry.expires.Before(before.Add(tc.want)) || entry.expires.After(after.Add(tc.want)) || !ownerExpiry.Equal(entry.expires) {
+				t.Fatalf("invitation expiry %s, owner expiry %s, want lifetime %s", entry.expires, ownerExpiry, tc.want)
+			}
+			expires, err := time.Parse(time.RFC3339, created["expires_at"].(string))
+			if err != nil || !expires.Equal(entry.expires.Truncate(time.Second)) {
+				t.Fatalf("expires_at: %v %v", created["expires_at"], err)
+			}
+			next := created["next_action"].(map[string]any)
+			if next["until"] != created["expires_at"] {
+				t.Fatalf("wait deadline differs from invitation expiry: %v", next)
+			}
+			if tc.args["multi_device"] == true && !strings.Contains(created["display_text"].(string), fmt.Sprintf("%d", int64(tc.want/time.Second))) {
+				t.Fatalf("multi-device notice does not show configured lifetime: %v", created["display_text"])
+			}
+			// Expiry must revoke both platform links and the pending credential.
+			h.s.mu.Lock()
+			h.s.cleanupTokensLocked(entry.expires.Add(-time.Nanosecond))
+			_, retained := h.s.invitations[decoded.Secret]
+			h.s.cleanupTokensLocked(entry.expires)
+			remaining := len(h.s.invitations) + len(h.s.installCodes) + len(h.s.tokens) + len(h.s.clientOwners)
+			h.s.mu.Unlock()
+			if !retained || remaining != 0 {
+				t.Fatalf("expiry cleanup: retained before=%v remaining at deadline=%d", retained, remaining)
+			}
+			for _, suffix := range []string{"", ".ps1"} {
+				w := httptest.NewRecorder()
+				h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+installCode(decoded.Secret)+suffix, nil))
+				if w.Code != http.StatusUnauthorized {
+					t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
+				}
+			}
+			if _, err := invite.Redeem(context.Background(), created["invitation"].(string)); err == nil {
+				t.Fatal("expired invitation could still be redeemed")
+			}
+		})
+	}
+}
+
+func TestCreateClientRejectsInvalidTimeout(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	for _, value := range []any{0, -1, 1.5, "60", maxInvitationTimeoutSeconds + 1} {
+		h.call(t, "admin-test", "create_client", map[string]any{"timeout_seconds": value}, true)
+	}
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	if len(h.s.tokens)+len(h.s.invitations)+len(h.s.installCodes)+len(h.s.clientOwners) != 0 {
+		t.Fatal("invalid timeout created credentials")
+	}
+}
+
+func TestCreateClientTimeoutSchema(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	admin := connectMCPClient(t, h, "admin-test")
+	listed, err := admin.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range listed.Tools {
+		if tool.Name != "create_client" {
+			continue
+		}
+		data, _ := json.Marshal(tool.InputSchema)
+		var schema struct {
+			Required   []string
+			Properties map[string]struct {
+				Type, Description         string
+				Default, Minimum, Maximum int64
+			}
+		}
+		if err := json.Unmarshal(data, &schema); err != nil {
+			t.Fatal(err)
+		}
+		timeout := schema.Properties["timeout_seconds"]
+		if timeout.Type != "integer" || timeout.Description == "" || timeout.Default != 300 || timeout.Minimum != 1 || timeout.Maximum != maxInvitationTimeoutSeconds {
+			t.Fatalf("incorrect timeout schema: %s", data)
+		}
+		for _, required := range schema.Required {
+			if required == "timeout_seconds" {
+				t.Fatal("timeout_seconds must be optional")
+			}
+		}
+		return
+	}
+	t.Fatal("create_client tool missing")
+}
 
 func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
 	s := &server{clientURL: "wss://example.com/agenterm/client", tokens: make(map[string]string)}

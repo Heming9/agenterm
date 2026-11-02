@@ -74,7 +74,7 @@ func (s *server) deleteInvitation(secret string) {
 
 func printInstallCommands(w io.Writer, index int, invitation string) {
 	shell, powershell := installCommands(invitation)
-	fmt.Fprintf(w, serverText("invitation.d.expires.in.15.minutes.share"), index)
+	fmt.Fprintf(w, serverText("invitation.d.expires.in.d.seconds.share"), index, defaultInvitationTimeoutSeconds)
 	fmt.Fprintf(w, serverText("macos.linux.s.windows.powershell.s"), shell, powershell)
 }
 
