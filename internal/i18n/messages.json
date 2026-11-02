@@ -604,52 +604,52 @@
     "zh-CN": "WebSocket 连通性检查失败，请检查服务器地址、网络、代理和邀请有效性。%s"
   },
   "mcp.execute.a.non.interactive.command.and.return.output": {
-    "en": "Run a non-interactive shell command on the selected authorized target device and wait for completion. This can modify or delete files and perform any operation allowed to the target user; obtain user approval for destructive commands. client_token is required with management access (including stdio and no-password mode); client_id is required for multi-device tokens. Each call starts a fresh shell: set cwd and env explicitly; changes do not persist between calls. timeout_ms defaults to 60000 (60 seconds), 0 disables the timeout, and the maximum is 86400000 (24 hours). Captured stdout and stderr share a 1 MiB limit; excess output is discarded and truncated=true. The result contains stdout, stderr, exit_code, timed_out, canceled, truncated and optional error; a nonzero exit, timeout, cancellation or execution failure sets isError. Canceling the MCP request sends a best-effort cancellation request; it does not undo effects already performed. Commands are not automatically retried. Use session_start/read/write/stop for prompts, incremental output or long-running jobs.",
-    "zh-CN": "在选定且已授权的目标设备上运行非交互 shell 命令，等待完成后返回。命令可修改、删除文件，或执行目标用户权限范围内的任何操作；破坏性命令应先取得用户同意。管理访问（包括 stdio 和免密模式）时必须提供 client_token，多设备 token 必须提供 client_id。每次调用启动独立 shell，请显式设置 cwd 和 env，修改不会跨命令保留。timeout_ms 默认 60000（60 秒），0 表示不限时，上限 86400000（24 小时）。stdout 和 stderr 共保留最多 1 MiB，超出部分丢弃并设置 truncated=true。结果包含 stdout、stderr、exit_code、timed_out、canceled、truncated 和可选 error；非零退出、超时、取消或执行失败会设置 isError。取消 MCP 请求会尽力向设备发送取消请求，但不会撤销已发生的操作；命令不会自动重试。遇到交互提示、需要增量输出或长时间运行的任务时，使用 session_start/read/write/stop。"
+    "en": "Run a non-interactive command on the selected device and wait for its result. The interpreter is reported by list_clients as client_info.shell. A nonzero exit, timeout, cancellation or execution failure sets isError. Captured output discards bytes beyond its retention limit. Canceling the MCP request sends a best-effort cancellation request; commands are not automatically retried. Interactive processes and incremental output are available through session tools.",
+    "zh-CN": "在选定设备上运行非交互命令并等待结果。解释器由 list_clients 的 client_info.shell 字段提供。非零退出、超时、取消或执行失败会设置 isError。捕获的输出超出保留上限后丢弃超出部分。取消 MCP 请求会尽力发送取消请求；命令不会自动重试。会话工具支持交互进程和增量输出。"
   },
   "mcp.shell.command": {
-    "en": "Shell command",
-    "zh-CN": "Shell 命令"
+    "en": "Shell command to execute on the target device.",
+    "zh-CN": "要在目标设备上执行的 Shell 命令。"
   },
   "mcp.start.an.interactive.terminal.session.then.use.session": {
-    "en": "Start a new interactive terminal process on an authorized target device. The command can change files or system state with the target user's permissions. Supply client_id for multi-device tokens; set cwd and env for this new process. timeout_ms defaults to 0 (no timeout), with a maximum of 86400000 (24 hours). Returns session_id and the initial byte cursor 0, not command completion. Repeated calls start separate processes. Use session_read with the last next_cursor to collect incremental output until done=true, session_write to answer prompts (include a newline), and session_stop to cancel. Each token retains up to six sessions, and only the latest 1 MiB of each session's output is retained. Finished history expires after 30 minutes or can be evicted by later sessions; keep the session_id and poll promptly. Server restarts invalidate sessions. For a short non-interactive command with a final stdout/stderr result, use execute_command instead.",
-    "zh-CN": "在已授权的目标设备上启动新的交互终端进程。命令可使用目标用户权限修改文件或系统状态。多设备 token 须提供 client_id，cwd 和 env 作用于该新进程。timeout_ms 默认 0（不限时），上限 86400000（24 小时）。返回 session_id 和初始字节游标 0，不表示命令已完成；重复调用会启动不同进程。用 session_read 和上次 next_cursor 增量读取，直到 done=true；用 session_write 回答提示（包含换行符），用 session_stop 取消。每个 token 最多保留六个会话，每个会话仅保留最近 1 MiB 输出。已结束的记录会在 30 分钟后过期，也可能被后续会话替换，请保留 session_id 并及时读取。Server 重启会使会话失效。只需最终 stdout/stderr 的短非交互命令应使用 execute_command。"
+    "en": "Start an interactive or long-running process on the selected device. The interpreter is reported by list_clients as client_info.shell. Returns a session identifier before command completion; repeated calls start separate processes. Output, input and cancellation are available through session_read, session_write and session_stop. Each token retains up to six sessions. Finished records may expire after 30 minutes or be evicted when later sessions start.",
+    "zh-CN": "在选定设备上启动交互或长时间运行的进程，在命令完成前返回会话标识。解释器由 list_clients 的 client_info.shell 字段提供。重复调用会启动不同进程。session_read、session_write 和 session_stop 分别提供输出读取、输入发送和取消功能。每个 token 最多保留六个会话；已结束的记录可能在 30 分钟后过期，或在后续会话启动时被替换。"
   },
   "mcp.shell.command.to.run": {
     "en": "Shell command to run",
     "zh-CN": "要执行的 Shell 命令"
   },
   "mcp.read.new.output.while.the.session.is.running": {
-    "en": "Read incremental output and terminal state for an owned session. This does not send input or stop the process. Start with cursor=0, then use the returned next_cursor on each read; cursors are byte offsets, not character counts. wait_ms is 0-20000 (default 0): return immediately for new output or a terminal state, otherwise wait up to that many milliseconds. Empty output with done=false is only a polling timeout; continue polling. If older output was dropped from the 1 MiB buffer, truncated=true and reading resumes at the earliest retained byte; a cursor beyond available output is an error. done=true means a terminal result or a closed connection; only then are exit_code, timed_out, canceled and optional error included. A disconnect error is not proof of a remote command's success or confirmed cancellation. Use session_stop to terminate and session_write to supply input. Finished records expire after 30 minutes and server restarts invalidate them.",
-    "zh-CN": "读取所属会话的增量输出及终态，不会发送输入或停止进程。首次 cursor=0，之后使用上次返回的 next_cursor；游标是字节偏移，不是字符数。wait_ms 范围 0-20000，默认 0；有新输出或终态时立即返回，否则最多等待相应毫秒数。output 为空且 done=false 只表示轮询超时，应继续读取。超过 1 MiB 缓冲区导致旧输出被丢弃时，truncated=true，并从最早保留的字节继续；超出已有输出范围的游标会报错。done=true 表示收到终态或连接关闭，此时才包含 exit_code、timed_out、canceled 和可选 error；断线错误不代表远程命令成功或已确认取消。终止用 session_stop，输入用 session_write。结束记录在 30 分钟后过期，Server 重启也会使其失效。"
+    "en": "Read incremental session output and current state. Returns immediately when output or a terminal state is available; otherwise waits up to wait_ms. Empty output with done=false means the wait ended without new output. If the requested bytes were dropped from the buffer, reading resumes at the earliest retained byte with truncated=true. A cursor beyond available output is an error. Terminal result fields are included only when done=true.",
+    "zh-CN": "读取会话的增量输出和当前状态。有输出或终态时立即返回，否则最多等待 wait_ms。output 为空且 done=false 表示等待结束时没有新输出。若请求的字节已从缓冲区丢弃，则从最早保留的字节开始返回，并设置 truncated=true。超出已有输出范围的游标会报错。仅在 done=true 时包含终态结果字段。"
   },
   "mcp.session.identifier": {
     "en": "Session identifier",
     "zh-CN": "会话标识"
   },
   "mcp.byte.cursor.initially.0": {
-    "en": "Byte cursor, initially 0",
-    "zh-CN": "字节游标，初始值为 0"
+    "en": "Output byte offset, initially 0; subsequent reads accept the previous next_cursor.",
+    "zh-CN": "输出字节偏移，初始为 0；后续读取可传入上次返回的 next_cursor。"
   },
   "mcp.wait.up.to.this.many.milliseconds.for.output": {
     "en": "Wait up to this many milliseconds for output",
     "zh-CN": "等待输出的最长时间，单位毫秒"
   },
   "mcp.send.input.to.a.running.session.include.a": {
-    "en": "Send text to the stdin of an owned running terminal session. Include a newline (for example, \"yes\\n\") to submit an answer or command. Input can trigger destructive operations and may be echoed in session output, including secrets; only send input the user authorized. accepted=true confirms the input was sent to the device connection, not that the program consumed it or completed an action. Use session_read afterward to observe the response. Repeating a write sends the input again, so do not retry blindly. Unknown, unauthorized or ended sessions are errors. This does not start a session or cancel it; use session_start or session_stop for those operations.",
-    "zh-CN": "向所属且正在运行的终端会话发送标准输入。提交回答或命令时须包含换行符，例如 \"yes\\n\"。输入可能触发破坏性操作，且包括密码在内的输入都可能回显在会话输出中，只发送用户授权的输入。accepted=true 仅确认输入已发往设备连接，不代表程序已读取输入或操作已完成，应随后用 session_read 观察结果。重复写入会再次发送相同内容，不能盲目重试。未知、无权限或已结束的会话会报错。此工具不创建或取消会话，分别使用 session_start 和 session_stop。"
+    "en": "Send text to the stdin of a running session. Text is sent as provided, without an added newline, and may be echoed in output. Each call sends input again, including repeated calls. Unknown, unauthorized or ended sessions return errors.",
+    "zh-CN": "向正在运行的会话发送标准输入。文本按原样发送，不会自动添加换行符，并可能在输出中回显。每次调用都会再次发送输入，包括重复调用。未知、无权限或已结束的会话会返回错误。"
   },
   "mcp.input.bytes.as.text.e.g.yes.n": {
-    "en": "Input bytes as text, e.g. yes\\n",
-    "zh-CN": "以文本表示的输入字节，例如 yes\\n"
+    "en": "Text to send to the session stdin.",
+    "zh-CN": "要发送到会话标准输入的文本。"
   },
   "mcp.stop.a.running.session": {
-    "en": "Request termination of a terminal session created by session_start. Requires its session_id and, with management access (including stdio and no-password mode), its owning client_token; it cannot stop a session owned by another token. Stopping can interrupt writes and lose unsaved work, and cannot undo completed side effects. wait_ms defaults to 1000 and can be 0-20000: 0 returns immediately after sending the request, otherwise wait up to that many milliseconds for a terminal result. accepted=true means a stop request was sent or is already pending, not that termination is confirmed. status=stopping and done=false require polling session_read until done=true; use its output/cursor to collect final output. status=stopped requires a terminal canceled=true report. status=finished means the session ended for another reason; inspect canceled, timed_out, exit_code and error, especially on disconnect. Repeating a stop is safe: an already-ended session returns already_done=true and accepted=false without sending another request. Unknown or unauthorized session IDs are errors. Use session_read to observe progress and session_write for input; stopping does not revoke the device token or disconnect other sessions.",
-    "zh-CN": "请求终止由 session_start 创建的终端会话。必须提供 session_id，管理访问（包括 stdio 和免密模式）时还须提供所属 client_token，不能停止其他 token 的会话。停止可能中断写入、丢失未保存工作，且不能撤销已发生的副作用。wait_ms 默认 1000，范围 0-20000；0 表示发出请求后立即返回，其他值表示最多等待相应毫秒数取得终态。accepted=true 仅表示停止请求已发出或正在等待处理，不代表已经停止。status=stopping 且 done=false 时，必须继续用 session_read 读取直到 done=true，并按输出游标收集剩余输出。只有收到 canceled=true 的终态回报才返回 status=stopped；status=finished 表示会话因其他原因结束，应检查 canceled、timed_out、exit_code 和 error，断线时尤其如此。重复停止安全：已经结束时返回 already_done=true、accepted=false，不再发送请求。未知或无权限的会话 ID 会报错。观察进度用 session_read，输入用 session_write；停止不会撤销设备 token，也不会断开其他会话。"
+    "en": "Request cancellation of a session and optionally wait for its terminal state. Cancellation can interrupt writes and does not undo completed effects. A pending request is sent only once; calls on an ended session return its terminal state without another request. Unknown or unauthorized sessions return errors. Further state and output are available through session_read.",
+    "zh-CN": "请求取消会话，并可等待其进入终态。取消可能中断写入，且不会撤销已完成的操作。待处理的取消请求只发送一次；会话结束后再次调用会返回终态，不再发送请求。未知或无权限的会话会返回错误。后续状态和输出可通过 session_read 获取。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Create a client connection token and a 15-minute invitation. Set multi_device=true for multiple simultaneous devices and a reusable invitation; otherwise the invitation is single-use and only one device may connect. First show display_text including both platform commands in a progress message, then follow next_action: call list_clients with client_token and wait_ms=20000 repeatedly until a device connects, the invitation expires, or the user cancels. Do not end the turn after showing the invitation or after an empty result. Immediately notify the user when a device connects. Use client_id to target devices for multi-device tokens. Session tools use session_id after starting a session. Treat tokens and commands as credentials and share privately. Saying you are waiting is insufficient: the same response must actually call list_clients; invitation creation alone does not complete this task.",
-    "zh-CN": "创建客户端连接 Token 和 15 分钟有效的邀请。设置 multi_device=true 可让多台设备同时在线且邀请可重复兑换；否则邀请仅可兑换一次、仅允许一台设备在线。先通过进度消息展示包含两个平台命令的 display_text，再按 next_action 使用 client_token 和 wait_ms=20000 持续调用 list_clients，直到设备上线、邀请过期或用户取消。不要在展示邀请或收到空列表后结束本轮。设备上线后立即主动告知用户。多设备 Token 通过 client_id 选择设备，启动会话后通过 session_id 操作。Token 和命令均为凭据，请私密分享。 仅说正在等待是不够的：同一回复必须实际调用 list_clients；只创建邀请不算完成此任务。"
+    "en": "Create a private client connection token and a 15-minute invitation. Returns connection commands and a next_action describing how to wait for a device. multi_device controls simultaneous connections and invitation reuse.",
+    "zh-CN": "创建私密的客户端连接 token 和 15 分钟有效的邀请，返回连接命令及描述等待设备方式的 next_action。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
   },
   "mcp.target.client.connection.token.required.when.authenticated.with": {
     "en": "Target client connection token, required with management access (including stdio and no-password mode). Device-scoped bearer access implicitly selects its own token.",
@@ -712,24 +712,28 @@
     "zh-CN": "无法获取本机连接锁：%v"
   },
   "mcp.list.clients": {
-    "en": "List online devices belonging to this client_token. Set wait_ms=20000 to wait server-side while no device is online; a connection returns immediately. After creating an invitation, show display_text in a progress message and keep calling with wait_ms=20000 until the target connects, the invitation expires, or the user cancels. An empty result is only a wait timeout: continue waiting without ending the turn or asking the user to check. Immediately notify the user when connected. With wait_ms omitted or 0, return a snapshot immediately. Use client_id to execute commands or start sessions. For multi-device tokens, any online device completes the wait; use snapshots to discover additional devices.",
-    "zh-CN": "列出当前 client_token 下在线的设备。设置 wait_ms=20000 可在没有设备在线时由服务端阻塞等待，上线后立即返回。创建邀请后先通过进度消息展示 display_text，再持续以 wait_ms=20000 调用，直到目标上线、邀请过期或用户取消。空列表只表示本次等待超时，应继续等待，不要结束本轮或要求用户手动确认；上线后立即主动告知用户。省略 wait_ms 或传 0 时立即返回快照。使用 client_id 执行命令或启动会话。多设备 Token 下任一在线设备都会结束等待，发现后续设备时请使用快照。"
+    "en": "List online devices belonging to the token, with their identifiers and metadata. A positive wait_ms waits while no device is online; any online device completes the wait. An empty array means no device was online when the call returned. Waiting calls also include status and next_action.",
+    "zh-CN": "列出 token 下在线设备的标识和元数据。wait_ms 为正时，在没有设备在线的情况下等待；任一设备在线都会结束等待。空数组表示调用返回时没有在线设备。等待调用还会包含 status 和 next_action。"
   },
   "mcp.wait.for.connection": {
-    "en": "Wait up to this many milliseconds while no device is online (0-20000, default 0). After creating an invitation, use 20000 and repeat empty results until connection, invitation expiry, or user cancellation.",
-    "zh-CN": "没有设备在线时等待的最长毫秒数（0-20000，默认 0）。创建邀请后使用 20000，空列表时继续调用，直到上线、邀请过期或用户取消。"
+    "en": "Maximum connection wait in milliseconds while no device is online. 0 returns a snapshot immediately.",
+    "zh-CN": "没有设备在线时等待连接的最长毫秒数。0 表示立即返回快照。"
+  },
+  "mcp.connection.context": {
+    "en": "Tokens, invitations and connection commands are private credentials. Device connections are observed through list_clients; the server sends no background agent notifications. Server restarts invalidate tokens, invitations and sessions.",
+    "zh-CN": "Token、邀请和连接命令是私密凭据。设备连接状态通过 list_clients 获取，服务端不向 agent 发送后台通知。服务端重启会使 token、邀请和会话失效。"
   },
   "mcp.connection.workflow": {
-    "en": "Creating an invitation is only the first step; the connection task is incomplete until a device connects or a terminal failure occurs. Any message saying you are waiting MUST be accompanied by an actual list_clients tool call in that same response. Never end with only a statement that you are waiting. After create_client, first show display_text in a progress message so the user can run the connection command. Then follow next_action by repeatedly calling list_clients with the returned client_token and wait_ms=20000. Do not finish the turn just because the invitation was created or a wait returned no clients. Keep waiting until a device connects, expires_at is reached, or the user cancels or redirects the task. On connection, immediately tell the user the hostname and platform; on expiry, report that the invitation expired. The server does not create a background agent task or wake an agent after its turn ends. Use the returned expires_at as the actual deadline, not a hardcoded 15-minute duration. If the token is invalid, expired, or revoked, stop waiting and clearly report that the invitation is unusable; never suggest reusing it. On a transport failure, retry at most twice, then proactively report that monitoring stopped and connection state cannot be confirmed. Do not claim that the invitation remains valid: a server restart invalidates it.",
-    "zh-CN": "创建邀请仅是第一步；设备上线或出现终止原因之前，连接任务尚未完成。任何“正在等待”的表述都必须在同一回复中伴随实际的 list_clients 工具调用，绝不要仅回复正在等待就结束本轮。create_client 成功后，先通过进度消息展示 display_text，让用户能够执行连接命令。然后按照 next_action，使用返回的 client_token 和 wait_ms=20000 持续调用 list_clients。不要仅因邀请已创建或等待返回空列表就结束本轮。持续等待直到设备上线、到达 expires_at，或用户取消、改变任务。上线后立即主动告知用户设备名称和平台；过期则说明邀请已过期。服务端不会创建后台 Agent 任务，也不能在 Agent 结束本轮后将其唤醒。 以返回的 expires_at 为实际截止时间，不要硬编码为 15 分钟。Token 无效、过期或撤销时，停止等待并明确告知邀请已不可用，不要建议继续使用。遇到传输故障最多重试两次，仍失败则主动告知监测已停止、无法确认连接状态。不要宣称邀请仍有效，因为服务端重启会使其失效。"
+    "en": "display_text contains connection instructions for the target user. To wait for a connection, repeat the tool call in this next_action until a device is online, the until deadline is reached, or waiting is canceled. Invalid, expired or revoked tokens cannot be used for further waits.",
+    "zh-CN": "display_text 包含供目标用户使用的连接说明。等待连接时，可重复执行此 next_action 中的工具调用，直到有设备在线、到达 until 截止时间或取消等待。无效、过期或已撤销的 token 不能继续用于等待。"
   },
   "mcp.connection.keep.waiting": {
-    "en": "No device connected during this wait. Call list_clients again with the same client_token and wait_ms=20000 until the invitation expires or the user cancels or redirects the task. Keep the turn active; do not ask the user to check whether the device connected.",
-    "zh-CN": "本次等待期间尚无设备上线。继续使用同一 client_token 和 wait_ms=20000 调用 list_clients，直到邀请过期或用户取消、改变任务。保持本轮进行，不要要求用户询问设备是否上线。"
+    "en": "No device is online. A subsequent list_clients call can wait again.",
+    "zh-CN": "当前没有设备在线，可通过后续 list_clients 调用继续等待。"
   },
   "mcp.connection.notify.user": {
-    "en": "A device is online. Immediately notify the user of its hostname and platform. Only run remote commands when authorized by the user's task.",
-    "zh-CN": "设备已上线。立即主动告知用户设备名称和平台。仅在用户任务已授权时执行远程命令。"
+    "en": "A device is online. Its client_id identifies the target for commands and sessions.",
+    "zh-CN": "已有设备在线，其 client_id 可用于选择命令和会话的目标设备。"
   },
   "mcp.client.id": {
     "en": "Six lowercase letters or digits from list_clients. Required for multi-device tokens, even when only one device is online; optional for single-device tokens.",
@@ -784,48 +788,48 @@
     "zh-CN": "命令已取消"
   },
   "mcp.execution.cwd": {
-    "en": "Working directory on the target device. Each command starts a fresh shell; use cwd for subsequent commands instead of relying on a previous cd.",
-    "zh-CN": "目标设备上的工作目录。每条命令启动独立 shell；后续命令请使用 cwd，不要依赖上一条命令的 cd。"
+    "en": "Working directory for this process on the target device.",
+    "zh-CN": "本次进程在目标设备上的工作目录。"
   },
   "mcp.execution.env": {
     "en": "Environment overrides for this command, merged with the client environment. Values must be strings.",
     "zh-CN": "本条命令的环境变量覆盖项，与客户端继承的环境变量合并。变量值必须为字符串。"
   },
   "mcp.execution.timeout": {
-    "en": "Execution timeout in milliseconds, up to 86400000 (24 hours). 0 disables the timeout. Default: 60000 for execute_command, 0 for session_start.",
-    "zh-CN": "执行超时毫秒数，最多 86400000（24 小时）。0 表示不限时。execute_command 默认为 60000，session_start 默认为 0。"
+    "en": "Process execution timeout in milliseconds. 0 disables the timeout.",
+    "zh-CN": "进程执行超时毫秒数。0 表示不限时。"
   },
   "mcp.execution.workflow": {
-    "en": "Each command starts a fresh shell. Use cwd and env explicitly; shell directory, variables, and functions do not persist between commands. execute_command returns stdout, stderr, exit_code, timed_out, canceled, and truncated in structuredContent, also available as JSON text. A nonzero exit or execution failure sets isError. Use session tools for interactive or long-running commands; poll session_read until done.",
-    "zh-CN": "每条命令启动独立 shell。请显式使用 cwd 和 env，目录、变量和函数不会跨命令保留。execute_command 在 structuredContent 中返回 stdout、stderr、exit_code、timed_out、canceled 和 truncated，同时提供 JSON 文本。非零退出码或执行失败会设置 isError。交互或长时间运行的命令请使用会话工具，并通过 session_read 读取直到 done。"
+    "en": "Commands run with the target user's permissions and can change files or system state. Each execute_command or session_start call starts a fresh shell; working directory, shell variables and functions do not persist between calls. cwd and env apply only to that process.",
+    "zh-CN": "命令以目标用户的权限执行，可修改文件或系统状态。每次 execute_command 或 session_start 调用都会启动独立 shell，工作目录、shell 变量和函数不会跨调用保留。cwd 和 env 仅作用于本次进程。"
   },
   "mcp.connection.wait.failed": {
-    "en": "Connection wait failed: %v. If the token is invalid, expired, or revoked, stop waiting and tell the user this invitation is unusable. Do not suggest reusing it or claim a device connected.",
-    "zh-CN": "等待连接失败：%v。若 Token 无效、过期或已撤销，请停止等待并主动告知用户当前邀请已不可用，不要建议继续使用，也不要宣称设备已连接。"
+    "en": "Connection wait failed: %v",
+    "zh-CN": "等待连接失败：%v"
   },
   "client.token.expired": {
     "en": "Client token has expired; the invitation is no longer usable.",
     "zh-CN": "客户端 Token 已过期，邀请已不可用。"
   },
   "mcp.stop.wait": {
-    "en": "How long to wait for a terminal result after requesting cancellation (0-20000 ms, default 1000). 0 returns a status snapshot immediately; stopping requires subsequent session_read polling.",
-    "zh-CN": "请求取消后等待终态的时长，范围 0-20000 毫秒，默认 1000。0 表示立即返回状态快照；stopping 时仍须继续通过 session_read 轮询。"
+    "en": "Maximum wait for a terminal state after requesting cancellation, in milliseconds. 0 returns a snapshot immediately.",
+    "zh-CN": "请求取消后等待终态的最长毫秒数。0 表示立即返回状态快照。"
   },
   "mcp.stop.accepted": {
     "en": "True if a cancellation request was sent or is pending. False for a session already ended before this call. This alone never confirms termination.",
     "zh-CN": "表示停止请求已发出或正在等待处理；调用前已结束时为 false。此字段本身不能确认进程已停止。"
   },
   "mcp.stop.done": {
-    "en": "True once this session has a terminal result or its device connection closed. Check status, canceled and error to distinguish confirmed cancellation from other endings.",
-    "zh-CN": "收到终态或设备连接关闭时为 true；须结合 status、canceled 和 error 区分确认取消与其他结束原因。"
+    "en": "True when a terminal result is available or the device connection closed; status and canceled identify the outcome.",
+    "zh-CN": "收到终态结果或设备连接关闭时为 true；status 和 canceled 表示结束原因。"
   },
   "mcp.stop.status": {
-    "en": "stopping: request pending; poll session_read. stopped: terminal cancellation confirmed. finished: ended for another reason; inspect terminal fields and error.",
-    "zh-CN": "stopping：停止请求待确认，继续 session_read；stopped：终态已确认取消；finished：因其他原因结束，请检查终态字段和 error。"
+    "en": "stopping: cancellation pending. stopped: terminal cancellation confirmed. finished: ended for another reason, including disconnection.",
+    "zh-CN": "stopping：取消待确认；stopped：终态已确认取消；finished：因其他原因结束，包括断线。"
   },
   "mcp.stop.keep.reading": {
-    "en": "Cancellation is not yet confirmed. Keep calling session_read with session_id and the owning token until done=true; inspect canceled and error before reporting the outcome.",
-    "zh-CN": "取消尚未确认。继续用 session_id 和所属 token 调用 session_read，直到 done=true，再检查 canceled 和 error 后报告结果。"
+    "en": "Cancellation is pending. Further state and output are available through session_read.",
+    "zh-CN": "取消仍待确认，后续状态和输出可通过 session_read 获取。"
   },
   "mcp.result.clients": {
     "en": "Online devices owned by this token; an empty array means none are currently online.",
@@ -835,29 +839,53 @@
     "en": "Six-character device identifier. Required to select a device for multi-device tokens.",
     "zh-CN": "六位设备标识；多设备 token 通过此字段选择目标设备。"
   },
+  "mcp.result.client_info": {
+    "en": "Device-reported environment metadata. Empty fields mean unknown or not reported.",
+    "zh-CN": "设备上报的环境元数据，空字段表示未知或未上报。"
+  },
+  "mcp.result.client_version": {
+    "en": "Client application version reported during the connection handshake.",
+    "zh-CN": "客户端在连接握手中上报的应用版本。"
+  },
+  "mcp.result.arch": {
+    "en": "Client process architecture, such as amd64 or arm64.",
+    "zh-CN": "客户端进程架构，例如 amd64 或 arm64。"
+  },
+  "mcp.result.default_cwd": {
+    "en": "Client working directory at connection time, inherited by commands when cwd is omitted.",
+    "zh-CN": "连接时的客户端工作目录，未指定 cwd 的命令继承此目录。"
+  },
   "mcp.result.hostname": {
     "en": "Device-reported hostname for display only, not authentication.",
     "zh-CN": "设备上报的主机名，仅用于展示，不用于认证。"
   },
   "mcp.result.platform": {
-    "en": "Device-reported operating system and architecture.",
-    "zh-CN": "设备上报的操作系统和架构。"
+    "en": "Device-reported operating system.",
+    "zh-CN": "设备上报的操作系统。"
+  },
+  "mcp.result.shell": {
+    "en": "Device-reported command interpreter path used by execute_command and session_start. Empty means unknown or not reported.",
+    "zh-CN": "设备上报的命令解释器路径，供 execute_command 和 session_start 使用。空值表示未知或未上报。"
   },
   "mcp.result.connected_at": {
     "en": "UTC connection time in RFC 3339 format.",
     "zh-CN": "RFC 3339 格式的 UTC 连接时间。"
   },
   "mcp.result.status": {
-    "en": "Connection wait status: waiting or connected. Session-stop status: stopping, stopped or finished.",
-    "zh-CN": "连接等待状态为 waiting 或 connected；停止状态为 stopping、stopped 或 finished。"
+    "en": "Connection wait status: waiting or connected.",
+    "zh-CN": "连接等待状态：waiting 或 connected。"
+  },
+  "mcp.client.status": {
+    "en": "Device connection display status: Connected, with the latest server-client heartbeat RTT when measured, e.g. Connected · 203ms.",
+    "zh-CN": "设备连接状态显示文本：Connected；有测量值时附带最近一次服务端与客户端之间的心跳往返延迟，例如 Connected · 203ms。"
   },
   "mcp.result.next_action": {
     "en": "Next step to perform. Invitation creation returns the exact tool call and deadline; other tools return human-readable guidance.",
     "zh-CN": "下一步操作。创建邀请时包含准确的工具调用和截止时间，其他工具返回操作说明。"
   },
   "mcp.result.session_id": {
-    "en": "Identifier of the owned session; retain it for subsequent read, write and stop calls.",
-    "zh-CN": "所属会话标识，后续读取、写入、停止时使用。"
+    "en": "Session identifier used by session_read, session_write and session_stop.",
+    "zh-CN": "供 session_read、session_write 和 session_stop 使用的会话标识。"
   },
   "mcp.result.cursor": {
     "en": "Initial output byte cursor, always 0 for a new session.",
@@ -876,8 +904,8 @@
     "zh-CN": "输出超过 1 MiB 保留上限时为 true；普通命令丢弃超出部分，会话丢弃较旧的缓冲字节。"
   },
   "mcp.result.done": {
-    "en": "Whether the session has reached a terminal state. When false, keep polling session_read.",
-    "zh-CN": "会话是否进入终态；为 false 时继续通过 session_read 轮询。"
+    "en": "True when a terminal result is available or the device connection closed. False means no terminal result is available yet.",
+    "zh-CN": "收到终态结果或设备连接关闭时为 true；false 表示尚无终态结果。"
   },
   "mcp.result.exit_code": {
     "en": "Reported process exit code: 0 means success; -1 means execution failed, was interrupted, or the device disconnected before a normal exit report.",
@@ -928,24 +956,24 @@
     "zh-CN": "邀请过期截止时间，使用 UTC RFC 3339 时间戳。"
   },
   "mcp.result.macos_linux_command": {
-    "en": "One-command macOS/Linux installer containing private invitation access. Show to the target user privately.",
-    "zh-CN": "含私密邀请访问权限的 macOS/Linux 一键安装命令，请私下展示给目标用户。"
+    "en": "macOS/Linux connection command containing private invitation access.",
+    "zh-CN": "包含私密邀请访问权限的 macOS/Linux 连接命令。"
   },
   "mcp.result.windows_powershell_command": {
-    "en": "One-command Windows installer containing private invitation access. Show to the target user privately.",
-    "zh-CN": "含私密邀请访问权限的 Windows 一键安装命令，请私下展示给目标用户。"
+    "en": "Windows connection command containing private invitation access.",
+    "zh-CN": "包含私密邀请访问权限的 Windows 连接命令。"
   },
   "mcp.result.display_text": {
-    "en": "User-facing invitation text including credentials and both platform commands. Display before waiting for the device to connect.",
-    "zh-CN": "包含凭据和两种平台命令的用户邀请文本；等待设备连接前应先展示。"
+    "en": "User-facing connection instructions containing credentials and commands for both platforms.",
+    "zh-CN": "供用户使用的连接说明，包含凭据和两种平台命令。"
   },
   "mcp.result.tool": {
     "en": "Name of the next MCP tool to call.",
     "zh-CN": "下一步应调用的 MCP 工具名。"
   },
   "mcp.result.arguments": {
-    "en": "Arguments to pass unchanged to the next tool call.",
-    "zh-CN": "下一工具调用应使用的参数。"
+    "en": "Arguments for the next tool call.",
+    "zh-CN": "下一次工具调用的参数。"
   },
   "mcp.result.until": {
     "en": "UTC RFC 3339 deadline for following this action.",
@@ -956,7 +984,7 @@
     "zh-CN": "完成下一步操作的流程说明。"
   },
   "mcp.result.wait_ms": {
-    "en": "Server-side polling duration in milliseconds; repeat waits until the action deadline or a terminal result.",
-    "zh-CN": "服务端轮询等待时长，单位毫秒；在操作截止前或获得终态前重复等待。"
+    "en": "Server-side connection wait duration in milliseconds.",
+    "zh-CN": "服务端等待连接的时长，单位毫秒。"
   }
 }

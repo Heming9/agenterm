@@ -43,6 +43,8 @@ Current source builds publish explicit output schemas and behavior annotations f
 | `session_write` | Send input, including a newline to submit a prompt response. | `accepted`: input was sent, not confirmation it was consumed. |
 | `session_stop` | Request cancellation and wait briefly for confirmation. | `accepted`, `done`, `status`, `already_done`, terminal fields when available, or `next_action`. |
 
+`list_clients` returns `status`, `client_id`, `connected_at`, and a `client_info` object for each device. The device `status` displays `Connected`, with the latest server-client heartbeat RTT when available, such as `Connected · 203ms`. `client_info` contains `hostname`, `platform`, `arch` (client process architecture), `shell` (the interpreter path used for commands and sessions), `default_cwd` (the client working directory inherited when `cwd` is omitted), and `client_version` (the client application version reported during the handshake). Empty metadata fields mean unknown or not reported by the client. Both server and client must be updated to expose the new metadata.
+
 Each `execute_command` starts a fresh shell. Set `cwd` and `env` explicitly; they do not persist across calls. Its timeout defaults to 60 seconds, with `timeout_ms=0` disabling it. Captured stdout/stderr share a 1 MiB limit. Use session tools for prompts, incremental output or long jobs, and retain the `session_id` and the byte-based `next_cursor`. Session buffers retain the latest 1 MiB; inspect `truncated` to detect missing older output.
 
 `session_stop` waits up to `wait_ms` milliseconds for a terminal result (default 1000, range 0–20000). Setting 0 returns immediately. Interpret its result as follows:

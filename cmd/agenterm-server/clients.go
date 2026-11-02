@@ -5,6 +5,7 @@ import (
 	"agenterm/internal/protocol"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"math/big"
 	"net/http"
 	"sort"
@@ -14,24 +15,37 @@ import (
 )
 
 type clientInfo struct {
-	ID          string    `json:"client_id"`
-	Hostname    string    `json:"hostname"`
-	Platform    string    `json:"platform"`
-	ConnectedAt time.Time `json:"connected_at"`
+	Status      string            `json:"status"`
+	ID          string            `json:"client_id"`
+	Environment clientEnvironment `json:"client_info"`
+	ConnectedAt time.Time         `json:"connected_at"`
 }
 
-// Hostnames are base64 encoded on the wire to support non-ASCII device names.
+type clientEnvironment struct {
+	Hostname      string `json:"hostname"`
+	Platform      string `json:"platform"`
+	Arch          string `json:"arch"`
+	Shell         string `json:"shell"`
+	DefaultCwd    string `json:"default_cwd"`
+	ClientVersion string `json:"client_version"`
+}
+
+// Hostnames and paths are base64 encoded to support non-ASCII text.
 // Metadata is display-only and never used to authenticate or route commands.
 func metadataHeader(r *http.Request, name string) string {
 	value := r.Header.Get(name)
-	if name == protocol.HostnameHeader {
+	if name == protocol.HostnameHeader || name == protocol.ShellHeader || name == protocol.DefaultCwdHeader {
 		decoded, err := base64.RawURLEncoding.DecodeString(value)
 		if err != nil {
 			return ""
 		}
 		value = string(decoded)
 	}
-	if len(value) > 255 || !utf8.ValidString(value) || strings.ContainsAny(value, "\r\n\x00") {
+	limit := 255
+	if name == protocol.ShellHeader || name == protocol.DefaultCwdHeader {
+		limit = 4096
+	}
+	if len(value) > limit || !utf8.ValidString(value) || strings.ContainsAny(value, "\r\n\x00") {
 		return ""
 	}
 	return value
@@ -92,7 +106,15 @@ func (s *server) listClientsLocked(secret string) []clientInfo {
 	clients := make([]clientInfo, 0)
 	for _, c := range s.clients {
 		if c.secret == secret {
-			clients = append(clients, c.info)
+			info := c.info
+			info.Status = "Connected"
+			c.mu.Lock()
+			latencyMS := c.latencyMS
+			c.mu.Unlock()
+			if latencyMS > 0 {
+				info.Status += fmt.Sprintf(" · %dms", latencyMS)
+			}
+			clients = append(clients, info)
 		}
 	}
 	sort.Slice(clients, func(i, j int) bool {

@@ -286,6 +286,10 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	hostname, _ := os.Hostname()
 	headers.Set(protocol.HostnameHeader, base64.RawURLEncoding.EncodeToString([]byte(hostname)))
 	headers.Set(protocol.PlatformHeader, runtime.GOOS)
+	headers.Set(protocol.ArchHeader, runtime.GOARCH)
+	headers.Set(protocol.ShellHeader, base64.RawURLEncoding.EncodeToString([]byte(Shell())))
+	cwd, _ := os.Getwd()
+	headers.Set(protocol.DefaultCwdHeader, base64.RawURLEncoding.EncodeToString([]byte(cwd)))
 	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, t.URL, headers)
 	if err != nil {
 		if resp != nil {

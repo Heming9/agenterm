@@ -43,6 +43,8 @@ url = "https://agenterm.net/mcp"
 | `session_write` | 发送输入；提交提示回答时包含换行符。 | `accepted` 仅表示已发送，不表示程序已读取。 |
 | `session_stop` | 请求取消并短暂等待确认。 | `accepted`、`done`、`status`、`already_done`，以及可用的终态字段或 `next_action`。 |
 
+`list_clients` 为每台设备返回 `status`、`client_id`、`connected_at` 和 `client_info` 对象。设备的 `status` 显示 `Connected`，有测量值时附带最近一次服务端与客户端之间的心跳往返延迟，例如 `Connected · 203ms`。`client_info` 包含 `hostname`、`platform`、`arch`（客户端进程架构）、`shell`（命令和会话实际使用的解释器路径）、`default_cwd`（未指定 `cwd` 时继承的客户端工作目录）和 `client_version`（握手中上报的客户端应用版本）。元数据字段为空表示未知或客户端未上报。Server 和 client 均需更新才能提供新增元数据。
+
 每次 `execute_command` 都启动独立 shell，请显式设置 `cwd` 和 `env`，它们不会跨命令保留。默认超时为 60 秒，`timeout_ms=0` 表示不限时，stdout/stderr 共用 1 MiB 上限。交互提示、增量输出或长任务应使用会话工具，保留 `session_id` 和按字节计数的 `next_cursor`。会话缓冲区只保留最近 1 MiB，出现 `truncated` 时应检查是否丢失较旧输出。
 
 `session_stop` 最多等待 `wait_ms` 毫秒取得终态，默认 1000，范围 0–20000；设为 0 时立即返回。按以下方式判断结果：

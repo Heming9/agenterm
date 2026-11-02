@@ -24,18 +24,20 @@ import (
 
 	"agenterm/internal/installer"
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"github.com/gorilla/websocket"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type client struct {
-	info    clientInfo
-	secret  string
-	conn    *websocket.Conn
-	write   sync.Mutex
-	mu      sync.Mutex
-	pending map[string]chan protocol.Message
-	closed  bool
+	info      clientInfo
+	secret    string
+	conn      *websocket.Conn
+	write     sync.Mutex
+	mu        sync.Mutex
+	pending   map[string]chan protocol.Message
+	closed    bool
+	latencyMS int64 // Latest heartbeat RTT; guarded by mu. Zero means unmeasured.
 }
 
 func (c *client) send(m protocol.Message) error {
@@ -186,7 +188,13 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	id := s.newClientIDLocked()
 	c := &client{conn: conn, secret: secret, pending: make(map[string]chan protocol.Message), info: clientInfo{
-		ID: id, Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader), ConnectedAt: time.Now().UTC(),
+		ID: id, ConnectedAt: time.Now().UTC(),
+		Environment: clientEnvironment{
+			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),
+			Arch: metadataHeader(r, protocol.ArchHeader), Shell: metadataHeader(r, protocol.ShellHeader),
+			DefaultCwd:    metadataHeader(r, protocol.DefaultCwdHeader),
+			ClientVersion: metadataHeader(r, version.Header),
+		},
 	}}
 	if s.clients == nil {
 		s.clients = make(map[string]*client)
@@ -200,7 +208,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.notifyClientWaitersLocked(secret)
-	log.Printf("client connected id=%s hostname=%q platform=%q", id, c.info.Hostname, c.info.Platform)
+	log.Printf("client connected id=%s hostname=%q platform=%q", id, c.info.Environment.Hostname, c.info.Environment.Platform)
 	go func() {
 		var disconnectErr error
 		stopHeartbeat := c.startHeartbeat(protocol.HeartbeatInterval, protocol.HeartbeatTimeout)
@@ -222,7 +230,7 @@ func (s *server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			c.pending = make(map[string]chan protocol.Message)
 			c.mu.Unlock()
-			log.Printf("client disconnected id=%s hostname=%q duration=%s reason=%q", id, c.info.Hostname, time.Since(c.info.ConnectedAt).Round(time.Millisecond), disconnectErr)
+			log.Printf("client disconnected id=%s hostname=%q duration=%s reason=%q", id, c.info.Environment.Hostname, time.Since(c.info.ConnectedAt).Round(time.Millisecond), disconnectErr)
 		}()
 		conn.SetReadLimit(2 << 20)
 		for {

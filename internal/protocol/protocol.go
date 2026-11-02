@@ -26,6 +26,13 @@ const (
 
 const HostnameHeader = "X-Agenterm-Hostname"
 const PlatformHeader = "X-Agenterm-Platform"
+const ArchHeader = "X-Agenterm-Arch"
+
+// ShellHeader carries the base64url-encoded path of the command shell.
+const ShellHeader = "X-Agenterm-Shell"
+
+// DefaultCwdHeader carries the base64url-encoded client working directory.
+const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 
 // Advertised by servers that send Ping frames and latency measurements.
 const HeartbeatHeader = "X-Agenterm-Heartbeat"

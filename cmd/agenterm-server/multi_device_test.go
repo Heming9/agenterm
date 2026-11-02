@@ -107,7 +107,7 @@ func (h *multiHarness) connect(t *testing.T, token, hostname string) (*websocket
 	decoded, _ := protocol.Decode(token)
 	for {
 		for _, info := range h.s.listClients(decoded.Secret) {
-			if info.Hostname == hostname {
+			if info.Environment.Hostname == hostname {
 				return ws, info.ID
 			}
 		}
@@ -169,7 +169,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 		t.Fatalf("invalid IDs: %q %q", a, b)
 	}
 	listed := h.call(t, "admin-test", "list_clients", map[string]any{"client_token": token}, false).(map[string]any)["clients"].([]any)
-	if len(listed) != 2 || listed[0].(map[string]any)["platform"] != "linux" || listed[0].(map[string]any)["connected_at"] == "" {
+	if len(listed) != 2 || listed[0].(map[string]any)["client_info"].(map[string]any)["platform"] != "linux" || listed[0].(map[string]any)["connected_at"] == "" {
 		t.Fatal(listed)
 	}
 	if len(h.call(t, other, "list_clients", map[string]any{}, false).(map[string]any)["clients"].([]any)) != 0 {

@@ -30,7 +30,11 @@ func (c *client) startHeartbeat(interval, timeout time.Duration) func() {
 		if err := c.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 			return err
 		}
-		return c.send(protocol.Message{Type: "latency", LatencyMS: max(1, rtt.Milliseconds())})
+		latencyMS := max(1, rtt.Milliseconds())
+		c.mu.Lock()
+		c.latencyMS = latencyMS
+		c.mu.Unlock()
+		return c.send(protocol.Message{Type: "latency", LatencyMS: latencyMS})
 	})
 	go func() {
 		defer close(done)

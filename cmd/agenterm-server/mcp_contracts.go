@@ -88,6 +88,9 @@ func describeResult(schema *jsonschema.Schema) {
 	}
 	for name, property := range schema.Properties {
 		property.Description = serverText("mcp.result." + name)
+		if name == "status" && schema.Properties["client_id"] != nil {
+			property.Description = serverText("mcp.client.status")
+		}
 		describeResult(property)
 	}
 	describeResult(schema.Items)
