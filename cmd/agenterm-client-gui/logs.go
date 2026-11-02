@@ -11,24 +11,14 @@ import (
 
 const maxLogBytes = 10 * 1024 * 1024
 
-func logTail(text string) string {
-	if len(text) > maxLogBytes {
-		text = text[len(text)-maxLogBytes:]
-		for len(text) > 0 && !utf8.RuneStart(text[0]) {
-			text = text[1:]
-		}
-	}
-	return text
-}
-
 // Each connection owns a buffer so a finishing old process cannot write into a
 // newly connected session. Pending and displayed output are both bounded.
 type logBuffer struct {
 	mu       sync.Mutex
-	data     string
+	size     int
 	spans    []logSpan
 	last     string
-	decoders map[string]*displayDecoder
+	decoders map[string]*logview.Decoder
 	spacing  logview.Spacing
 }
 
@@ -42,31 +32,35 @@ func (b *logBuffer) append(kind, text string) {
 		return
 	}
 	b.spacing.Observe(text)
-	b.data = logTail(b.data + text)
+	b.size += len(text)
 	if len(b.spans) > 0 && b.spans[len(b.spans)-1].kind == kind {
 		b.spans[len(b.spans)-1].text += text
 	} else {
 		b.spans = append(b.spans, logSpan{kind, text})
 	}
-	total := 0
-	for _, span := range b.spans {
-		total += len(span.text)
-	}
-	for total > maxLogBytes && len(b.spans) > 0 {
+	b.spans, b.size = trimLogSpans(b.spans, b.size)
+}
+
+// Both pending output and displayed history use the same UTF-8-safe limit.
+func trimLogSpans(spans []logSpan, total int) ([]logSpan, int) {
+	for total > maxLogBytes && len(spans) > 0 {
 		excess := total - maxLogBytes
-		if len(b.spans[0].text) <= excess {
-			total -= len(b.spans[0].text)
-			b.spans = b.spans[1:]
+		if len(spans[0].text) <= excess {
+			total -= len(spans[0].text)
+			spans[0] = logSpan{}
+			spans = spans[1:]
 			continue
 		}
-		old := b.spans[0].text
+		old := spans[0].text
 		tail := old[excess:]
 		for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
 			tail = tail[1:]
 		}
-		b.spans[0].text = tail
+		// Release the discarded prefix's backing allocation as well.
+		spans[0].text = strings.Clone(tail)
 		total -= len(old) - len(tail)
 	}
+	return spans, total
 }
 
 var _ io.Writer = (*logBuffer)(nil)
@@ -78,20 +72,11 @@ func (b *logBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (b *logBuffer) take() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	text := b.data
-	b.data = ""
-	b.spans = nil
-	return text
-}
-
 func (b *logBuffer) takeSpans() []logSpan {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	spans := b.spans
-	b.data = ""
+	b.size = 0
 	b.spans = nil
 	return spans
 }
@@ -109,9 +94,9 @@ func (b *logBuffer) command(event client.CommandEvent) {
 		return
 	}
 	if b.decoders == nil {
-		b.decoders = make(map[string]*displayDecoder)
+		b.decoders = make(map[string]*logview.Decoder)
 	}
-	b.decoders[event.ID] = &displayDecoder{}
+	b.decoders[event.ID] = &logview.Decoder{}
 	b.append("system", b.spacing.Before(2)+event.StartedAt.Format("15:04:05")+" $ ")
 	b.append("command", event.Command+"\n")
 	b.last = event.ID
@@ -133,7 +118,7 @@ func (b *logBuffer) output(id string, data []byte) {
 	if decoder == nil {
 		return
 	}
-	text := decoder.output.Text(decoder.text(string(data)))
+	text := decoder.Output.Text(decoder.Text(string(data)))
 	if b.last != id {
 		text = logview.TrimLeadingBlankLines(text)
 	}
@@ -147,66 +132,11 @@ func (b *logBuffer) output(id string, data []byte) {
 func (b *logBuffer) clear() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.data = ""
+	b.size = 0
 	b.spans = nil
 	b.last = ""
 	b.spacing = logview.Spacing{}
 	for _, decoder := range b.decoders {
-		decoder.output = logview.Output{}
+		decoder.Output = logview.Output{}
 	}
-}
-
-// The GUI is a log viewer, not a terminal emulator. Escape state spans chunks.
-type displayDecoder struct {
-	state   byte
-	pending string
-	output  logview.Output
-}
-
-func (d *displayDecoder) text(chunk string) string {
-	chunk = d.pending + chunk
-	d.pending = ""
-	var output strings.Builder
-	for len(chunk) > 0 {
-		if !utf8.FullRuneInString(chunk) {
-			d.pending = chunk
-			break
-		}
-		r, size := utf8.DecodeRuneInString(chunk)
-		chunk = chunk[size:]
-		switch d.state {
-		case 1:
-			switch r {
-			case '[':
-				d.state = 2
-			case ']':
-				d.state = 3
-			default:
-				d.state = 0
-			}
-		case 2:
-			if r >= 0x40 && r <= 0x7e {
-				d.state = 0
-			}
-		case 3:
-			if r == 7 {
-				d.state = 0
-			} else if r == 27 {
-				d.state = 4
-			}
-		case 4:
-			if r == '\\' {
-				d.state = 0
-			} else {
-				d.state = 3
-			}
-		default:
-			if r == 27 {
-				d.state = 1
-			} else if r == '\n' || r == '\t' || r >= 32 && r != 127 {
-				output.WriteRune(r)
-			}
-		}
-	}
-	return output.String()
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -69,4 +70,13 @@ func TestShellLogSpacingWhenOutputResumes(t *testing.T) {
 	if got, want := b.take(), "\n\n  back\n\ninside\n"; got != want {
 		t.Fatalf("resumed output = %q, want %q", got, want)
 	}
+}
+
+// Tests inspect plain text through the same span drain used by the GUI.
+func (b *logBuffer) take() string {
+	var text strings.Builder
+	for _, span := range b.takeSpans() {
+		text.WriteString(span.text)
+	}
+	return text.String()
 }

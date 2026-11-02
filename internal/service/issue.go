@@ -11,11 +11,6 @@ import (
 const defaultInvitationTimeoutSeconds int64 = 300
 const maxInvitationTimeoutSeconds int64 = (1<<63 - 1) / int64(time.Second)
 
-// createClient issues a single-device credential and a single-use invitation.
-func (s *runtimeState) createClient(owner string) (map[string]any, error) {
-	return s.createClientMode(owner, false, defaultInvitationTimeoutSeconds)
-}
-
 func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutSeconds int64) (map[string]any, error) {
 	if timeoutSeconds < 1 || timeoutSeconds > maxInvitationTimeoutSeconds {
 		return nil, i18n.NewError("invitation.timeout.invalid", maxInvitationTimeoutSeconds)

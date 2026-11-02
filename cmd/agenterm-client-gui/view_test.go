@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"agenterm/internal/client"
+	"agenterm/internal/logview"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
@@ -117,8 +118,8 @@ func TestCommandStatisticsAndClear(t *testing.T) {
 	v.stats.apply(client.CommandEvent{ID: "a", Done: true, Duration: 200 * time.Millisecond})
 	v.stats.apply(client.CommandEvent{ID: "b", Done: true, Duration: 800 * time.Millisecond, ExitCode: 7})
 	v.stats.apply(client.CommandEvent{ID: "c"})
-	if v.stats.text() != "已执行 2 条  ·  平均耗时 500 ms" || len(v.stats.running) != 1 {
-		t.Fatalf("unexpected stats: %s running=%v", v.stats.text(), v.stats.running)
+	if v.stats.text() != "已执行 2 条  ·  平均耗时 500 ms" {
+		t.Fatalf("unexpected stats: %s", v.stats.text())
 	}
 	v.statistics.SetText(v.stats.text())
 	fmt.Fprint(v.buffer, "test output\n")
@@ -181,11 +182,11 @@ func TestCommandStatisticsAndClear(t *testing.T) {
 }
 
 func TestLogDecodingAcrossChunks(t *testing.T) {
-	var decoder displayDecoder
+	var decoder logview.Decoder
 	chunks := []string{"hello \x1b[3", "2m", string([]byte{0xe4, 0xb8}), string([]byte{0xad}), "\x1b[0m\r\n", "\x1b]0;hidden title\x1b", "\\world"}
 	var got string
 	for _, chunk := range chunks {
-		got += decoder.text(chunk)
+		got += decoder.Text(chunk)
 	}
 	if got != "hello 中\nworld" {
 		t.Fatalf("bad decoded output: %q", got)

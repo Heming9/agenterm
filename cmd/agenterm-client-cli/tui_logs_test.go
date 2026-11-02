@@ -47,14 +47,14 @@ func TestTUIMultilineCommandAndOutputToggleIndependently(t *testing.T) {
 	if !strings.Contains(view, "▾ first") || !strings.Contains(view, "third") || strings.Contains(view, "▸") {
 		t.Fatalf("streaming and completion should preserve expansion:\n%s", view)
 	}
-	raw := m.logs
+	raw := m.logText()
 	clickTUILog(t, m, "▾ first")
 	view = ansi.Strip(m.viewport.View())
 	if !strings.Contains(view, "▸ first") || !strings.Contains(view, "echo second") || strings.Count(view, "third") != 1 {
 		t.Fatalf("only the output should collapse again:\n%s", view)
 	}
-	if m.logs != raw || !strings.Contains(raw, "first\nsecond\nthird\n") {
-		t.Fatalf("folding changed captured logs: %q", m.logs)
+	if m.logText() != raw || !strings.Contains(raw, "first\nsecond\nthird\n") {
+		t.Fatalf("folding changed captured logs: %q", m.logText())
 	}
 }
 
@@ -97,7 +97,7 @@ func TestTUIFoldUsesDisplayWidthAndSurvivesResize(t *testing.T) {
 			if view = ansi.Strip(m.viewport.View()); !strings.Contains(view, "▾") || strings.Contains(view, "▸") {
 				t.Fatalf("resize lost expansion state:\n%s", view)
 			}
-			if m.logs != text+"\n" {
+			if m.logText() != text+"\n" {
 				t.Fatal("display wrapping changed raw text")
 			}
 		})
@@ -152,7 +152,7 @@ func TestTUIFoldMouseBoundsAndClear(t *testing.T) {
 	clickTUILog(t, m, "▸ first")
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	m.Update(tea.MouseMsg{X: 0, Y: 2, Button: tea.MouseButtonLeft})
-	if m.logs != "" || len(m.folds) != 0 || m.viewport.YOffset != 0 {
+	if m.logText() != "" || len(m.folds) != 0 || m.viewport.YOffset != 0 {
 		t.Fatal("clear retained stale folding state")
 	}
 	m.appendLog("output", "fresh\nnew\n")

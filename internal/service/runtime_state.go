@@ -162,14 +162,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// A token may have been reclaimed since the initial authentication check.
-	valid := false
-	for _, candidate := range s.tokens {
-		if candidate == secret {
-			valid = true
-			break
-		}
-	}
-	if !valid {
+	if !s.validSecretLocked(secret) {
 		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
 		return
 	}

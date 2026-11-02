@@ -2,6 +2,7 @@ package main
 
 import (
 	"agenterm/internal/client"
+	"agenterm/internal/logview"
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -81,8 +82,8 @@ func TestLatencyAndReconnectPreserveHistory(t *testing.T) {
 	}
 	m.Update(tuiEvent{connecting: true})
 	m.Update(tuiEvent{connected: true})
-	if m.latency >= 0 || !strings.Contains(m.logs, "saved output") || !strings.Contains(m.logs, "unexpected EOF") || !strings.Contains(m.logs, "连接已恢复") {
-		t.Fatal(m.logs)
+	if m.latency >= 0 || !strings.Contains(m.logText(), "saved output") || !strings.Contains(m.logText(), "unexpected EOF") || !strings.Contains(m.logText(), "连接已恢复") {
+		t.Fatal(m.logText())
 	}
 	m.Update(tuiEvent{latency: &d})
 	m.Update(tuiEvent{finished: true})
@@ -92,8 +93,8 @@ func TestLatencyAndReconnectPreserveHistory(t *testing.T) {
 }
 
 func TestDisplayDecoderSplitSequences(t *testing.T) {
-	d := &displayDecoder{}
-	got := d.text("A\x1b[3") + d.text("1m红\x1b]0;bad") + d.text("\aB")
+	d := &logview.Decoder{}
+	got := d.Text("A\x1b[3") + d.Text("1m红\x1b]0;bad") + d.Text("\aB")
 	if got != "A红B" {
 		t.Fatalf("got %q", got)
 	}
@@ -107,19 +108,19 @@ func TestTUIEventsAndBoundedLog(t *testing.T) {
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "one", Command: "echo hi"}})
 	m.Update(tuiEvent{generation: 1, id: "one", output: []byte("\x1b[2Jhello")})
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "one", Done: true}})
-	if m.completed != 1 || !strings.Contains(m.logs, "hello") || strings.Contains(m.logs, "\x1b") {
-		t.Fatalf("invalid log: %q", m.logs)
+	if m.completed != 1 || !strings.Contains(m.logText(), "hello") || strings.Contains(m.logText(), "\x1b") {
+		t.Fatalf("invalid log: %q", m.logText())
 	}
 	m.Update(tuiEvent{generation: 0, connected: true})
 	if m.completed != 1 {
 		t.Fatal("stale event reset state")
 	}
 	m.appendLog("output", strings.Repeat("界", maxTUILog))
-	if len(m.logs) > maxTUILog || !utf8.ValidString(m.logs) {
+	if len(m.logText()) > maxTUILog || !utf8.ValidString(m.logText()) {
 		t.Fatal("invalid bounded log")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	if m.logs != "" {
+	if m.logText() != "" {
 		t.Fatal("clear failed")
 	}
 }
@@ -139,8 +140,8 @@ func TestGUILogFormatAndColors(t *testing.T) {
 	m.Update(tuiEvent{generation: 1, id: "first", output: []byte("hello\n")})
 	m.Update(tuiEvent{generation: 1, command: &client.CommandEvent{ID: "first", Done: true, Error: "failed"}})
 	want := "14:32:08 $ echo hello\n\n14:32:08 $ pwd\n\nhello\nfailed\n"
-	if m.logs != want {
-		t.Fatalf("log = %q, want %q", m.logs, want)
+	if m.logText() != want {
+		t.Fatalf("log = %q, want %q", m.logText(), want)
 	}
 	view := m.View()
 	for _, color := range []string{"38;2;153;177;195", "38;2;133;201;155", "38;2;255;138;138"} {
@@ -181,13 +182,13 @@ func TestTUIOutputSpacingAndClear(t *testing.T) {
 	m.Update(tuiEvent{id: "two", output: []byte("test")})
 	m.Update(tuiEvent{command: &client.CommandEvent{ID: "three", Command: "next", StartedAt: started}})
 	want := "12:00:00 $ pwd\nPath\n----\nC:\\Users\\dmhe\n\n12:00:00 $ printf test\ntest\n\n12:00:00 $ next\n"
-	if m.logs != want {
-		t.Fatalf("log = %q, want %q", m.logs, want)
+	if m.logText() != want {
+		t.Fatalf("log = %q, want %q", m.logText(), want)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	m.Update(tuiEvent{id: "one", output: []byte("\n  after clear\n\n")})
-	if want := "  after clear\n"; m.logs != want {
-		t.Fatalf("output after clear = %q, want %q", m.logs, want)
+	if want := "  after clear\n"; m.logText() != want {
+		t.Fatalf("output after clear = %q, want %q", m.logText(), want)
 	}
 }
 
@@ -229,4 +230,13 @@ func TestStatusColors(t *testing.T) {
 			t.Errorf("%s: %q", tc.state, header)
 		}
 	}
+}
+
+// Plain text is only needed for assertions; the TUI renders its spans directly.
+func (m *tuiModel) logText() string {
+	var text strings.Builder
+	for _, span := range m.spans {
+		text.WriteString(span.text)
+	}
+	return text.String()
 }

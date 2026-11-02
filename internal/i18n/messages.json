@@ -35,10 +35,6 @@
     "en": "output queue full for %s; closing connection",
     "zh-CN": "%s 的输出队列已满，正在关闭连接"
   },
-  "http.listen.address": {
-    "en": "HTTP listen address",
-    "zh-CN": "HTTP 监听地址"
-  },
   "mcp.management.key.generated.when.omitted": {
     "en": "MCP management key (generated when omitted)",
     "zh-CN": "MCP 管理密钥（省略时自动生成）"
@@ -46,10 +42,6 @@
   "allow.mcp.management.access.without.a.password": {
     "en": "allow MCP management access without a password",
     "zh-CN": "允许无需密码访问 MCP 管理接口"
-  },
-  "generate.a.client.token.and.invitation.at": {
-    "en": "generate a client token and invitation at startup",
-    "zh-CN": "启动时生成客户端 Token 和邀请"
   },
   "public.server.url.optional.agenterm.suffix": {
     "en": "Public Server URL (optional url-prefix suffix)",
@@ -75,37 +67,17 @@
     "en": "WARNING: MCP management access has no password; anyone who can reach the MCP endpoint can control the service.",
     "zh-CN": "警告：MCP 管理接口未设置密码；任何可访问该接口的人都能控制服务。"
   },
-  "agenterm.token.1.s": {
-    "en": "Agenterm token 1:\n%s\n\n",
-    "zh-CN": "Agenterm Token 1：\n%s\n\n"
-  },
-  "press.enter.to.replace.unredeemed.startup.invitations": {
-    "en": "Press Enter to replace unredeemed startup invitations with fresh ones.",
-    "zh-CN": "按 Enter 替换尚未使用的启动邀请。"
-  },
   "mcp.endpoint.s.mcp": {
     "en": "MCP endpoint: %s/mcp\n",
     "zh-CN": "MCP 接口：%s/mcp\n"
-  },
-  "warning.http.and.websocket.traffic.is.unencrypted": {
-    "en": "WARNING: HTTP and WebSocket traffic is unencrypted; tokens, commands and output can be intercepted. Use HTTPS with a reverse proxy or a trusted network.",
-    "zh-CN": "警告：HTTP 和 WebSocket 流量未加密，Token、命令和输出可能被截获。请通过反向代理使用 HTTPS 或使用可信网络。"
   },
   "connection.token.s.without.a.client.macos": {
     "en": "Connection token:\n%s\n\nWithout a client\nmacOS / Linux connection command:\n%s\n\nWindows connection command:\n%s",
     "zh-CN": "连接 token：\n%s\n\n无客户端\nmacOS / Linux 一键连接命令：\n%s\n\nWindows 一键连接命令：\n%s"
   },
-  "invitation.d.expires.in.d.seconds.share": {
-    "en": "Invitation %d (expires in %d seconds; share privately):\n",
-    "zh-CN": "邀请 %d（%d 秒后过期；请私密分享）：\n"
-  },
   "invitation.timeout.invalid": {
     "en": "timeout_seconds must be an integer between 1 and %d.",
     "zh-CN": "timeout_seconds 必须是 1 到 %d 之间的整数。"
-  },
-  "macos.linux.s.windows.powershell.s": {
-    "en": "macOS / Linux:\n%s\nWindows PowerShell:\n%s\n\n",
-    "zh-CN": "macOS / Linux：\n%s\nWindows PowerShell：\n%s\n\n"
   },
   "restart.to.apply.language.changes": {
     "en": "Restart to apply language changes",
@@ -275,10 +247,6 @@
     "en": "[3/4] Verifying invitation and connecting…",
     "zh-CN": "[3/4] 正在验证邀请并连接服务器…"
   },
-  "connection.failed.invitation.verification.v": {
-    "en": "Connection failed (invitation verification): %v",
-    "zh-CN": "连接失败（邀请验证）：%v"
-  },
   "connection.token.2": {
     "en": "Connection token: ",
     "zh-CN": "连接 Token："
@@ -411,10 +379,6 @@
     "en": "unauthorized",
     "zh-CN": "未授权"
   },
-  "management.key.required": {
-    "en": "management key required",
-    "zh-CN": "需要管理密钥"
-  },
   "valid.client.token.is.required": {
     "en": "valid client_token is required",
     "zh-CN": "需要有效的 client_token"
@@ -422,14 +386,6 @@
   "command.is.required": {
     "en": "command is required",
     "zh-CN": "必须提供 command"
-  },
-  "invalid.cursor.or.wait.ms": {
-    "en": "invalid cursor or wait_ms",
-    "zh-CN": "cursor 或 wait_ms 无效"
-  },
-  "unknown.tool.s": {
-    "en": "unknown tool: %s",
-    "zh-CN": "未知工具：%s"
   },
   "method.not.allowed": {
     "en": "method not allowed",
@@ -462,10 +418,6 @@
   "agenterm.finished.exit.code.d": {
     "en": "\n[Agenterm] Finished (exit code: %d)\n",
     "zh-CN": "\n[Agenterm] 执行结束（退出码：%d）\n"
-  },
-  "s.exit.code.d": {
-    "en": "%s\n[exit code: %d]",
-    "zh-CN": "%s\n[退出码：%d]"
   },
   "version.unknown": {
     "en": "Cannot determine version compatibility: local %s, peer %q. Update Server and Client together",
@@ -619,10 +571,6 @@
     "en": "Start an interactive or long-running process in a fresh shell on the selected device and return session_id before completion. This does not automatically create a persistent shell: a one-shot command ends its session when it exits. To preserve working directory, variables, functions or an activated environment across commands, explicitly launch a shell that keeps reading stdin (for example, bash -i on Linux/macOS where available), then send subsequent commands through session_control(action=input) using the same session_id. Repeated session_start calls create independent processes. The interpreter is reported by list_clients as client_info.shell; choose a command suitable for the target platform. Linux/macOS use a PTY; Windows uses pipes without terminal emulation. Use session_read for output and session_control(action=stop) for cancellation. Shell state lasts only while that shell is alive; client disconnection terminates sessions and reconnect does not restore them. Each token retains up to six sessions. Finished records may expire after 30 minutes or be evicted when later sessions start.",
     "zh-CN": "在选定设备上新建 shell 启动交互或长时间运行的进程，在完成前返回 session_id。这不会自动创建常驻 shell：一次性命令退出后，会话即结束。如需跨命令保留工作目录、变量、函数或已激活的环境，请显式启动持续读取标准输入的 shell（例如在已安装 bash 的 Linux/macOS 上使用 bash -i），再通过 session_control(action=input) 向同一个 session_id 发送后续命令。重复调用 session_start 会创建独立进程。解释器由 list_clients 的 client_info.shell 字段提供，请选择适合目标平台的命令。Linux/macOS 使用 PTY；Windows 使用管道，不模拟终端。通过 session_read 读取输出，session_control(action=stop) 请求取消。shell 状态仅在该 shell 存活期间保留；客户端断线会终止会话，重连不会恢复。每个 token 最多保留六个会话；已结束的记录可能在 30 分钟后过期，或在后续会话启动时被替换。"
   },
-  "mcp.shell.command.to.run": {
-    "en": "Shell command to run",
-    "zh-CN": "要执行的 Shell 命令"
-  },
   "mcp.read.new.output.while.the.session.is.running": {
     "en": "Read incremental session output and current state, limited by max_bytes (default 16384, maximum 65536; UTF-8 characters are not split). Resume from next_cursor; has_more=true means retained output remains, including when done=true. Continue draining until has_more=false even after the process exits. done and exit_code describe the entire session, not individual commands in a persistent shell. Determine command completion from program output. Empty output with done=false does not confirm command completion. Returns immediately if output or a terminal state is available; otherwise waits up to wait_ms. Dropped output sets truncated=true and reading resumes at the earliest retained byte; pagination alone does not set truncated. A cursor beyond available output or inside a UTF-8 character is an error. Terminal result fields are included only when done=true.",
     "zh-CN": "读取会话的增量输出和当前状态，单次受 max_bytes 限制（默认 16384，最多 65536 字节；不切断 UTF-8 字符）。用 next_cursor 继续读取；has_more=true 表示仍有保留输出，包括 done=true 时。进程退出后也应继续读取，直到 has_more=false。done 和 exit_code 描述整个会话，而非常驻 shell 中的单条命令。请根据程序输出判断单条命令是否完成；output 为空且 done=false 不能证明命令完成。有输出或终态时立即返回，否则最多等待 wait_ms。输出被丢弃时设置 truncated=true，并从最早保留的字节继续读取；仅分页不会设置 truncated。超出已有输出范围或位于 UTF-8 字符内部的游标会报错。仅在 done=true 时包含终态结果字段。"
@@ -654,22 +602,6 @@
   "mcp.target.client.connection.token.required.when.authenticated.with": {
     "en": "Target client connection token, required with management access (including stdio and no-password mode). Device-scoped bearer access implicitly selects its own token.",
     "zh-CN": "目标客户端连接 token；管理访问（包括 stdio 和免密模式）时必须填写。设备范围的 Bearer 访问会自动选择其自身 token。"
-  },
-  "mcp.parse.error": {
-    "en": "parse error",
-    "zh-CN": "解析错误"
-  },
-  "mcp.invalid.arguments": {
-    "en": "invalid arguments",
-    "zh-CN": "参数无效"
-  },
-  "mcp.method.not.found": {
-    "en": "method not found",
-    "zh-CN": "方法不存在"
-  },
-  "mcp.output.truncated.at.1.mib": {
-    "en": "\n[output truncated at 1 MiB]",
-    "zh-CN": "\n[输出已在 1 MiB 处截断]"
   },
   "client.input.error": {
     "en": "\n[Agenterm] input error: %s\n",
@@ -738,10 +670,6 @@
   "mcp.client.id": {
     "en": "Six lowercase letters or digits from list_clients. Required for multi-device tokens, even when only one device is online; optional for single-device tokens.",
     "zh-CN": "list_clients 返回的 6 位小写字母或数字 ID。多设备 Token 必填，即使只有一台设备在线；单设备 Token 可省略。"
-  },
-  "mcp.multi.device": {
-    "en": "Allow multiple devices to connect simultaneously and reuse the invitation until it expires. Default false.",
-    "zh-CN": "允许多台设备同时在线，并在邀请有效期内重复兑换。默认 false。"
   },
   "unknown.client.id": {
     "en": "Unknown or offline client_id for this token.",

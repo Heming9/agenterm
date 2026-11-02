@@ -297,12 +297,6 @@ func (c *connection) run(m protocol.Message) {
 	}()
 }
 
-// Run reconnects after transient failures until canceled or permanently rejected.
-// onConnected is called after the WebSocket handshake. The caller owns logWriter.
-func Run(ctx context.Context, token string, logWriter io.Writer, onConnected func()) error {
-	return RunWithCallbacks(ctx, token, logWriter, Callbacks{Connected: onConnected})
-}
-
 // RunWithCallbacks runs a connection with structured lifecycle notifications for
 // consumers such as the desktop UI, retaining the local lock across retries.
 func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, callbacks Callbacks) error {

@@ -6,10 +6,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"agenterm/internal/client"
 	"agenterm/internal/i18n"
+	"agenterm/internal/logview"
 	"agenterm/internal/protocol"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -22,18 +22,12 @@ import (
 type commandStats struct {
 	completed int
 	total     time.Duration
-	running   map[string]bool
 }
 
 func (s *commandStats) apply(event client.CommandEvent) {
-	if s.running == nil {
-		s.running = make(map[string]bool)
-	}
 	if !event.Done {
-		s.running[event.ID] = true
 		return
 	}
-	delete(s.running, event.ID)
 	s.completed++
 	s.total += event.Duration
 }
@@ -79,7 +73,7 @@ type clientView struct {
 	buffer     *logBuffer
 	logText    string
 	logSpans   []logSpan
-	decoder    displayDecoder
+	decoder    logview.Decoder
 	stats      commandStats
 	cancel     context.CancelFunc
 	connected  bool
@@ -231,7 +225,7 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	v.token.Disable()
 	buffer := &logBuffer{}
 	v.buffer = buffer
-	v.decoder = displayDecoder{}
+	v.decoder = logview.Decoder{}
 	v.clearLogs()
 	v.stats = commandStats{}
 	v.statistics.SetText(v.stats.text())
@@ -416,7 +410,7 @@ func (v *clientView) flushLogs() {
 		return
 	}
 	for _, span := range spans {
-		span.text = v.decoder.text(span.text)
+		span.text = v.decoder.Text(span.text)
 		if span.text == "" {
 			continue
 		}
@@ -431,25 +425,13 @@ func (v *clientView) flushLogs() {
 	for _, span := range v.logSpans {
 		total += len(span.text)
 	}
-	for total > maxLogBytes && len(v.logSpans) > 0 {
-		excess := total - maxLogBytes
-		if len(v.logSpans[0].text) <= excess {
-			total -= len(v.logSpans[0].text)
-			v.logSpans = v.logSpans[1:]
-			continue
-		}
-		old := v.logSpans[0].text
-		tail := old[excess:]
-		for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
-			tail = tail[1:]
-		}
-		v.logSpans[0].text = tail
-		total -= len(old) - len(tail)
-	}
-	v.logText = ""
+	v.logSpans, total = trimLogSpans(v.logSpans, total)
+	var text strings.Builder
+	text.Grow(total)
 	for _, span := range v.logSpans {
-		v.logText += span.text
+		text.WriteString(span.text)
 	}
+	v.logText = text.String()
 	wasSelecting := v.logSelection.SelectedText() != ""
 	v.renderLog()
 	v.empty.Hide()

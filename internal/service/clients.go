@@ -111,12 +111,6 @@ func (s *runtimeState) targetClientLocked(secret, id string) (*client, error) {
 	return nil, i18n.NewError("no.client.connected")
 }
 
-func (s *runtimeState) listClients(secret string) []clientInfo {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.listClientsLocked(secret)
-}
-
 func (s *runtimeState) listClientsLocked(secret string) []clientInfo {
 	clients := make([]clientInfo, 0)
 	for _, c := range s.clients {

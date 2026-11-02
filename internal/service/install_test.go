@@ -62,7 +62,6 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		mux.ServeHTTP(w, r)
 	}))
 	defer ts.Close()
-	publicURL := ts.URL
 	target, _ := url.Parse(ts.URL)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +72,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		proxy.ServeHTTP(w, r)
 	}))
 	defer frontend.Close()
-	publicURL = frontend.URL
+	publicURL := frontend.URL
 	state.clientURL = "ws" + strings.TrimPrefix(publicURL, "http") + prefix + "/client"
 	issued, err := state.createClient("")
 	if err != nil {

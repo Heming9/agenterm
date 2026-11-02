@@ -38,7 +38,7 @@ func TestServerVersionCheckedBeforeConnectedCallback(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			connected := false
-			err = Run(ctx, token, io.Discard, func() { connected = true })
+			err = RunWithCallbacks(ctx, token, io.Discard, Callbacks{Connected: func() { connected = true }})
 			if connected != (peer == "0.3.99") {
 				t.Fatalf("peer %q: connected=%v err=%v", peer, connected, err)
 			}

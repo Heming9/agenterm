@@ -2,7 +2,6 @@ package main
 
 import (
 	"strings"
-	"unicode"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -10,15 +9,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
-
-func containsCJK(text string) bool {
-	for _, r := range text {
-		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r) {
-			return true
-		}
-	}
-	return false
-}
 
 // uiText has explicit typography without the implicit padding of a form label.
 // It still resolves colours and fonts from its surrounding theme on refresh.

@@ -266,7 +266,7 @@ func TestConnectionLockReleasedAfterDisconnectOrFailure(t *testing.T) {
 	for _, fail := range []bool{false, true, false} {
 		reject.Store(fail)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := Run(ctx, credential, io.Discard, cancel)
+		err := RunWithCallbacks(ctx, credential, io.Discard, Callbacks{Connected: cancel})
 		cancel()
 		if (err != nil) != fail {
 			t.Fatalf("reject=%v: %v", fail, err)

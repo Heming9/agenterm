@@ -167,7 +167,7 @@ func TestTUISelectionStreamingKeepsLayoutAndCollectsOutput(t *testing.T) {
 	m.appendLog("output", "third\n")
 	latency := 33 * time.Millisecond
 	m.Update(tuiEvent{latency: &latency})
-	if m.viewport.View() != before || !strings.Contains(m.logs, "third") || !strings.Contains(m.View(), "33ms") {
+	if m.viewport.View() != before || !strings.Contains(m.logText(), "third") || !strings.Contains(m.View(), "33ms") {
 		t.Fatal("streaming moved the selection, lost output, or froze the header")
 	}
 	selectionMouse(m, 6, 2, tea.MouseActionRelease)
@@ -234,10 +234,10 @@ func TestTUISelectionResizeDisconnectAndHistoryEviction(t *testing.T) {
 	}
 	selectionMouse(m, 0, 2, tea.MouseActionPress)
 	selectionMouse(m, 3, 2, tea.MouseActionMotion)
-	m.logs = strings.Repeat("x", maxTUILog)
-	m.spans = []logSpan{{kind: "output", text: m.logs}}
+	m.logBytes = maxTUILog
+	m.spans = []logSpan{{kind: "output", text: strings.Repeat("x", maxTUILog)}}
 	m.appendLog("system", "new\n")
-	if m.selection != nil || len(m.logs) > maxTUILog {
+	if m.selection != nil || len(m.logText()) > maxTUILog {
 		t.Fatal("history eviction retained a stale selection")
 	}
 	m.Update(tuiEvent{finished: true})

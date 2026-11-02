@@ -57,32 +57,33 @@ type tuiEvent struct {
 	finished   bool
 }
 type tuiModel struct {
-	input                         textinput.Model
-	viewport                      viewport.Model
-	events                        chan tuiEvent
-	ctx                           context.Context
-	cancel                        context.CancelFunc
-	state, address, message, logs string
-	completed                     int
-	generation                    uint64
-	decoders                      map[string]*displayDecoder
-	spans                         []logSpan
-	folds                         []tuiFold
-	logRows                       []string
-	softWraps                     map[int]bool
-	logDirty                      bool
-	selection                     *tuiSelection
-	selectionID                   uint64
-	clipboard                     *tuiClipboard
-	legacyCells                   bool
-	lastID                        string
-	width, height                 int
-	connectionProgress            bool
-	invitation                    string
-	spacing                       logview.Spacing
-	latency                       time.Duration
-	retryDelay                    time.Duration
-	everConnected                 bool
+	input                   textinput.Model
+	viewport                viewport.Model
+	events                  chan tuiEvent
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	state, address, message string
+	completed               int
+	generation              uint64
+	decoders                map[string]*logview.Decoder
+	spans                   []logSpan
+	logBytes                int
+	folds                   []tuiFold
+	logRows                 []string
+	softWraps               map[int]bool
+	logDirty                bool
+	selection               *tuiSelection
+	selectionID             uint64
+	clipboard               *tuiClipboard
+	legacyCells             bool
+	lastID                  string
+	width, height           int
+	connectionProgress      bool
+	invitation              string
+	spacing                 logview.Spacing
+	latency                 time.Duration
+	retryDelay              time.Duration
+	everConnected           bool
 }
 
 func newTUI(token string) *tuiModel {
@@ -92,7 +93,7 @@ func newTUI(token string) *tuiModel {
 	input.CharLimit = 4096
 	input.SetValue(token)
 	input.Focus()
-	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*displayDecoder), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
+	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*logview.Decoder), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
 }
 func runTUI(token string, connectionProgress bool) error {
 	m := newTUI(token)
@@ -130,7 +131,7 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.state = "connecting"
 	m.latency = -1
 	m.everConnected = false
-	m.logs, m.lastID = "", ""
+	m.logBytes, m.lastID = 0, ""
 	m.spans = nil
 	m.folds = nil
 	m.selection = nil
@@ -176,19 +177,21 @@ func (m *tuiModel) appendLog(kind, s string) {
 		return
 	}
 	m.spacing.Observe(s)
-	m.logs += s
+	m.logBytes += len(s)
 	if len(m.spans) > 0 && kind != "system" && m.spans[len(m.spans)-1].kind == kind {
 		m.spans[len(m.spans)-1].text += s
 	} else {
 		m.spans = append(m.spans, logSpan{kind: kind, text: s})
 	}
-	if len(m.logs) > maxTUILog {
+	if m.logBytes > maxTUILog {
 		// Discard coordinates into history that is about to be evicted.
 		m.selection = nil
-		excess := len(m.logs) - maxTUILog
+		excess := m.logBytes - maxTUILog
 		for excess > 0 && len(m.spans) > 0 {
 			if len(m.spans[0].text) <= excess {
 				excess -= len(m.spans[0].text)
+				m.logBytes -= len(m.spans[0].text)
+				m.spans[0] = logSpan{}
 				m.spans = m.spans[1:]
 				continue
 			}
@@ -196,14 +199,10 @@ func (m *tuiModel) appendLog(kind, s string) {
 			for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
 				tail = tail[1:]
 			}
-			m.spans[0].text = tail
+			m.logBytes -= len(m.spans[0].text) - len(tail)
+			m.spans[0].text = strings.Clone(tail)
 			excess = 0
 		}
-		var b strings.Builder
-		for _, span := range m.spans {
-			b.WriteString(span.text)
-		}
-		m.logs = b.String()
 	}
 	m.refreshLog()
 }
@@ -263,13 +262,13 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancel()
 				return m, tea.Quit
 			case "c":
-				m.logs = ""
+				m.logBytes = 0
 				m.spans = nil
 				m.folds = nil
 				m.lastID = ""
 				m.spacing = logview.Spacing{}
 				for _, decoder := range m.decoders {
-					decoder.output = logview.Output{}
+					decoder.Output = logview.Output{}
 				}
 				m.viewport.SetContent("")
 				m.logRows = nil
@@ -290,7 +289,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = "connected"
 			m.latency = -1
 			m.lastID = ""
-			m.decoders = make(map[string]*displayDecoder)
+			m.decoders = make(map[string]*logview.Decoder)
 			if m.everConnected {
 				m.appendLog("system", m.spacing.Before(2)+time.Now().Format("15:04:05")+" "+tr("connection.restored")+"\n")
 			} else if m.connectionProgress {
@@ -310,7 +309,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if e := msg.command; e != nil {
 			if !e.Done {
-				m.decoders[e.ID] = &displayDecoder{}
+				m.decoders[e.ID] = &logview.Decoder{}
 				m.appendLog("system", m.spacing.Before(2)+e.StartedAt.Format("15:04:05")+" $ ")
 				m.appendLog("command", cleanText(e.Command)+"\n")
 				m.lastID = e.ID
@@ -325,7 +324,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(msg.output) > 0 {
 			if d := m.decoders[msg.id]; d != nil {
-				s := d.output.Text(d.text(string(msg.output)))
+				s := d.Output.Text(d.Text(string(msg.output)))
 				if m.lastID != msg.id {
 					s = logview.TrimLeadingBlankLines(s)
 				}
@@ -448,59 +447,4 @@ func (m *tuiModel) header(status string) string {
 	gap := max(1, width-m.cellWidth(left)-m.cellWidth(right)-1)
 	return left + strings.Repeat(" ", gap) + right + " "
 }
-func cleanText(s string) string { return (&displayDecoder{}).text(s) }
-
-// displayDecoder strips terminal control sequences while preserving split UTF-8.
-type displayDecoder struct {
-	state   byte
-	pending string
-	output  logview.Output
-}
-
-func (d *displayDecoder) text(chunk string) string {
-	chunk = d.pending + chunk
-	d.pending = ""
-	var out strings.Builder
-	for len(chunk) > 0 {
-		if !utf8.FullRuneInString(chunk) {
-			d.pending = chunk
-			break
-		}
-		r, n := utf8.DecodeRuneInString(chunk)
-		chunk = chunk[n:]
-		switch d.state {
-		case 1:
-			switch r {
-			case '[':
-				d.state = 2
-			case ']':
-				d.state = 3
-			default:
-				d.state = 0
-			}
-		case 2:
-			if r >= 0x40 && r <= 0x7e {
-				d.state = 0
-			}
-		case 3:
-			if r == 7 {
-				d.state = 0
-			} else if r == 27 {
-				d.state = 4
-			}
-		case 4:
-			if r == '\\' {
-				d.state = 0
-			} else {
-				d.state = 3
-			}
-		default:
-			if r == 27 {
-				d.state = 1
-			} else if r == '\n' || r == '\t' || r >= 32 && r != 127 {
-				out.WriteRune(r)
-			}
-		}
-	}
-	return out.String()
-}
+func cleanText(s string) string { return (&logview.Decoder{}).Text(s) }
