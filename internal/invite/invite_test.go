@@ -13,7 +13,8 @@ import (
 )
 
 func TestRedeemChecksServerVersion(t *testing.T) {
-	for _, peer := range []string{"0.3.99", "0.2.99", "0.2.13-rc.1", "0.2.99-rc.1", "0.4.0", "1.2.13", "", "invalid"} {
+	compatiblePeer := version.Current[:strings.LastIndex(version.Current, ".")+1] + "999"
+	for _, peer := range []string{compatiblePeer, "0.3.99", "0.2.99", "0.2.13-rc.1", "0.2.99-rc.1", version.Current + "-rc.1", "1.2.13", "", "invalid"} {
 		t.Run(peer, func(t *testing.T) {
 			var token string
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +34,7 @@ func TestRedeemChecksServerVersion(t *testing.T) {
 			}
 			token = value
 			got, err := Redeem(context.Background(), value)
-			if peer == "0.3.99" {
+			if peer == compatiblePeer {
 				if err != nil || got != token {
 					t.Fatalf("compatible server: token=%q err=%v", got, err)
 				}
