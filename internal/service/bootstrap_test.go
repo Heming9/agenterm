@@ -62,12 +62,12 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	first := &serviceProcess{cmd: exec.Command(executable, args...), done: make(chan error, 1), log: logs.Name()}
 	// A terminal interrupt reaches the entire server process group. The runtime
 	// must live in another session, and must not retain the server's output pipe.
 	first.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	first.cmd.Stdout, first.cmd.Stderr = &stdout, logs
+	first.cmd.Stdout, first.cmd.Stderr = &stdout, io.MultiWriter(logs, &stderr)
 	if err := first.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

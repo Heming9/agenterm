@@ -3,6 +3,15 @@ services:
     build: .
     image: agenterm-server:local
     restart: unless-stopped
+    environment:
+      AGENTERM_LOG_FORMAT: "${AGENTERM_LOG_FORMAT:-json}"
+      AGENTERM_LOG_LEVEL: "${AGENTERM_LOG_LEVEL:-INFO}"
+      AGENTERM_RUNTIME_LOG_FILE: stderr
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
     ports:
       - "${AGENTERM_BIND_ADDRESS:-127.0.0.1}:${AGENTERM_PORT:-8080}:8080"
     command:

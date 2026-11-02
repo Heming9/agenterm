@@ -1,8 +1,8 @@
 package service
 
 import (
+	"agenterm/internal/logging"
 	"agenterm/internal/protocol"
-	"log"
 	"strconv"
 	"sync"
 	"time"
@@ -51,7 +51,7 @@ func (c *client) startHeartbeat(interval, timeout time.Duration) func() {
 			mu.Unlock()
 			if payload != "" {
 				if err := c.conn.WriteControl(websocket.PingMessage, []byte(payload), time.Now().Add(protocol.WriteTimeout)); err != nil {
-					log.Printf("client heartbeat failed id=%s reason=%q", c.info.ID, err)
+					c.logger().Warn("client heartbeat failed", "error_kind", logging.ErrorKind(err))
 					c.conn.Close()
 					return
 				}

@@ -2,12 +2,14 @@ package service
 
 import (
 	"agenterm/internal/installer"
+	"agenterm/internal/logging"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -138,7 +140,8 @@ func (s *runtimeState) ingress(serverSocket string) http.Handler {
 			// Never trust a public caller's claim about its original peer.
 			r.Out.Header.Set(remoteAddrHeader, r.In.RemoteAddr)
 		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "server proxy failed", "error_kind", logging.ErrorKind(err), "error", err)
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, "agenterm-server unavailable", http.StatusServiceUnavailable)
 		},
@@ -149,7 +152,7 @@ func (s *runtimeState) ingress(serverSocket string) http.Handler {
 	mux.HandleFunc(prefix+"/invite/redeem", s.redeemInvitation)
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/", proxy)
-	return mux
+	return observeHTTP(mux, false, func(r *http.Request) string { return publicRoute(r.URL.Path, prefix) })
 }
 
 func runRuntime(ctx context.Context, s *runtimeState, public net.Listener, controlListener net.Listener, serverSocket string) error {
@@ -170,11 +173,13 @@ func runRuntime(ctx context.Context, s *runtimeState, public net.Listener, contr
 	group.Go(func() error {
 		return serveUntilStopped(lifetime, &http.Server{Handler: s.controlHandler(lifetime, cancel), ReadHeaderTimeout: 10 * time.Second}, controlListener, 5*time.Second)
 	})
-	return group.Wait()
+	err := group.Wait()
+	slog.Info("runtime stopped", "error_kind", logging.ErrorKind(err))
+	return err
 }
 
 func (s *frontend) socketHandler(assets http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/_agenterm/shutdown" {
 			if r.Method != http.MethodPost || r.Header.Get(remoteAddrHeader) != "" || s.shutdown == nil {
 				http.NotFound(w, r)
@@ -189,6 +194,7 @@ func (s *frontend) socketHandler(assets http.Handler) http.Handler {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
 			if _, err := controlCall[runtimeConfig](ctx, s.control, "config", struct{}{}); err != nil {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "runtime health check failed", "error_kind", logging.ErrorKind(err))
 				http.Error(w, "runtime unavailable", http.StatusServiceUnavailable)
 				return
 			}
@@ -203,6 +209,7 @@ func (s *frontend) socketHandler(assets http.Handler) http.Handler {
 		}
 		assets.ServeHTTP(w, r)
 	})
+	return observeHTTP(handler, true, func(r *http.Request) string { return publicRoute(r.URL.Path, pathPrefix(s.clientURL)) })
 }
 
 // runtimeWorkerMain is accessible only through the server's inherited startup pipe.
@@ -219,8 +226,18 @@ func runtimeWorkerMain() {
 	options.Fields = make(map[string]bool)
 	flags.Visit(func(f *flag.Flag) { options.Fields[f.Name] = true })
 	options.Settings.ServerSocket = *upstreamSocket
+	closeLog, err := configureServiceLogging("runtime", os.Getenv("AGENTERM_LOG_INSTANCE"))
+	if err != nil {
+		fmt.Fprintln(output, err)
+		os.Exit(1)
+	}
+	defer closeLog()
 	if err := runtimeMain(options, *controlSocket, output, ready); err != nil {
-		log.Fatal(err)
+		// Startup errors must reach the launcher even when the independent log
+		// sink is a file. After readiness this pipe is already closed.
+		fmt.Fprintln(output, err)
+		slog.Error("runtime failed", "error_kind", logging.ErrorKind(err), "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -261,10 +278,12 @@ func runtimeMain(options *runtimeLaunchOptions, controlSocket string, output io.
 		fmt.Fprintf(output, serverText("mcp.management.key.save.securely.s"), password)
 	}
 	if settings.NoPassword {
-		log.Print(serverText("warning.mcp.management.access.has.no.password"))
+		slog.Warn("management authentication disabled")
 	}
-	fmt.Fprintf(output, serverText("mcp.endpoint.s.mcp"), publicBase)
-	log.Printf("runtime listening on %s; control socket %s", public.Addr(), controlSocket)
+	if !strings.EqualFold(os.Getenv("AGENTERM_LOG_FORMAT"), "json") {
+		fmt.Fprintf(output, serverText("mcp.endpoint.s.mcp"), publicBase)
+	}
+	slog.Info("runtime ready", "listen", public.Addr().String(), "mcp_endpoint", publicBase+"/mcp")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ready()
@@ -301,14 +320,16 @@ func serverMain(paths instancePaths, stdio bool, expected runtimeConfig) error {
 			if !errors.As(err, &drain) {
 				return err
 			}
-			log.Printf("previous server drain: %v", err)
+			slog.Warn("previous server drain failed", "error_kind", logging.ErrorKind(err))
 		}
-		log.Printf("server instance=%s ready", paths.Name)
+		slog.Info("server ready")
 		return nil
 	}
 	go func() { <-ctx.Done(); s.stopping.Store(true) }()
 	if stdio {
 		return s.runStdio(ctx, srv, listener, &mcp.StdioTransport{}, activate)
 	}
-	return serveUntilStopped(ctx, srv, listener, serverDrainTimeout, activate)
+	err = serveUntilStopped(ctx, srv, listener, serverDrainTimeout, activate)
+	slog.Info("server stopped", "error_kind", logging.ErrorKind(err))
+	return err
 }

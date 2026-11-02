@@ -60,6 +60,10 @@ func TestStatusDoesNotCreateOrStartAnInstance(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 	t.Setenv("TMPDIR", dir)
+	// Read-only status must not create even an explicitly configured log file,
+	// or be blocked by an invalid logging configuration.
+	t.Setenv("AGENTERM_LOG_FILE", filepath.Join(dir, "must-not-exist.log"))
+	t.Setenv("AGENTERM_LOG_FORMAT", "invalid")
 	err = runServerCommand([]string{"status", "-instance", "unused"}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatal(err)

@@ -131,7 +131,7 @@ sudo systemctl stop agenterm-server
 sudo -u agenterm /opt/agenterm/agenterm-server stop
 ```
 
-临时目录只存放通信 socket 和入口链接，不保存凭证和输出。修改 Runtime 参数时，需要先按上述命令完整停止，再更新环境配置并启动服务。
+临时目录存放通信 socket、入口链接，以及默认的 Runtime 运行日志；凭证和终端输出仍只在内存中。修改 Runtime 参数时，需要先按上述命令完整停止，再更新环境配置并启动服务。
 
 ## 接入 stdio MCP 客户端
 
@@ -149,6 +149,41 @@ Agent 仍可只启动一个程序，Runtime 会自动启动或复用：
 ```
 
 stdio 信任本地进程用户，提供管理权限；HTTP 管理接口仍需认证。stdout 只输出 MCP 消息，启动信息和管理密钥写入 stderr。关闭 stdio 后 Server 退出，Runtime 保留；下次启动自动接管。相同的真实监听 socket 同时只能由一个 Server 使用。
+
+## 日志与线上排错
+
+Server 和 Runtime 使用 Go 标准库 `log/slog`，日志包含 `time`、`level`、`msg`、`component`、`version`、`pid` 和 `instance`。日志配置通过环境变量设置，不增加命令行参数：
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `AGENTERM_LOG_FORMAT` | `text` | `text` 供本地阅读；生产环境使用 `json` |
+| `AGENTERM_LOG_LEVEL` | `INFO` | `DEBUG`、`INFO`、`WARN`、`ERROR` |
+| `AGENTERM_LOG_FILE` | 空，即 Server stderr | Server 的绝对日志文件路径；父目录需预先创建 |
+| `AGENTERM_RUNTIME_LOG_FILE` | 实例目录下的 `runtime.log` | Runtime 独立日志的绝对路径，或显式设置 `stderr` 交给平台收集 |
+
+默认 Runtime 日志位于系统临时目录的 `agenterm-<uid>/runtime.log`；非默认实例位于 `agenterm-<uid>/<instance>/runtime.log`。临时目录路径过长时 IPC 目录会回退到 `/tmp`。文件以 `0600` 权限追加写入，不包含业务状态。目录被系统清理时日志可能丢失，长期保留应使用平台收集或指定持久目录。默认文件不自动轮转；文件模式应配置运维工具轮转，例如 logrotate 的 `copytruncate`，并限制保留量。不要只重命名文件：Runtime 会继续写原文件描述符。
+
+Runtime 默认不继承终端或 MCP 父进程的输出管道；Server 退出、崩溃或更新后，它仍能独立写日志。Compose 已配置两个组件输出 JSON 到容器日志，使用 `local` 驱动轮转（每个文件 10 MiB，最多 5 个文件）；systemd unit 配置 JSON 输出到 journald，保留量由主机 journald 配置控制：
+
+```sh
+docker compose logs --since 15m -f server
+sudo journalctl -u agenterm-server --since '15 minutes ago' -f -o cat
+```
+
+`stderr` 适用于生命周期独立于 Server 的 Docker/journald 收集器。通过 stdio MCP 启动时应保留默认独立文件，避免长期占用启动方的 stderr 管道。普通 Server 更新保留 Runtime，因此修改 Runtime 的日志级别、格式或出口需要明确执行 `restart`，这会断开设备并清空会话；只更新 Server 不会改变原 Runtime 的日志配置。
+
+每个公网 HTTP 请求生成新的 `X-Request-ID` 并回传，覆盖调用者传入的值。该 ID 在 Server、私有 Runtime RPC、MCP 工具以及命令/会话生命周期日志之间传递；stdio 工具调用也会生成关联 ID。可用 `request_id` 串联一次请求，用 `client_id`、`command_id`、`session_id` 继续查询设备和任务事件。命令 ID 与发往客户端的执行消息 ID 一致。成功的健康检查和私有 RPC 记为 DEBUG；失败的请求仍以 WARN/ERROR 记录。
+
+日志记录状态、耗时、退出码、超时/取消标记、WebSocket 关闭码和错误类型。代理连接失败额外记录底层错误，HTTP panic 保留栈但不记录 panic 值。路由使用模板，如 `/c/{code}`，不记录安装码、原始 URL、查询参数、认证头、命令正文、环境变量、会话输入或命令输出；敏感字段还有统一脱敏保护。不要把凭证拼进日志消息或任意错误字符串中。首次自动生成的管理密钥仍只经启动提示交付，因此生产部署应像 Compose/systemd 示例一样显式提供固定管理密钥。
+
+排错时先查 `status` 和两个健康接口：
+
+- `/livez` 失败：先查 Runtime 的启动、退出和资源状态。
+- `/livez` 成功、`/healthz` 失败：用响应中的 `X-Request-ID` 查询 `server proxy failed` 或 `runtime health check failed`，区分业务进程、私有 socket 和内部 API 问题。
+- 设备断连：查询 `client disconnected`、`client heartbeat failed` 或 `client output queue full`，再用 `client_id` 关联命令和会话。
+- 命令超时或失败：查询 `command completed` / `session completed` 的 `exit_code`、`timed_out`、`canceled`，再检查客户端可见输出。
+
+这些配置提供日志定位能力；仓库尚未配置集中日志服务、外部监控探测或告警通知。
 
 ## 健康检查
 

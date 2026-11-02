@@ -2,6 +2,7 @@ package service
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/logging"
 	"agenterm/internal/protocol"
 	"bytes"
 	"context"
@@ -77,6 +78,9 @@ func (c *runtimeClient) call(ctx context.Context, method string, in, out any) er
 	}
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set(controlVersionHeader, controlVersion)
+	if id := logging.RequestID(ctx); id != "" {
+		r.Header.Set(logging.RequestIDHeader, id)
+	}
 	response, err := c.http.Do(r)
 	if err != nil {
 		return fmt.Errorf("runtime unavailable: %w", err)
@@ -145,7 +149,7 @@ type installerInvitation struct {
 }
 
 func registerControl[I, O any](mux *http.ServeMux, method string, f func(context.Context, I) (O, error)) {
-	mux.HandleFunc("POST /v1/"+method, func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		setRuntimeIdentityHeaders(w.Header())
 		fail := func(status int, message string) {
@@ -174,6 +178,7 @@ func registerControl[I, O any](mux *http.ServeMux, method string, f func(context
 		}
 		_ = json.NewEncoder(w).Encode(out)
 	})
+	mux.Handle("POST /v1/"+method, observeHTTP(handler, true, func(*http.Request) string { return "/v1/" + method }))
 }
 
 // Only the runtime constructs this handler. It is reachable exclusively over a
@@ -226,8 +231,8 @@ func (s *runtimeState) controlHandler(lifetime context.Context, shutdown ...cont
 	registerControl(mux, "clients", func(ctx context.Context, in toolRequest[listClientsArgs]) ([]clientInfo, error) {
 		return s.waitForClients(ctx, in.Secret, time.Duration(in.Args.WaitMS)*time.Millisecond)
 	})
-	registerControl(mux, "execute/start", func(_ context.Context, in toolRequest[executeArgs]) (string, error) {
-		return s.startExecution(lifetime, in)
+	registerControl(mux, "execute/start", func(ctx context.Context, in toolRequest[executeArgs]) (string, error) {
+		return s.startExecution(logging.WithRequestID(lifetime, logging.RequestID(ctx)), in)
 	})
 	registerControl(mux, "execute/wait", func(ctx context.Context, in executionRequest) (protocol.CommandResult, error) {
 		p, err := s.getExecution(in)
@@ -249,11 +254,11 @@ func (s *runtimeState) controlHandler(lifetime context.Context, shutdown ...cont
 		p.cancel()
 		return true, nil
 	})
-	registerControl(mux, "session/start", func(_ context.Context, in toolRequest[executeArgs]) (sessionStartResult, error) {
+	registerControl(mux, "session/start", func(ctx context.Context, in toolRequest[executeArgs]) (sessionStartResult, error) {
 		if err := validateExecution(in.Args); err != nil {
 			return sessionStartResult{}, err
 		}
-		p, err := s.startSession(in.Secret, in.Args.ClientID, in.Args.Command, in.Args.ExecOptions)
+		p, err := s.startSession(ctx, in.Secret, in.Args.ClientID, in.Args.Command, in.Args.ExecOptions)
 		if err != nil {
 			return sessionStartResult{}, err
 		}

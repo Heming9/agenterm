@@ -1,12 +1,14 @@
 package service
 
 import (
+	"agenterm/internal/logging"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -104,6 +106,18 @@ func runServerCommand(args []string, output, help io.Writer) (err error) {
 	if command.Action == "status" {
 		return instanceStatus(command.Paths, output)
 	}
+	if command.Action != "stop" {
+		closeLog, err := configureServiceLogging("server", command.Paths.Name)
+		if err != nil {
+			return err
+		}
+		defer closeLog()
+		defer func() {
+			if err != nil {
+				slog.Error("server command failed", "action", command.Action, "error_kind", logging.ErrorKind(err))
+			}
+		}()
+	}
 	if command.Action == "stop" || command.Action == "restart" {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		err := stopManagedServices(ctx, command.Paths)
@@ -128,7 +142,7 @@ func runServerCommand(args []string, output, help io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	log.Printf("using runtime pid=%d instance=%s", config.PID, command.Paths.Name)
+	slog.Info("runtime adopted", "runtime_pid", config.PID)
 	return serverMain(command.Paths, command.Stdio, config)
 }
 

@@ -2,15 +2,18 @@ package service
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/logging"
 	"agenterm/internal/protocol"
 	"context"
+	"log/slog"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
 const maxCommandOutput = 1 << 20
 
-func (s *runtimeState) execute(ctx context.Context, secret, clientID, command string, options protocol.ExecOptions) (result protocol.CommandResult, err error) {
+func (s *runtimeState) execute(ctx context.Context, secret, clientID, command string, options protocol.ExecOptions, executionID ...string) (result protocol.CommandResult, err error) {
 	result = protocol.CommandResult{ExitCode: -1}
 	var stdout, stderr strings.Builder
 	defer func() { result.Stdout, result.Stderr = stdout.String(), stderr.String() }()
@@ -21,6 +24,21 @@ func (s *runtimeState) execute(ctx context.Context, secret, clientID, command st
 		return result, err
 	}
 	id := random()
+	if len(executionID) > 0 {
+		id = executionID[0]
+	}
+	logger := logging.FromContext(ctx).With("client_id", c.info.ID, "command_id", id)
+	started := time.Now()
+	logger.InfoContext(ctx, "command started", "timeout_ms", options.TimeoutMS)
+	defer func() {
+		level := slog.LevelInfo
+		if err != nil || result.Failed() {
+			level = slog.LevelWarn
+		}
+		logger.Log(ctx, level, "command completed", "duration_ms", time.Since(started).Milliseconds(),
+			"exit_code", result.ExitCode, "timed_out", result.TimedOut, "canceled", result.Canceled,
+			"truncated", result.Truncated, "failed", err != nil || result.Failed(), "error_kind", logging.ErrorKind(err))
+	}()
 	ch := make(chan protocol.Message, 256)
 	c.mu.Lock()
 	if c.closed {

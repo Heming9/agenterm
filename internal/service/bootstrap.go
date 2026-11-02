@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -128,9 +129,7 @@ func runtimeStartupOutput() (io.Writer, func()) {
 	if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
 		log.Fatal("runtime requires the server startup pipe")
 	}
-	log.SetOutput(pipe)
 	return pipe, func() {
-		log.SetOutput(os.Stderr)
 		_ = pipe.Close()
 	}
 }
@@ -201,9 +200,21 @@ func ensureRuntime(ctx context.Context, socket string, options *runtimeLaunchOpt
 		return runtimeConfig{}, err
 	}
 	defer null.Close()
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = null, null, null
+	runtimeLog, closeRuntimeLog, err := runtimeLogOutput(socket)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
+	if closeRuntimeLog {
+		defer runtimeLog.Close()
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = null, null, runtimeLog
 	cmd.ExtraFiles = []*os.File{writer}
-	cmd.Env = append(os.Environ(), "AGENTERM_RUNTIME_BOOTSTRAP_FD=3", "AGENTERM_INTERNAL_RUNTIME=1")
+	instance := filepath.Base(filepath.Dir(socket))
+	if instance == "agenterm-"+strconv.Itoa(os.Getuid()) {
+		instance = defaultInstance
+	}
+	cmd.Env = append(os.Environ(), "AGENTERM_RUNTIME_BOOTSTRAP_FD=3", "AGENTERM_INTERNAL_RUNTIME=1", "AGENTERM_LOG_INSTANCE="+instance)
+	slog.Info("runtime starting", "runtime_log", runtimeLog.Name())
 	if err := cmd.Start(); err != nil {
 		return runtimeConfig{}, fmt.Errorf("start runtime: %w", err)
 	}

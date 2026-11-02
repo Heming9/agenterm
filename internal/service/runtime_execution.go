@@ -61,7 +61,7 @@ func (s *runtimeState) startExecution(ctx context.Context, in toolRequest[execut
 	s.executions[id] = p
 	go func() {
 		defer cancel()
-		p.result, p.err = s.execute(commandCtx, in.Secret, in.Args.ClientID, in.Args.Command, in.Args.ExecOptions)
+		p.result, p.err = s.execute(commandCtx, in.Secret, in.Args.ClientID, in.Args.Command, in.Args.ExecOptions, id)
 		s.mu.Lock()
 		p.ended = time.Now()
 		close(p.done)
@@ -94,7 +94,7 @@ func (s *frontend) execute(ctx context.Context, secret string, args executeArgs)
 	if ctx.Err() != nil && !s.stopping.Load() {
 		// A lost RPC alone never cancels execution. An explicit call from a
 		// still-running frontend preserves MCP client cancellation semantics.
-		cancelCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		_, _ = controlCall[bool](cancelCtx, s.control, "execute/cancel", in)
 	}

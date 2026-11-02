@@ -129,7 +129,7 @@ sudo systemctl stop agenterm-server
 sudo -u agenterm /opt/agenterm/agenterm-server stop
 ```
 
-The temporary directory contains IPC sockets and the backend link, not credentials or output. For Runtime configuration changes, fully stop services as above, update the environment and start the service again.
+The temporary directory contains IPC sockets, the backend link and, by default, Runtime operational logs; credentials and terminal output remain in memory. For Runtime configuration changes, fully stop services as above, update the environment and start the service again.
 
 ## Stdio MCP
 
@@ -147,6 +147,41 @@ An agent still launches one executable, which starts or adopts Runtime automatic
 ```
 
 Stdio grants management access to the local process owner; HTTP management still requires authentication. Stdout contains MCP messages only; startup output and generated keys use stderr. Closing stdio exits Server but leaves Runtime for the next launch. A real listening socket can only be used by one Server at a time.
+
+## Logging and production troubleshooting
+
+Server and Runtime use Go's standard `log/slog`. Records include `time`, `level`, `msg`, `component`, `version`, `pid` and `instance`. Configure logging with environment variables; the public CLI is unchanged:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AGENTERM_LOG_FORMAT` | `text` | Local readable `text`, or production `json` |
+| `AGENTERM_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
+| `AGENTERM_LOG_FILE` | Empty, Server stderr | Absolute Server log file path; create its parent directory first |
+| `AGENTERM_RUNTIME_LOG_FILE` | `runtime.log` in the instance directory | Absolute independent Runtime log path, or explicit `stderr` for a platform collector |
+
+The default Runtime file is `agenterm-<uid>/runtime.log` under the system temporary directory, or `agenterm-<uid>/<instance>/runtime.log` for a named instance. Long temporary paths fall back to `/tmp` for IPC. Files are append-only with mode `0600` and contain no saved business state. System cleanup can remove temporary logs; use platform collection or a persistent directory for retention. File output has no automatic rotation: configure an operations tool such as logrotate with `copytruncate` and a retention limit. Renaming alone leaves Runtime writing the original open file.
+
+Runtime does not retain the launching terminal or MCP output pipe by default. Its independent sink continues across Server exits, crashes and updates. Compose sends both components as JSON to container logs, using the `local` driver with 10 MiB files and a five-file limit. The systemd unit sends JSON to journald; configure retention in the host's journald settings:
+
+```sh
+docker compose logs --since 15m -f server
+sudo journalctl -u agenterm-server --since '15 minutes ago' -f -o cat
+```
+
+Use `stderr` only with collectors whose lifetime is independent of Server, such as Docker or journald. Keep the independent file default for stdio MCP so Runtime does not retain the launcher's stderr pipe. Replacing Server retains Runtime's logging configuration. Changing Runtime's level, format or destination requires an explicit `restart`, which disconnects devices and clears sessions.
+
+Public HTTP requests get a fresh `X-Request-ID`, replacing any caller-supplied value and echoing the generated ID in the response. The ID follows Server, private Runtime RPCs, MCP tools and command/session lifecycle logs. Stdio tool calls also get a correlation ID. Search by `request_id`, then follow `client_id`, `command_id` or `session_id` for longer device/task lifecycles. Command IDs match the execution message IDs sent to clients. Successful health checks and private RPCs are DEBUG; failed requests remain WARN/ERROR.
+
+Logs include status, duration, exit code, timeout/cancellation flags, WebSocket close code and error type. Proxy connection failures also include the underlying error. HTTP panics retain a stack without the panic value. Routes use templates such as `/c/{code}`: installation codes, raw URLs, queries, authorization headers, command bodies, environment values, session input and terminal output are omitted. Sensitive named attributes have a redaction backstop; never interpolate credentials into messages or arbitrary error strings. Automatically generated management keys still appear in the initial startup instructions; production deployments should supply a fixed key as the Compose/systemd examples do.
+
+Start troubleshooting with `status` and the two health endpoints:
+
+- `/livez` fails: inspect Runtime startup, termination and host resources.
+- `/livez` works but `/healthz` fails: use the response's `X-Request-ID` to find `server proxy failed` or `runtime health check failed`, then inspect Server, private sockets and API compatibility.
+- Device disconnects: find `client disconnected`, `client heartbeat failed` or `client output queue full`, then follow `client_id` to command/session events.
+- Commands fail or time out: inspect `command completed` / `session completed`, especially `exit_code`, `timed_out` and `canceled`, then inspect client-visible output.
+
+This supplies diagnostic logging. Centralized log storage, external probes and alert delivery are not configured in this repository.
 
 ## Health checks
 

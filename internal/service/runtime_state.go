@@ -2,11 +2,14 @@ package service
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/logging"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -19,6 +22,7 @@ import (
 )
 
 type client struct {
+	log       *slog.Logger
 	info      clientInfo
 	secret    string
 	conn      *websocket.Conn
@@ -27,6 +31,13 @@ type client struct {
 	pending   map[string]chan protocol.Message
 	closed    bool
 	latencyMS int64 // Latest heartbeat RTT; guarded by mu. Zero means unmeasured.
+}
+
+func (c *client) logger() *slog.Logger {
+	if c.log != nil {
+		return c.log
+	}
+	return slog.Default().With("client_id", c.info.ID)
 }
 
 func (c *client) send(m protocol.Message) error {
@@ -198,9 +209,11 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.notifyClientWaitersLocked(secret)
-	log.Printf("client connected id=%s hostname=%q platform=%q", id, c.info.Environment.Hostname, c.info.Environment.Platform)
+	c.log = logging.FromContext(r.Context()).With("client_id", id)
+	c.logger().Info("client connected", "platform", c.info.Environment.Platform, "client_version", c.info.Environment.ClientVersion)
 	go func() {
 		var disconnectErr error
+		disconnectReason := "read_failed"
 		stopHeartbeat := c.startHeartbeat(protocol.HeartbeatInterval, protocol.HeartbeatTimeout)
 		defer func() {
 			conn.Close()
@@ -220,7 +233,19 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			c.pending = make(map[string]chan protocol.Message)
 			c.mu.Unlock()
-			log.Printf("client disconnected id=%s hostname=%q duration=%s reason=%q", id, c.info.Environment.Hostname, time.Since(c.info.ConnectedAt).Round(time.Millisecond), disconnectErr)
+			code := 0
+			if closeErr, ok := disconnectErr.(*websocket.CloseError); ok {
+				code = closeErr.Code
+				if code == websocket.CloseNormalClosure || code == websocket.CloseGoingAway {
+					disconnectReason = "peer_closed"
+				}
+			}
+			level := slog.LevelWarn
+			if disconnectReason == "peer_closed" {
+				level = slog.LevelInfo
+			}
+			c.logger().Log(context.Background(), level, "client disconnected", "duration_ms", time.Since(c.info.ConnectedAt).Milliseconds(),
+				"reason", disconnectReason, "close_code", code, "error_kind", logging.ErrorKind(disconnectErr))
 		}()
 		conn.SetReadLimit(2 << 20)
 		for {
@@ -236,7 +261,9 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 				case ch <- m:
 				default:
 					disconnectErr = fmt.Errorf("output queue full for command %s", m.ID)
-					log.Printf(serverText("output.queue.full.for.s.closing.connection"), m.ID)
+					disconnectReason = "output_queue_full"
+					// A peer can choose message IDs; do not log an unvalidated value.
+					c.logger().Warn("client output queue full")
 					c.mu.Unlock()
 					return
 				}

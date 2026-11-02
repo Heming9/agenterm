@@ -2,8 +2,10 @@ package service
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/logging"
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"sync"
@@ -19,6 +21,7 @@ const defaultSessionReadBytes = 16 << 10
 const maxSessionReadBytes = 64 << 10
 
 type session struct {
+	log           *slog.Logger
 	id            string
 	owner         string
 	client        *client
@@ -62,6 +65,14 @@ func (p *session) accept(m protocol.Message) {
 		p.err = m.Error
 		p.timedOut, p.canceled = m.TimedOut, m.Canceled
 		p.ended = time.Now().UTC()
+		if p.log != nil {
+			level := slog.LevelInfo
+			if m.ExitCode != 0 || m.Error != "" || m.TimedOut || m.Canceled {
+				level = slog.LevelWarn
+			}
+			p.log.Log(context.Background(), level, "session completed", "duration_ms", time.Since(p.started).Milliseconds(),
+				"exit_code", m.ExitCode, "timed_out", m.TimedOut, "canceled", m.Canceled, "has_error", m.Error != "")
+		}
 		p.signal()
 	}
 }
@@ -118,7 +129,7 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, ma
 		}
 	}
 }
-func (s *runtimeState) startSession(secret, clientID, command string, options protocol.ExecOptions) (*session, error) {
+func (s *runtimeState) startSession(ctx context.Context, secret, clientID, command string, options protocol.ExecOptions) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.targetClientLocked(secret, clientID)
@@ -149,6 +160,7 @@ func (s *runtimeState) startSession(secret, clientID, command string, options pr
 		return nil, i18n.NewError("session.limit.reached.try.again.later")
 	}
 	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{}), command: command, started: time.Now().UTC()}
+	p.log = logging.FromContext(ctx).With("client_id", c.info.ID, "session_id", p.id)
 	ch := make(chan protocol.Message, 256)
 	c.mu.Lock()
 	if c.closed {
@@ -169,6 +181,7 @@ func (s *runtimeState) startSession(secret, clientID, command string, options pr
 		delete(s.sessions, oldestFinishedID)
 	}
 	s.sessions[p.id] = p
+	p.log.InfoContext(ctx, "session started", "timeout_ms", options.TimeoutMS)
 	go func() {
 		defer func() { c.mu.Lock(); delete(c.pending, p.id); c.mu.Unlock() }()
 		for m := range ch {
