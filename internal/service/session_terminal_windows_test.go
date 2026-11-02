@@ -10,7 +10,7 @@ func TestSessionEOFKeepsWindowsOutputReadable(t *testing.T) {
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
 	start := h.call(t, token, "session_start", map[string]any{
-		"command": `cmd.exe /d /c "sort & echo after-eof"`, "timeout_ms": 10000,
+		"command": `sort & echo after-eof`, "timeout_ms": 10000,
 	}, false).(map[string]any)
 	id := start["session_id"].(string)
 	h.call(t, token, "session_control", map[string]any{"action": "interrupt", "session_id": id}, true)
