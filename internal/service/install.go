@@ -37,7 +37,7 @@ func installCode(secret string) string {
 }
 
 // The caller holds s.mu. Retry collisions before publishing either credential.
-func (s *runtimeState) newInvitation(token string, expires time.Time) (string, error) {
+func (s *runtimeState) newInvitation(token, identifier string, expires time.Time) (string, error) {
 	if s.invitations == nil {
 		s.invitations = make(map[string]invitation)
 	}
@@ -53,7 +53,7 @@ func (s *runtimeState) newInvitation(token string, expires time.Time) (string, e
 		if _, exists := s.invitations[secret]; exists {
 			continue
 		}
-		value, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret})
+		value, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret, Identifier: identifier})
 		if err != nil {
 			return "", err
 		}
@@ -115,7 +115,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
 			return
 		}
-		value, err := protocol.Encode(protocol.Token{URL: source.URL, Secret: secret})
+		value, err := protocol.Encode(protocol.Token{URL: source.URL, Secret: secret, Identifier: source.Identifier})
 		if err != nil {
 			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
 			return

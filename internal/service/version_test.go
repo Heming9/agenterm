@@ -36,6 +36,7 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 				r.Header.Set("Authorization", "Bearer "+value)
 				s.connect(w, r)
 			case "connect":
+				r.URL.Path = protocol.ClientPath + "/" + token.Identifier
 				s.connect(w, r)
 			}
 			if w.Code != http.StatusUpgradeRequired || w.Header().Get(version.Header) != version.Current || !strings.Contains(w.Body.String(), version.Current) {

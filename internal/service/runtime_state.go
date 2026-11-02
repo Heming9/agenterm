@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -143,13 +144,33 @@ func (s *runtimeState) validSecretLocked(secret string) bool {
 	return false
 }
 
+// validClientRoute binds the displayed public identifier to the authenticated token.
+func (s *runtimeState) validClientRoute(secret, path string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for encoded, candidate := range s.tokens {
+		if candidate != secret {
+			continue
+		}
+		token, err := protocol.Decode(encoded)
+		if err != nil {
+			continue
+		}
+		u, err := url.Parse(token.ConnectionURL())
+		if err == nil && u.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("probe") == "1" {
 		s.probeConnection(w, r)
 		return
 	}
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if status, err := s.authorize(r, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret)); err != nil {
+	if status, err := s.authorize(r, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret) && s.validClientRoute(secret, r.URL.Path)); err != nil {
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "300")
 		}

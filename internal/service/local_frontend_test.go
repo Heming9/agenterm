@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -47,6 +48,10 @@ func (s *runtimeState) routes(tag string, assets fs.FS) http.Handler {
 	front := s.testFrontend()
 	business := front.routes(tag, assets)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, pathPrefixForTest(s.clientURL)+"/client/") {
+			s.connect(w, r)
+			return
+		}
 		switch r.URL.Path {
 		case pathPrefixForTest(s.clientURL) + "/client":
 			s.connect(w, r)

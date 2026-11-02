@@ -135,7 +135,7 @@ func TestClientShellMetadataThroughMCP(t *testing.T) {
 			h := newMultiHarness(t, 0)
 			token := h.create(t, false)
 			decoded, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(h.s.clientURL, http.Header{
+			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 				protocol.PlatformHeader: {tc.platform}, protocol.ShellHeader: {tc.header},
 			})
@@ -169,7 +169,7 @@ func TestClientDefaultCwdMetadataThroughMCP(t *testing.T) {
 			h := newMultiHarness(t, 0)
 			token := h.create(t, false)
 			decoded, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(h.s.clientURL, http.Header{
+			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {peerVersion},
 				protocol.ArchHeader:       {"arm64"},
 				protocol.DefaultCwdHeader: {base64.RawURLEncoding.EncodeToString([]byte(tc.value))},

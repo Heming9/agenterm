@@ -240,3 +240,15 @@ func (m *tuiModel) logText() string {
 	}
 	return text.String()
 }
+
+func TestHeaderRetainsTokenIdentifierWhenAddressIsTruncated(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.width = 56
+	m.state = "connected"
+	m.address = "wss://very-long-example-server-name.example/client/123abc"
+	header := ansi.Strip(m.header("connected"))
+	if !strings.Contains(header, "123abc") || !strings.Contains(header, "connected") {
+		t.Fatalf("identifier or status missing: %q", header)
+	}
+}

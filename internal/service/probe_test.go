@@ -70,7 +70,7 @@ func TestProbeDoesNotRedeemOrConnect(t *testing.T) {
 		}
 	}
 	// A genuine connection still registers after a probe.
-	ws, _, err := websocket.DefaultDialer.Dial(s.clientURL, http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + token.Secret}})
+	ws, _, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + token.Secret}})
 	if err != nil {
 		t.Fatal(err)
 	}

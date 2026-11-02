@@ -68,7 +68,7 @@ func Redeem(ctx context.Context, value string) (string, error) {
 		return "", err
 	}
 	source, _ := protocol.Decode(value)
-	if decoded.URL != source.URL {
+	if decoded.URL != source.URL || decoded.Identifier != source.Identifier {
 		return "", i18n.NewError("invitation.response.points.to.a.different.server")
 	}
 	return result.Token, nil

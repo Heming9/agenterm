@@ -203,7 +203,7 @@ func TestSessionControlsRequireAdvertisedCapabilities(t *testing.T) {
 			h := newMultiHarness(t, 0)
 			token := h.create(t, false)
 			decoded, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(h.s.clientURL, http.Header{
+			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 				protocol.SessionControlsHeader: {capabilities}, protocol.PlatformHeader: {"windows"},
 			})

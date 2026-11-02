@@ -25,6 +25,8 @@ Reload the MCP configuration or restart your agent, then:
 4. Keep the agent conversation active while the device connects. Once connected, the agent can perform authorized work while the target computer displays progress.
 5. Close or disconnect the client when finished.
 
+Connection tokens use the `Agenterm_<encoded-content>_<identifier>` format. The final six lowercase letters or digits form a public identifier shown by the client. The identifier is not a secret and cannot authorize access by itself. It also appears in the WebSocket connection path.
+
 Invitations expire after 5 minutes and are single-use by default. Set the optional `timeout_seconds` parameter to a positive integer when calling `create_client` to customize the lifetime; for example, `{"timeout_seconds": 60}` creates an invitation valid for 60 seconds. Expiry prevents invitation redemption and does not disconnect devices that have already connected. For several computers, ask the agent to create a multi-device invitation and clearly identify the target before each operation.
 
 After a token has successfully connected, it remains valid while any of its devices is online. Once its last device disconnects, it is retained for 30 minutes for reconnection. Reconnecting within that period clears the offline expiry; otherwise the token expires and a new invitation is required. This retention period is separate from the invitation lifetime.

@@ -176,7 +176,7 @@ func TestCreateClientDisplayText(t *testing.T) {
 				t.Fatalf("Windows command must work in CMD and skip profiles: %s", command)
 			}
 		}
-		if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
+		if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "Agenterm_") || strings.Contains(command, "/downloads/") {
 			t.Fatalf("invalid %s in display: %s", key, display)
 		}
 	}

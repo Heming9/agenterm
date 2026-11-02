@@ -16,10 +16,6 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		return nil, i18n.NewError("invitation.timeout.invalid", maxInvitationTimeoutSeconds)
 	}
 	secret := randomBytes(protocol.TokenSecretSize)
-	token, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret})
-	if err != nil {
-		return nil, err
-	}
 	expires := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -37,10 +33,30 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		}
 		s.trimPending(owner, s.maxClientsPerIP-online-1)
 	}
+	// The public identifier is independently random and unique among live tokens.
+	var identifier, token string
+	for {
+		identifier = randomManagementKey()[:6]
+		duplicate := false
+		for existing := range s.tokens {
+			decoded, err := protocol.Decode(existing)
+			if err == nil && decoded.Identifier == identifier {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			break
+		}
+	}
+	token, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret, Identifier: identifier})
+	if err != nil {
+		return nil, err
+	}
 	if s.multiDevice == nil {
 		s.multiDevice = make(map[string]bool)
 	}
-	value, err := s.newInvitation(token, expires)
+	value, err := s.newInvitation(token, identifier, expires)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +68,7 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	}
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, order: s.nextClientOrder, expires: expires}
-	result := map[string]any{"client_token": token, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
+	result := map[string]any{"client_token": token, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
 	shell, powershell := installCommands(value)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell

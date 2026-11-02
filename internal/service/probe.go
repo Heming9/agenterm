@@ -18,7 +18,7 @@ func (s *runtimeState) probeConnection(w http.ResponseWriter, r *http.Request) {
 	entry, exists := s.invitations[token.Secret]
 	source, sourceErr := protocol.Decode(entry.token)
 	valid := err == nil && r.Header.Get("Authorization") == "Bearer "+value &&
-		sourceErr == nil && token.URL == source.URL && exists && time.Now().Before(entry.expires)
+		sourceErr == nil && token.URL == source.URL && token.Identifier == source.Identifier && exists && time.Now().Before(entry.expires)
 	s.mu.Unlock()
 	if status, err := s.authorize(r, valid); err != nil {
 		if status == http.StatusTooManyRequests {

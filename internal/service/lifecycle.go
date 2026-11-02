@@ -149,6 +149,7 @@ func (s *runtimeState) ingress(serverSocket string) http.Handler {
 	mux := http.NewServeMux()
 	prefix := pathPrefix(s.clientURL)
 	mux.HandleFunc(prefix+"/client", s.connect)
+	mux.HandleFunc(prefix+"/client/", s.connect)
 	mux.HandleFunc(prefix+"/invite/redeem", s.redeemInvitation)
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/", proxy)

@@ -70,6 +70,9 @@ func publicRoute(path, prefix string) string {
 	case "mcp", "client", "invite/redeem":
 		return "/" + suffix
 	}
+	if strings.HasPrefix(suffix, "client/") {
+		return "/client/{identifier}"
+	}
 	if strings.HasPrefix(suffix, "c/") {
 		return "/c/{code}"
 	}

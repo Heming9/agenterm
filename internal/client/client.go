@@ -351,7 +351,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	headers.Set(protocol.ShellHeader, base64.RawURLEncoding.EncodeToString([]byte(Shell())))
 	cwd, _ := os.Getwd()
 	headers.Set(protocol.DefaultCwdHeader, base64.RawURLEncoding.EncodeToString([]byte(cwd)))
-	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, t.URL, headers)
+	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, t.ConnectionURL(), headers)
 	if err != nil {
 		if resp != nil {
 			if resp.Body != nil {

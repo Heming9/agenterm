@@ -213,6 +213,9 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	serverURL, _ := url.Parse(decoded.URL)
 	// Show only the host, never the secret or any URL credentials/query string.
 	host := serverURL.Host
+	if decoded.Identifier != "" {
+		host += "/" + decoded.Identifier
+	}
 	v.generation++
 	current := v.generation
 	ctx, stop := context.WithCancel(context.Background())

@@ -31,8 +31,8 @@ func TestCompactTokenRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.HasPrefix(encoded, "agenterm:") {
-				t.Fatal("token must start with agenterm:")
+			if !strings.HasPrefix(encoded, "Agenterm_") {
+				t.Fatal("token must start with Agenterm_")
 			}
 			if address == "ws://127.0.0.1:8080/agenterm/client" && len(encoded) != 32 {
 				t.Fatalf("default token length = %d, want 32", len(encoded))
@@ -64,7 +64,7 @@ func TestOptionalPortEncoding(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encoded, tokenPrefix))
+		payload, err := decodeTokenPayload(strings.TrimPrefix(encoded, tokenPrefix))
 		if err != nil || payload[0] != tc.flags || string(payload[1+TokenSecretSize:]) != tc.suffix {
 			t.Fatalf("unexpected payload for %s: %x, %v", tc.address, payload, err)
 		}
@@ -87,7 +87,7 @@ func TestPackedHostnames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, _ := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encoded, tokenPrefix))
+		data, _ := decodeTokenPayload(strings.TrimPrefix(encoded, tokenPrefix))
 		if (data[0]&tokenPackedHost != 0) != tc.packed {
 			t.Fatalf("unexpected encoding for %s", tc.input)
 		}
@@ -116,17 +116,17 @@ func TestPackedHostnames(t *testing.T) {
 func TestDecodeRejectsInvalidAndLegacyTokens(t *testing.T) {
 	wrap := func(scheme byte, host string) string {
 		payload := append([]byte{scheme}, make([]byte, TokenSecretSize)...)
-		return "agenterm:" + base64.RawURLEncoding.EncodeToString(append(payload, host...))
+		return tokenPrefix + encodeTokenPayload(append(payload, host...))
 	}
 	legacy := base64.RawURLEncoding.EncodeToString([]byte(`{"url":"ws://localhost:8080/client","secret":"test-secret"}`))
 	for name, token := range map[string]string{
 		"old root routes":    wrap(1, "localhost"),
 		"legacy":             legacy,
-		"prefixed legacy":    "agenterm:" + legacy,
-		"missing prefix":     strings.TrimPrefix(wrap(tokenFormat|1, "localhost:8080"), "agenterm:"),
-		"empty payload":      "agenterm:",
+		"prefixed legacy":    "Agenterm_" + legacy,
+		"missing prefix":     strings.TrimPrefix(wrap(tokenFormat|1, "localhost:8080"), "Agenterm_"),
+		"empty payload":      "Agenterm_",
 		"invalid base64":     "agenterm:!",
-		"truncated secret":   "agenterm:" + base64.RawURLEncoding.EncodeToString([]byte{1, 2, 3}),
+		"truncated secret":   "Agenterm_" + base64.RawURLEncoding.EncodeToString([]byte{1, 2, 3}),
 		"missing host":       wrap(tokenFormat|1, ""),
 		"unsupported format": wrap(tokenFormat|3, "localhost"),
 		"host with path":     wrap(tokenFormat|1, "localhost/extra"),
@@ -193,5 +193,66 @@ func TestNormalizePathPrefix(t *testing.T) {
 		if _, err := NormalizePathPrefix(raw); err == nil {
 			t.Errorf("invalid prefix accepted: %q", raw)
 		}
+	}
+}
+
+func TestTokenIdentifierRoundTrip(t *testing.T) {
+	secret := base64.RawURLEncoding.EncodeToString([]byte{0xfb, 0xff, 1, 2, 3, 4, 5, 6, 7, 8})
+	want := Token{URL: "wss://agenterm.net/client", Secret: secret, Identifier: "123abc"}
+	encoded, err := Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range encoded {
+		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			t.Fatalf("non-word character %q in token %q", c, encoded)
+		}
+	}
+	if !strings.HasSuffix(encoded, "_123abc") {
+		t.Fatalf("missing identifier: %s", encoded)
+	}
+	got, err := Decode(encoded)
+	if err != nil || got != want {
+		t.Fatalf("round trip: %#v %v", got, err)
+	}
+	if got.ConnectionURL() != "wss://agenterm.net/client/123abc" {
+		t.Fatal(got.ConnectionURL())
+	}
+	for _, bad := range []string{"", "ABC123", "abc-12", "1234567"} {
+		if ValidTokenIdentifier(bad) {
+			t.Fatalf("invalid identifier accepted: %q", bad)
+		}
+	}
+	if _, err := Decode(encoded[:len(encoded)-1] + "!"); err == nil {
+		t.Fatal("malformed suffix accepted")
+	}
+}
+
+func TestTokenPayloadWordSafeEscapes(t *testing.T) {
+	raw := []byte{0xfb, 0xff, 0xff}
+	encoded := encodeTokenPayload(raw)
+	if encoded != "_1_0_0_0" {
+		t.Fatalf("escaped payload = %q", encoded)
+	}
+	decoded, err := decodeTokenPayload(encoded)
+	if err != nil || string(decoded) != string(raw) {
+		t.Fatalf("round trip = %x, %v", decoded, err)
+	}
+	for _, bad := range []string{"_", "_2", "-", "__", "A!"} {
+		if _, err := decodeTokenPayload(bad); err == nil {
+			t.Fatalf("accepted invalid payload %q", bad)
+		}
+	}
+}
+
+func TestExampleWordSafeToken(t *testing.T) {
+	const token = "Agenterm_otq3zyp7AHPppm4AAARxTlBUjZjhVA_og6ozn"
+	got, err := Decode(token)
+	if err != nil || got.URL != "wss://agenterm.net/client" || got.Identifier != "og6ozn" {
+		t.Fatalf("decoded = %#v, %v", got, err)
+	}
+	encoded, err := Encode(got)
+	if err != nil || encoded != token {
+		t.Fatalf("encoded = %q, %v", encoded, err)
 	}
 }

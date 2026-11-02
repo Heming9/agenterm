@@ -847,6 +847,10 @@
     "en": "Captured standard error, sharing a 1 MiB combined limit with stdout.",
     "zh-CN": "捕获的标准错误，与 stdout 共用 1 MiB 上限。"
   },
+  "mcp.result.token_identifier": {
+    "en": "Public identifier for recognizing the connection token; not an authentication secret.",
+    "zh-CN": "用于识别连接令牌的公开标识符，不是认证密钥。"
+  },
   "mcp.result.client_token": {
     "en": "Private credential for this target group. Pass as client_token with management access (including stdio and no-password mode) or as the MCP bearer token for device-scoped access.",
     "zh-CN": "此目标组的私密凭据；管理访问（包括 stdio 和免密模式）时传入 client_token，设备范围访问时作为 MCP Bearer token。"

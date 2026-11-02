@@ -255,7 +255,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	fresh := startService(t, "server", dir, restartArgs...)
 	waitReady(t, origin+"/healthz", http.DefaultTransport, fresh)
 	decoded, _ := protocol.Decode(token)
-	ws, response, err := websocket.DefaultDialer.Dial(decoded.URL, http.Header{"Authorization": {"Bearer " + decoded.Secret}})
+	ws, response, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{"Authorization": {"Bearer " + decoded.Secret}})
 	if ws != nil {
 		ws.Close()
 	}

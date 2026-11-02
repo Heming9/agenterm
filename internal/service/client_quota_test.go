@@ -116,6 +116,7 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 	s := &runtimeState{maxClientsPerIP: 1, tokens: map[string]string{}, clients: map[string]*client{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/client", s.connect)
+	mux.HandleFunc("/agenterm/client/", s.connect)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + "/agenterm/client"
@@ -125,7 +126,7 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 	}
 	token, _ := protocol.Decode(issued["client_token"].(string))
 	headers := http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + token.Secret}}
-	conn, _, err := websocket.DefaultDialer.Dial(s.clientURL, headers)
+	conn, _, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An established token can reconnect; doing so reclaims the pending invite.
-	conn, _, err = websocket.DefaultDialer.Dial(s.clientURL, headers)
+	conn, _, err = websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,12 +190,18 @@ func TestQuotaConcurrentReconnects(t *testing.T) {
 	s := &runtimeState{maxClientsPerIP: 1, tokens: map[string]string{}, clients: map[string]*client{}, clientOwners: map[string]*clientOwner{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/client", s.connect)
+	mux.HandleFunc("/agenterm/client/", s.connect)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/agenterm/client"
-	for _, secret := range []string{"client-one", "client-two"} {
-		s.tokens[secret] = secret
-		s.clientOwners[secret] = &clientOwner{ip: "192.0.2.1", token: secret, used: true}
+	secrets := []string{randomBytes(protocol.TokenSecretSize), randomBytes(protocol.TokenSecretSize)}
+	for _, secret := range secrets {
+		token, err := protocol.Encode(protocol.Token{URL: url, Secret: secret})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.tokens[token] = secret
+		s.clientOwners[secret] = &clientOwner{ip: "192.0.2.1", token: token, used: true}
 	}
 	type result struct {
 		conn   *websocket.Conn
@@ -202,7 +209,7 @@ func TestQuotaConcurrentReconnects(t *testing.T) {
 	}
 	results := make(chan result, 2)
 	start := make(chan struct{})
-	for _, secret := range []string{"client-one", "client-two"} {
+	for _, secret := range secrets {
 		go func(secret string) {
 			<-start
 			h := http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + secret}}

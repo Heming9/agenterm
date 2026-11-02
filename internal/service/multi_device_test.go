@@ -94,7 +94,7 @@ func (h *multiHarness) create(t *testing.T, multi bool) string {
 
 func (h *multiHarness) dial(token, hostname string) (*websocket.Conn, *http.Response, error) {
 	decoded, _ := protocol.Decode(token)
-	return websocket.DefaultDialer.Dial(h.s.clientURL, http.Header{
+	return websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 		protocol.HostnameHeader: {base64.RawURLEncoding.EncodeToString([]byte(hostname))}, protocol.PlatformHeader: {"linux"},
 		protocol.SessionControlsHeader: {"interrupt,eof"},
@@ -347,4 +347,38 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 			h.call(t, auth, removed, args, true)
 		}
 	}
+}
+
+func TestTokenIdentifierMatchesInvitationAndRoute(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	result := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
+	encoded := result["client_token"].(string)
+	token, err := protocol.Decode(encoded)
+	if err != nil || !protocol.ValidTokenIdentifier(token.Identifier) || result["token_identifier"] != token.Identifier {
+		t.Fatalf("invalid identifier: %#v %v", token, err)
+	}
+	invitation, err := protocol.Decode(result["invitation"].(string))
+	if err != nil || invitation.Identifier != token.Identifier || invitation.Secret == token.Secret {
+		t.Fatalf("invitation identifier or secret: %#v %v", invitation, err)
+	}
+	other := "aaaaaa"
+	if token.Identifier == other {
+		other = "bbbbbb"
+	}
+	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Current}}
+	ws, response, err := websocket.DefaultDialer.Dial(token.URL+"/"+other, headers)
+	if ws != nil {
+		ws.Close()
+	}
+	if err == nil || response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong identifier accepted: %v %#v", err, response)
+	}
+	if response != nil {
+		response.Body.Close()
+	}
+	ws, _, err = websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.Close()
 }

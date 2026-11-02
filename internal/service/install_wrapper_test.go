@@ -151,11 +151,11 @@ func TestInstallWrapperRetriesCodeCollisions(t *testing.T) {
 	expires := time.Now().Add(time.Minute)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	firstValue, err := s.newInvitation("first-token", expires)
+	firstValue, err := s.newInvitation("first-token", "first1", expires)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondValue, err := s.newInvitation("second-token", expires)
+	secondValue, err := s.newInvitation("second-token", "second", expires)
 	if err != nil {
 		t.Fatal(err)
 	}

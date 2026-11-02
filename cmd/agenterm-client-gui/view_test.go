@@ -158,7 +158,7 @@ func TestCommandStatisticsAndClear(t *testing.T) {
 		v.showConnectionError("Token 格式不正确，请粘贴 Server 生成的完整 Token。")
 		capture("client-error")
 		v.connectionError.Hide()
-		test.Type(v.token, "agenterm:preview")
+		test.Type(v.token, "Agenterm_preview")
 		capture("client-entry-filled")
 		v.token.SetText("")
 		win.Canvas().Focus(nil)

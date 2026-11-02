@@ -126,7 +126,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 				t.Fatalf("redeem with prefix: %v", err)
 			}
 			credential, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(credential.URL, http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + credential.Secret}})
+			ws, _, err := websocket.DefaultDialer.Dial(credential.ConnectionURL(), http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + credential.Secret}})
 			if err != nil {
 				t.Fatal(err)
 			}

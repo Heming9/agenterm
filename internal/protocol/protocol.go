@@ -4,6 +4,7 @@ import (
 	"agenterm/internal/i18n"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"net/netip"
 	"net/url"
@@ -19,7 +20,7 @@ const (
 	ClientPath = PathPrefix + "/client"
 	// TokenSecretSize is the number of cryptographically random credential bytes.
 	TokenSecretSize = 10
-	tokenPrefix     = "agenterm:"
+	tokenPrefix     = "Agenterm_"
 	tokenIPv4       = 4
 	tokenIPv6       = 8
 	tokenFormat     = 16 // Namespaced routes; older token formats are unsupported.
@@ -48,8 +49,9 @@ const HeartbeatTimeout = 60 * time.Second
 const WriteTimeout = 10 * time.Second
 
 type Token struct {
-	URL    string
-	Secret string
+	URL        string
+	Secret     string
+	Identifier string
 }
 
 func Encode(t Token) (string, error) {
@@ -103,7 +105,14 @@ func Encode(t Token) (string, error) {
 			b = append(b, hostname...)
 		}
 	}
-	return tokenPrefix + base64.RawURLEncoding.EncodeToString(b), nil
+	if t.Identifier != "" {
+		if !ValidTokenIdentifier(t.Identifier) {
+			return "", i18n.NewError("invalid.token.malformed.host")
+		}
+		b[0] &^= tokenFormat
+		return tokenPrefix + encodeTokenPayload(b) + "_" + t.Identifier, nil
+	}
+	return tokenPrefix + encodeTokenPayload(b), nil
 }
 func Decode(s string) (Token, error) {
 	var t Token
@@ -111,14 +120,25 @@ func Decode(s string) (Token, error) {
 	if !ok {
 		return t, i18n.NewError("invalid.token.missing.s.prefix", tokenPrefix)
 	}
-	b, err := base64.RawURLEncoding.DecodeString(payload)
+	// A cleared format bit denotes the identifier-bearing format.
+	head := strings.IndexByte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_", payloadByte(payload))
+	identifier := ""
+	if head >= 0 && byte(head)&4 == 0 {
+		// The final underscore separates the fixed-length identifier.
+		i := strings.LastIndexByte(payload, '_')
+		if i < 0 || !ValidTokenIdentifier(payload[i+1:]) {
+			return t, i18n.NewError("invalid.token.malformed.host")
+		}
+		identifier, payload = payload[i+1:], payload[:i]
+	}
+	b, err := decodeTokenPayload(payload)
 	if err != nil {
 		return t, i18n.NewError("invalid.token.w", err)
 	}
 	if len(b) <= 1+TokenSecretSize {
 		return t, i18n.NewError("invalid.token.incomplete.payload")
 	}
-	if b[0]&tokenFormat == 0 {
+	if b[0]&tokenFormat == 0 && identifier == "" {
 		return t, i18n.NewError("invalid.token.unsupported.format.update.server.and.client")
 	}
 	scheme := "ws"
@@ -193,7 +213,7 @@ func Decode(s string) (Token, error) {
 	if u.Host != host || u.Hostname() != hostname {
 		return t, i18n.NewError("invalid.token.malformed.host")
 	}
-	return Token{URL: rawURL, Secret: base64.RawURLEncoding.EncodeToString(b[1 : 1+TokenSecretSize])}, nil
+	return Token{URL: rawURL, Secret: base64.RawURLEncoding.EncodeToString(b[1 : 1+TokenSecretSize]), Identifier: identifier}, nil
 }
 
 // Packed hosts use six-bit symbols; zero is reserved for padding.
@@ -260,6 +280,68 @@ func unpackHostname(data []byte) (string, bool) {
 		return "", false
 	}
 	return out.String(), true
+}
+
+// Escape the two non-alphanumeric Base64URL symbols using underscores so
+// the complete token stays selectable as a single word in common terminals.
+func encodeTokenPayload(data []byte) string {
+	encoded := base64.RawURLEncoding.EncodeToString(data)
+	return strings.NewReplacer("_", "_0", "-", "_1").Replace(encoded)
+}
+
+func decodeTokenPayload(encoded string) ([]byte, error) {
+	var decoded strings.Builder
+	decoded.Grow(len(encoded))
+	for i := 0; i < len(encoded); i++ {
+		c := encoded[i]
+		if c == '_' {
+			i++
+			if i >= len(encoded) {
+				return nil, fmt.Errorf("incomplete token escape")
+			}
+			switch encoded[i] {
+			case '0':
+				decoded.WriteByte('_')
+			case '1':
+				decoded.WriteByte('-')
+			default:
+				return nil, fmt.Errorf("invalid token escape")
+			}
+		} else if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+			decoded.WriteByte(c)
+		} else {
+			return nil, fmt.Errorf("invalid token character")
+		}
+	}
+	return base64.RawURLEncoding.Strict().DecodeString(decoded.String())
+}
+
+func payloadByte(payload string) byte {
+	if payload == "" {
+		return 0
+	}
+	return payload[0]
+}
+
+// ValidTokenIdentifier validates a public identifier, never an authentication secret.
+func ValidTokenIdentifier(id string) bool {
+	if len(id) != 6 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// ConnectionURL includes the public identifier in the WebSocket route.
+func (t Token) ConnectionURL() string {
+	if t.Identifier == "" {
+		return t.URL
+	}
+	return t.URL + "/" + t.Identifier
 }
 
 func parseTokenURL(raw string) (*url.URL, error) {

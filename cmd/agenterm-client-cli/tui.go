@@ -129,7 +129,7 @@ func (m *tuiModel) connect() tea.Cmd {
 	}
 	m.generation++
 	generation := m.generation
-	m.address = cleanText(t.URL)
+	m.address = cleanText(t.ConnectionURL())
 	m.message = ""
 	m.state = "connecting"
 	m.latency = -1
@@ -485,7 +485,23 @@ func (m *tuiModel) header(status string) string {
 	if m.state != "disconnected" && m.address != "" {
 		addressWidth := available - m.cellWidth(status) - 5 // separator
 		if addressWidth > 0 {
-			right = m.truncateCells(m.address, addressWidth, "…") + "  ·  " + status
+			address := m.address
+			i := strings.LastIndex(address, "/client/")
+			base, identifier, found := "", "", i >= 0
+			if found {
+				base, identifier = address[:i], address[i+len("/client/"):]
+			}
+			if found && protocol.ValidTokenIdentifier(identifier) {
+				suffix := "/" + identifier
+				if addressWidth > m.cellWidth(suffix) {
+					address = m.truncateCells(base+"/client", addressWidth-m.cellWidth(suffix), "…") + suffix
+				} else {
+					address = m.truncateCells(identifier, addressWidth, "…")
+				}
+			} else {
+				address = m.truncateCells(address, addressWidth, "…")
+			}
+			right = address + "  ·  " + status
 		}
 	}
 	gap := max(1, width-m.cellWidth(left)-m.cellWidth(right)-1)
