@@ -11,7 +11,7 @@ func TestGUIVersionMatchesConnectionVersion(t *testing.T) {
 	if err := Check(Current, Current); err != nil {
 		t.Fatalf("invalid application version: %v", err)
 	}
-	metadata, err := os.ReadFile(filepath.Join("..", "..", "cmd", "agenterm-gui", "FyneApp.toml"))
+	metadata, err := os.ReadFile(filepath.Join("..", "..", "cmd", "agenterm-client-gui", "FyneApp.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
