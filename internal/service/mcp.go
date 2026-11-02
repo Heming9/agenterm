@@ -293,7 +293,10 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		mcp.AddTool(ms, toolDefinition("create_client", "mcp.create.a.client.connection.token.and.a.one", input), func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, map[string]any, error) {
 			principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
 			out, err := controlCall[map[string]any](ctx, s.control, "create", createRequest{IP: principal.IP, Args: a})
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})
 	}
 	return ms

@@ -54,8 +54,8 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			if _, exists := created["next_action"]; exists {
 				t.Fatal("create_client must not return next_action")
 			}
-			if tc.args["multi_device"] == true && !strings.Contains(created["display_text"].(string), fmt.Sprintf("%d", int64(tc.want/time.Second))) {
-				t.Fatalf("multi-device notice does not show configured lifetime: %v", created["display_text"])
+			if !strings.Contains(created["display_text"].(string), fmt.Sprintf("Invitation validity: %d seconds", int64(tc.want/time.Second))) || !strings.Contains(created["display_text"].(string), expires.UTC().Format("2006-01-02 15:04:05")+" UTC") {
+				t.Fatalf("display does not show configured lifetime and deadline: %v", created["display_text"])
 			}
 			// Expiry must revoke both platform links and the pending credential.
 			h.s.mu.Lock()
@@ -143,16 +143,24 @@ func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
 }
 
 func TestCreateClientDisplayText(t *testing.T) {
+	t.Setenv("AGENTERM_LANG", "zh-CN")
 	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
 	result, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	display := result["display_text"].(string)
-	for _, part := range []string{"连接 token：\n" + result["client_token"].(string), "无客户端", "macOS / Linux 一键连接命令：", "Windows 一键连接命令："} {
+	for _, part := range []string{"Connection token:\n" + result["client_token"].(string), "How to connect:\n1.", "\n2.", "\n3.", "\n4.", "Invitation validity: 300 seconds", "devices already connected are not affected"} {
 		if !strings.Contains(display, part) {
 			t.Fatalf("display missing %q: %s", part, display)
 		}
+	}
+	sections := strings.Split(display, "\n\n")
+	if len(sections) != 5 || sections[0] != "Windows one-click connection command:\n"+result["windows_powershell_command"].(string) || sections[1] != "macOS / Linux one-click connection command:\n"+result["macos_linux_command"].(string) || sections[2] != "Connection token:\n"+result["client_token"].(string) {
+		t.Fatalf("incorrect connection instructions order or line breaks: %s", display)
+	}
+	if strings.ContainsAny(display, "`*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
+		t.Fatalf("unexpected formatting or multi-device notice: %s", display)
 	}
 	for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
 		command := result[key].(string)
@@ -170,6 +178,41 @@ func TestCreateClientDisplayText(t *testing.T) {
 		}
 		if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "agenterm:") || strings.Contains(command, "/downloads/") {
 			t.Fatalf("invalid %s in display: %s", key, display)
+		}
+	}
+}
+
+func TestCreateClientPlainTextLocalesAndModes(t *testing.T) {
+	for _, lang := range []string{"zh-CN", "en"} {
+		for _, multi := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/multi=%t", lang, multi), func(t *testing.T) {
+				t.Setenv("AGENTERM_LANG", lang)
+				h := newMultiHarness(t, 0)
+				admin := connectMCPClient(t, h, "admin-test")
+				result, err := admin.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_client", Arguments: map[string]any{"multi_device": multi, "timeout_seconds": 120}})
+				if err != nil || result.IsError {
+					t.Fatalf("create_client: %v %v", result, err)
+				}
+				data, err := json.Marshal(result.StructuredContent)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var structured invitationResult
+				if err := json.Unmarshal(data, &structured); err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Content) != 1 || result.Content[0].(*mcp.TextContent).Text != structured.DisplayText {
+					t.Fatal("MCP text must contain exactly the connection instructions")
+				}
+				display := structured.DisplayText
+				if !strings.HasPrefix(display, "Windows one-click connection command:\n"+structured.WindowsPowerShellCommand+"\n\n") || !strings.Contains(display, "How to connect:\n1.") || !strings.Contains(display, "Invitation validity: 120 seconds") || strings.ContainsAny(display, "`*\r\x1b") || strings.Contains(display, "%!") {
+					t.Fatalf("invalid English plain-text instructions: %s", display)
+				}
+				sections := strings.Split(display, "\n\n")
+				if (!multi && len(sections) != 5) || (multi && (len(sections) != 6 || !strings.HasPrefix(sections[5], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
+					t.Fatalf("incorrect multi-device notice: %s", display)
+				}
+			})
 		}
 	}
 }
@@ -198,7 +241,8 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 		}
 		var payload struct {
 			Result struct {
-				Content []struct {
+				StructuredContent json.RawMessage `json:"structuredContent"`
+				Content           []struct {
 					Text string `json:"text"`
 				} `json:"content"`
 				IsError bool `json:"isError"`
@@ -207,7 +251,7 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 		if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		value, err := decodeToolText(payload.Result.Content[0].Text, payload.Result.IsError)
+		value, err := decodeToolResult(payload.Result.Content[0].Text, payload.Result.IsError, payload.Result.StructuredContent)
 		if err != nil {
 			t.Fatal(err)
 		}

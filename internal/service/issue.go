@@ -56,9 +56,11 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	shell, powershell := installCommands(value)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
-	result["display_text"] = fmt.Sprintf(i18n.Text(i18n.Terminal(), "connection.token.s.without.a.client.macos"), token, shell, powershell)
+	// Return one canonical English template; agents localize only the prose for
+	// the conversation while preserving commands and credentials verbatim.
+	result["display_text"] = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
 	if multiDevice {
-		result["display_text"] = fmt.Sprintf(serverText("multi.device.display.notice"), timeoutSeconds) + "\n\n" + result["display_text"].(string)
+		result["display_text"] = result["display_text"].(string) + "\n\n" + i18n.Text("en", "multi.device.display.notice")
 	}
 	return result, nil
 }

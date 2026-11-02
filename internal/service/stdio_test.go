@@ -55,9 +55,17 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	var invitation struct {
 		Invitation  string `json:"invitation"`
 		ClientToken string `json:"client_token"`
+		DisplayText string `json:"display_text"`
 	}
-	if err := json.Unmarshal([]byte(created.Content[0].(*mcp.TextContent).Text), &invitation); err != nil {
+	data, err := json.Marshal(created.StructuredContent)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &invitation); err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Content) != 1 || invitation.DisplayText == "" || created.Content[0].(*mcp.TextContent).Text != invitation.DisplayText {
+		t.Fatal("stdio connection instructions must match structured display_text")
 	}
 	token, err := invite.Redeem(ctx, invitation.Invitation)
 	if err != nil || token != invitation.ClientToken || token == "" {

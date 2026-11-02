@@ -310,7 +310,11 @@ func TestManagedRuntimeStdioStartupAndEOF(t *testing.T) {
 		Invitation  string `json:"invitation"`
 		ClientToken string `json:"client_token"`
 	}
-	if err := json.Unmarshal([]byte(created.Content[0].(*mcp.TextContent).Text), &credential); err != nil {
+	data, err := json.Marshal(created.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &credential); err != nil {
 		t.Fatal(err)
 	}
 	_ = session.Close()

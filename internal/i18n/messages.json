@@ -71,9 +71,9 @@
     "en": "MCP endpoint: %s/mcp\n",
     "zh-CN": "MCP 接口：%s/mcp\n"
   },
-  "connection.token.s.without.a.client.macos": {
-    "en": "Connection token:\n%s\n\nWithout a client\nmacOS / Linux connection command:\n%s\n\nWindows connection command:\n%s",
-    "zh-CN": "连接 token：\n%s\n\n无客户端\nmacOS / Linux 一键连接命令：\n%s\n\nWindows 一键连接命令：\n%s"
+  "connection.display.text": {
+    "en": "Windows one-click connection command:\n%s\n\nmacOS / Linux one-click connection command:\n%s\n\nConnection token:\n%s\n\nHow to connect:\n1. On the target computer, open PowerShell (Windows) or a terminal (macOS / Linux) and run the command for your system.\n2. Read the authorization prompt and follow the instructions to allow the connection.\n3. Keep the client running after connecting. Click Disconnect or close the client to end remote assistance.\n4. If Agenterm is already installed, you can paste the connection token into the client instead of running a command.\n\nInvitation validity: %d seconds (expires at %s UTC). Generate a new invitation after expiry; devices already connected are not affected.",
+    "zh-CN": "Windows 一键连接命令：\n%s\n\nmacOS / Linux 一键连接命令：\n%s\n\n连接令牌：\n%s\n\n使用方法：\n1. 在目标电脑打开 PowerShell（Windows）或终端（macOS / Linux），运行对应命令。\n2. 阅读授权提示，确认允许连接后，按提示继续。\n3. 连接成功后保持客户端运行；点击“断开连接”或关闭客户端即可结束远程协助。\n4. 已安装 Agenterm 客户端的用户，也可以直接粘贴连接令牌连接，无需运行命令。\n\n邀请有效期：%d 秒（截止时间：%s UTC）。过期后请重新生成；已连接设备不受影响。"
   },
   "invitation.timeout.invalid": {
     "en": "timeout_seconds must be an integer between 1 and %d.",
@@ -592,8 +592,8 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Create a private client connection token and an invitation. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns connection commands and display_text for the target user. After generating the connection instructions, you MUST present them to the user and call list_clients with the returned client_token and wait_ms=60000 to check whether a device connects, with a 60-second timeout. Report whether a device connected or the wait timed out. multi_device controls simultaneous connections and invitation reuse.",
-    "zh-CN": "创建私密的客户端连接 token 和邀请。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。返回连接命令及供目标用户使用的 display_text。生成连接说明后，必须先向用户展示说明，再使用返回的 client_token 调用 list_clients，设置 wait_ms=60000，以 60 秒为超时时间检查设备是否连接成功，并向用户报告连接成功或等待超时。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
+    "en": "Create a private client connection token and an invitation. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns a fixed English plain-text template in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Translate only headings and explanatory prose; when communicating in English, present it verbatim. Preserve all sections, their order, line breaks and plain-text format. Keep commands, URLs, connection tokens, validity numbers and expiry timestamps unchanged. Do not summarize, omit content, or add Markdown formatting such as bold, code fences, tables or links. Then call list_clients with the returned client_token and wait_ms=60000 to check whether a device connects, with a 60-second timeout. Report whether a device connected or the wait timed out. multi_device controls simultaneous connections and invitation reuse.",
+    "zh-CN": "创建私密的客户端连接 token 和邀请。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。文本内容和 structuredContent.display_text 均返回固定的英文纯文本模板，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言，完整展示 display_text：仅翻译标题和说明文字，使用英语交流时原样展示。保留所有段落、顺序、换行和纯文本格式；命令、URL、连接令牌、有效期数值及截止时间必须保持原样。不得总结、省略内容，也不得添加加粗、代码块、表格或链接等 Markdown 格式。然后使用返回的 client_token 调用 list_clients，设置 wait_ms=60000，以 60 秒为超时时间检查设备是否连接成功，并向用户报告连接成功或等待超时。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 300 (5 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
@@ -668,8 +668,8 @@
     "zh-CN": "多设备 Token 必须提供 client_id，请调用 list_clients 选择设备。"
   },
   "multi.device.display.notice": {
-    "en": "Multi-device token: multiple devices may connect simultaneously. The invitation commands can be reused for %d seconds.",
-    "zh-CN": "多设备 Token：允许多台设备同时在线，一键连接命令可在 %d 秒内重复使用。"
+    "en": "Multi-device mode: connection commands can be reused on multiple computers until the invitation expires. Multiple devices may stay connected simultaneously.",
+    "zh-CN": "多设备模式：有效期内可在多台电脑上重复使用连接命令，允许多台设备同时在线。"
   },
   "connection.retry": {
     "en": "Connection lost or failed (online %s): %s. Retry #%d in %s.",
@@ -872,8 +872,8 @@
     "zh-CN": "包含私密邀请访问权限的 Windows 连接命令。"
   },
   "mcp.result.display_text": {
-    "en": "User-facing connection instructions containing credentials and commands for both platforms.",
-    "zh-CN": "供用户使用的连接说明，包含凭据和两种平台命令。"
+    "en": "Fixed English plain-text connection template, identical to the tool's text content. Translate only headings and explanatory prose into the user's conversation language. Preserve all sections, order and line breaks; keep commands, URLs, tokens, validity numbers and expiry timestamps unchanged. Do not omit content or add Markdown formatting.",
+    "zh-CN": "固定的英文纯文本连接模板，与工具的文本内容一致。仅将标题和说明文字翻译为与用户交流的语言。保留所有段落、顺序和换行，命令、URL、令牌、有效期数值及截止时间保持原样，不得省略内容或添加 Markdown 格式。"
   },
   "mcp.session.list": {
     "en": "List retained sessions owned by the selected client token, optionally filtered by client_id. Does not require an online device. Returns session_id, device, original command, timestamps, lifecycle status and retained output cursor range, sorted by start time. Use output_start_cursor to read retained output; output_end_cursor skips to the current end. Finished records expire after 30 minutes or may be evicted when new sessions start. No shell state or live working directory is inferred. Only this token's sessions are visible.",

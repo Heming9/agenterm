@@ -74,7 +74,7 @@ func (h *multiHarness) request(auth, name string, args map[string]any, timeout .
 	if len(payload.Result.Content) != 1 {
 		return nil, false, fmt.Errorf("missing tool result")
 	}
-	result, err := decodeToolText(payload.Result.Content[0].Text, payload.Result.IsError)
+	result, err := decodeToolResult(payload.Result.Content[0].Text, payload.Result.IsError, payload.Result.StructuredContent)
 	return result, payload.Result.IsError, err
 }
 

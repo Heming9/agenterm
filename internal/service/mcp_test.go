@@ -48,8 +48,12 @@ func setMCPHeaders(r *http.Request) {
 	r.ContentLength = int64(len(body))
 }
 
-func decodeToolText(text string, isError bool) (any, error) {
+func decodeToolResult(text string, isError bool, structured json.RawMessage) (any, error) {
 	var value any
+	if !isError && len(structured) > 0 {
+		err := json.Unmarshal(structured, &value)
+		return value, err
+	}
 	err := json.Unmarshal([]byte(text), &value)
 	if err != nil && isError {
 		return map[string]any{"error": text}, nil

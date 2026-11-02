@@ -86,7 +86,15 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		if err := json.Unmarshal(data, &structured); err != nil {
 			t.Fatal(err)
 		}
-		if len(result.Content) != 1 || json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &text) != nil || !reflect.DeepEqual(structured, text) {
+		if len(result.Content) != 1 {
+			t.Fatalf("%s must return one text block", name)
+		}
+		content := result.Content[0].(*mcp.TextContent).Text
+		if name == "create_client" {
+			if content != structured["display_text"] || !strings.HasPrefix(content, "Windows one-click connection command:\n") {
+				t.Fatalf("create_client must return display_text as plain text: %s", content)
+			}
+		} else if json.Unmarshal([]byte(content), &text) != nil || !reflect.DeepEqual(structured, text) {
 			t.Fatalf("%s text and structured results differ", name)
 		}
 		if err := schemas[name].Validate(structured); err != nil {
