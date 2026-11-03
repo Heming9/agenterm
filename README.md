@@ -2,7 +2,13 @@
   <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>Let an AI agent assist with a remote computer through one authorized connection command.</strong></p>
-  <p>💻 macOS/Linux/Windows · 🖥️ CLI/GUI · 🔗 Multiple devices · ⚡ One-click connection · 🪶 Lightweight · 🔓 No SSH required · 🤖 Agent-first</p>
+  <p>
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Supports macOS, Linux, and Windows">
+    <img src="https://img.shields.io/badge/interface-CLI%20%7C%20GUI-7c3aed" alt="Supports CLI and GUI">
+    <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-0891b2" alt="Supports MCP Streamable HTTP">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="Apache 2.0 license"></a>
+  </p>
+  <p>🔗 Multiple devices · ⚡ One-click connection · 🪶 Lightweight · 🔓 No SSH required · 🤖 Agent-first</p>
   <p>
     <a href="#-quick-start">🚀 Quick start</a> ·
     <a href="https://github.com/Heming9/agenterm/releases">📥 Download client</a> ·

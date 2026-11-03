@@ -2,7 +2,13 @@
   <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>通过一条授权命令，让 AI Agent 协助操作远程电脑。</strong></p>
-  <p>💻 macOS/Linux/Windows · 🖥️ CLI/GUI · 🔗 多设备 · ⚡ 一键连接 · 🪶 轻量 · 🔓 无需 SSH · 🤖 Agent优先</p>
+  <p>
+    <img src="https://img.shields.io/badge/平台-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="支持 macOS、Linux 和 Windows">
+    <img src="https://img.shields.io/badge/界面-CLI%20%7C%20GUI-7c3aed" alt="支持 CLI 和 GUI">
+    <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-0891b2" alt="支持 MCP Streamable HTTP">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/许可证-Apache--2.0-green" alt="Apache 2.0 许可证"></a>
+  </p>
+  <p>🔗 多设备 · ⚡ 一键连接 · 🪶 轻量 · 🔓 无需 SSH · 🤖 Agent 优先</p>
   <p>
     <a href="#-快速开始">🚀 快速开始</a> ·
     <a href="https://github.com/Heming9/agenterm/releases">📥 下载客户端</a> ·
