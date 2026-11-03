@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,8 +61,9 @@ func runP2PBootstrapEndToEnd(t *testing.T) {
 	defer cancel()
 	ended := make(chan error, 1)
 	events := make(chan remoteclient.CommandEvent, 16)
+	var clientOutput lockedLogBuffer
 	go func() {
-		ended <- remoteclient.RunWithCallbacks(ctx, token, io.Discard, remoteclient.Callbacks{Command: func(event remoteclient.CommandEvent) { events <- event }})
+		ended <- remoteclient.RunWithCallbacks(ctx, token, &clientOutput, remoteclient.Callbacks{Command: func(event remoteclient.CommandEvent) { events <- event }})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for len(h.s.listClients(h.s.tokens[token])) == 0 {
@@ -80,9 +80,11 @@ func runP2PBootstrapEndToEnd(t *testing.T) {
 			t.Error("Client did not clean up P2P process")
 		}
 	})
-	data, failed, err := h.request(token, "p2p_transfer_start", map[string]any{}, 20*time.Second)
+	// Runtime allows 25 seconds for the remote registration; keep the HTTP
+	// deadline longer so slow native runners return the actual bootstrap error.
+	data, failed, err := h.request(token, "p2p_transfer_start", map[string]any{}, 35*time.Second)
 	if err != nil || failed {
-		t.Fatalf("bootstrap: failed=%v err=%v result=%v", failed, err, data)
+		t.Fatalf("bootstrap: failed=%v err=%v result=%v\nClient output:\n%s", failed, err, data, clientOutput.String())
 	}
 	result := data.(map[string]any)
 	agentEnv := append(os.Environ(), "HOME="+agentHome, "USERPROFILE="+agentHome, "LOCALAPPDATA="+agentHome, "XDG_CACHE_HOME="+filepath.Join(agentHome, "cache"), "P2P_CLI_STATE_DIR="+agentState)
