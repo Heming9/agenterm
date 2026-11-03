@@ -8,20 +8,38 @@ Thumbs.db
 # Build outputs
 /dist/
 /agenterm-server
+/agenterm-server-*
 /agenterm-client
 /agenterm-gui
 /agenterm-client-*
+/agenterm-pack
+/p2p-cli
+/p2p-cli-*
+/cmd/agenterm-client-gui/Agenterm.app/
 *.exe
 *.test
 *.out
-__pycache__/
+
+# Component and release staging outputs
+/component-builds/
+/build-macos-*/
+/build-linux-*/
+/build-windows-*/
+/artifacts/
 /release-base/
 /release-plan/
+/components.zip
+/.components-*.zip
 /internal/installer/assets/*
 !/internal/installer/assets/README.txt
 /internal/components/assets/*
 !/internal/components/assets/README.txt
 !/internal/components/assets/components.zip
+
+# Python build caches and local environments
+__pycache__/
+*.py[cod]
+/.venv/
 
 # Local configuration and secrets
 .env
