@@ -22,6 +22,11 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 			if ws.ReadJSON(&message) != nil {
 				return
 			}
+			if message.Type == "session_exec" {
+				writes.Lock()
+				message = acceptTestSession(ws, message)
+				writes.Unlock()
+			}
 			if message.Type == "cancel" {
 				cancels <- message.ID
 			}
@@ -35,7 +40,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 		}
 	}()
 	defer close(finish)
-	started := h.call(t, token, "session_start", map[string]any{"command": "interactive"}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
 	id := started["session_id"].(string)
 	h.call(t, other, "session_control", map[string]any{"action": "stop", "session_id": id}, true)
 	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": "unknown"}, true)
@@ -145,13 +150,16 @@ func TestStopDisconnectDoesNotConfirmCancellation(t *testing.T) {
 			if ws.ReadJSON(&message) != nil {
 				return
 			}
+			if message.Type == "session_exec" {
+				message = acceptTestSession(ws, message)
+			}
 			if message.Type == "cancel" {
 				ws.Close()
 				return
 			}
 		}
 	}()
-	started := h.call(t, token, "session_start", map[string]any{"command": "interactive"}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
 	out := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": started["session_id"]}, false).(map[string]any)
 	if out["status"] != "finished" || out["done"] != true || out["canceled"] != false || out["accepted"] != true || out["error"] == nil || out["error"] == "" {
 		t.Fatalf("disconnect was confused with confirmed cancellation: %v", out)

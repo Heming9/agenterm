@@ -157,7 +157,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		t.Fatalf("devices: %v", devices)
 	}
 	deviceID := devices[0].(map[string]any)["client_id"]
-	started := h.call(t, token, "session_start", map[string]any{"command": `printf 'before\n'; read line; printf 'after:%s\n' "$line"`}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": `printf 'before\n'; read line; printf 'after:%s\n' "$line"`}, false).(map[string]any)
 	id := started["session_id"].(string)
 	before := h.call(t, token, "session_read", map[string]any{"session_id": id, "wait_ms": 4000}, false).(map[string]any)
 	if !strings.Contains(before["output"].(string), "before") {
@@ -169,8 +169,8 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	command := `while [ ! -f "$AGENTERM_RELEASE_FILE" ]; do sleep 0.02; done; printf 'drained\n'`
 	requestDone := make(chan error, 1)
 	go func() {
-		result, isError, err := h.request(token, "execute_command", map[string]any{"command": command, "timeout_ms": 90000, "env": map[string]string{"AGENTERM_RELEASE_FILE": release}}, 90*time.Second)
-		if err == nil && (isError || !strings.Contains(result.(map[string]any)["stdout"].(string), "drained")) {
+		result, isError, err := h.request(token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 20000, "command": command, "env": map[string]string{"AGENTERM_RELEASE_FILE": release}}, 90*time.Second)
+		if err == nil && (isError || !strings.Contains(result.(map[string]any)["output"].(string), "drained")) {
 			err = fmt.Errorf("in-flight result: %v", result)
 		}
 		requestDone <- err
@@ -194,7 +194,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	crashCommand := `sleep 1; printf 'survived crash\n'`
 	crashWaiter := make(chan error, 1)
 	go func() {
-		_, _, err := h.request(token, "execute_command", map[string]any{"command": crashCommand})
+		_, _, err := h.request(token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 20000, "command": crashCommand})
 		crashWaiter <- err
 	}()
 	waitCommandEvent(t, events, crashCommand, false)
@@ -209,7 +209,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		t.Fatalf("command interrupted by server crash: %+v", finished)
 	}
 	retained := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
-	if len(retained) != 1 || retained[0].(map[string]any)["session_id"] != id {
+	if len(retained) != 3 || retained[0].(map[string]any)["session_id"] != id {
 		t.Fatalf("could not rediscover session after server replacement: %v", retained)
 	}
 	// Resume the original terminal using the same session ID and byte cursor.
@@ -219,7 +219,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		read := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 4000}, false).(map[string]any)
 		output.WriteString(read["output"].(string))
 		cursor = read["next_cursor"]
-		if read["done"] == true {
+		if read["command_done"] == true {
 			if read["exit_code"] != float64(0) {
 				t.Fatal(read)
 			}

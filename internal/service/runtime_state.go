@@ -62,7 +62,7 @@ type runtimeState struct {
 	multiDevice     map[string]bool             // client credential -> multi-device mode
 	mu              sync.Mutex
 	sessions        map[string]*session
-	executions      map[string]*execution
+	sessionRequests map[string]*pendingSessionCommand
 	limiter         authLimiter
 	invitations     map[string]invitation
 	installCodes    map[string]string // six-character installer code -> invitation secret
@@ -207,10 +207,11 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		Environment: clientEnvironment{
 			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),
 			Arch: metadataHeader(r, protocol.ArchHeader), Shell: metadataHeader(r, protocol.ShellHeader),
-			DefaultCwd:      metadataHeader(r, protocol.DefaultCwdHeader),
-			ClientVersion:   metadataHeader(r, version.Header),
-			SessionControls: sessionControlsHeader(r),
-			P2P:             r.Header.Get(protocol.P2PCapabilityHeader) == "1",
+			DefaultCwd:         metadataHeader(r, protocol.DefaultCwdHeader),
+			ClientVersion:      metadataHeader(r, version.Header),
+			SessionControls:    sessionControlsHeader(r),
+			PersistentSessions: r.Header.Get(protocol.PersistentSessionsHeader) == protocol.PersistentSessionsVersion,
+			P2P:                r.Header.Get(protocol.P2PCapabilityHeader) == "1",
 		},
 	}}
 	if s.clients == nil {
@@ -236,6 +237,11 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			stopHeartbeat()
 			s.mu.Lock()
 			s.closeP2PClientLocked(c, "client disconnected")
+			for _, p := range s.sessions {
+				if p.client == c {
+					p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: serverText("client.disconnected")})
+				}
+			}
 			if s.clients[id] == c {
 				delete(s.clients, id)
 				if owner := s.clientOwners[secret]; owner != nil && !s.hasClientLocked(secret) {
@@ -271,10 +277,18 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 				disconnectErr = err
 				return
 			}
+			if m.Type == "command_accepted" {
+				if err := s.bindAcceptedSession(c, m); err != nil {
+					m.Type, m.Error = "command_rejected", err.Error()
+				}
+			}
 			if m.Type == "done" {
 				s.mu.Lock()
 				s.p2pCommandDoneLocked(c, m)
 				s.mu.Unlock()
+			}
+			if s.acceptSessionEvent(c, m) {
+				continue
 			}
 			c.mu.Lock()
 			ch := c.pending[m.ID]

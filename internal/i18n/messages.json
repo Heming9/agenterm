@@ -352,8 +352,8 @@
     "zh-CN": "尚无客户端连接"
   },
   "session.limit.reached.try.again.later": {
-    "en": "this token already has 6 running sessions; stop or finish one before starting another",
-    "zh-CN": "当前 token 已有 6 个运行中的会话，请结束其中一个后重试"
+    "en": "this client process already has 10 live terminals; close one before creating another",
+    "zh-CN": "当前客户端进程已有 10 个存活终端，请关闭其中一个后再创建新终端"
   },
   "unknown.session": {
     "en": "unknown session",
@@ -559,21 +559,13 @@
     "en": "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. %s",
     "zh-CN": "WebSocket 连通性检查失败，请检查服务器地址、网络、代理和邀请有效性。%s"
   },
-  "mcp.execute.a.non.interactive.command.and.return.output": {
-    "en": "Run a short, non-interactive command in a fresh shell on the selected device and wait for its result, with separate stdout and stderr. Suitable for quick checks such as querying a version, listing files, reading a small configuration file or checking process status. Unsuitable for downloads, installations, builds, large scans, commands with uncertain duration, prompts, incremental output or shell state shared across commands; use session_start for those. If unsure whether the command will finish within the MCP caller's request deadline, choose session_start. timeout_ms controls only the remote process lifetime (default 60000; 0 disables that process timeout); it does not extend the MCP caller's or a proxy's request timeout. Request cancellation sends a best-effort remote cancellation that may terminate the process and its children, leaving partial files or other side effects. A request timeout alone does not confirm termination; verify effects before retrying. Commands are not automatically retried. Working directory changes, variables, functions and environment activation do not carry over to later calls; cwd and env initialize only this process. For shared shell state, explicitly launch a persistent shell with session_start and reuse its session_id with session_control(action=input). The interpreter is reported by list_clients as client_info.shell. A nonzero exit, timeout, cancellation or execution failure sets isError. Captured output discards bytes beyond its retention limit.",
-    "zh-CN": "在选定设备上新建 shell 执行短时非交互命令，等待完成后返回结果，分别提供 stdout 和 stderr。适合快速检查，例如查询版本、列出文件、读取小型配置文件或检查进程状态。不适合下载、安装、构建、大范围扫描、耗时不确定的命令、交互提示、增量输出或跨命令共享 shell 状态；这些场景应使用 session_start。不能确定命令能否在 MCP 调用方的请求期限内完成时，优先选择 session_start。timeout_ms 仅控制远端进程的运行期限（默认 60000 毫秒；0 仅关闭进程超时），不会延长 MCP 调用方或代理的请求超时。请求取消会尽力发送远端取消请求，可能终止进程及其子进程，留下残缺文件或其他副作用。仅凭请求超时不能确认进程已停止；重试前应核实实际影响。命令不会自动重试。目录切换、变量、函数和环境激活状态不会传递给后续调用；cwd 和 env 仅初始化本次进程。如需共享 shell 状态，请通过 session_start 显式启动常驻 shell，再用 session_control(action=input) 复用其 session_id。解释器由 list_clients 的 client_info.shell 字段提供。非零退出、超时、取消或执行失败会设置 isError。捕获的输出超出保留上限后丢弃超出部分。"
-  },
   "mcp.shell.command": {
     "en": "Shell command to execute on the target device.",
     "zh-CN": "要在目标设备上执行的 Shell 命令。"
   },
-  "mcp.start.an.interactive.terminal.session.then.use.session": {
-    "en": "Start an interactive or long-running process in a fresh shell on the selected device and return session_id before completion. Suitable for downloads, installations, builds, large scans, commands with uncertain duration, incremental output, interactive input or shell state shared across commands. Prefer execute_command for quick, non-interactive checks that need only a final result or separate stdout and stderr; session output is a single stream. Unsuitable for unattended services that must survive device disconnection, or as permanent log storage. Start a long task once, retain session_id, then call session_read with wait_ms up to 20000 and resume from next_cursor until done=true and has_more=false; inspect exit_code, timed_out, canceled and error to determine the outcome. A session_read request timing out or being canceled does not cancel the running session; use session_control(action=stop) to request cancellation. timeout_ms limits the remote process lifetime (default 0, no process timeout); a long task does not need one equally long MCP request. If the session_start response is lost, use session_list to check for an already-started session before retrying. A one-shot command ends its session when it exits. To preserve working directory, variables, functions or an activated environment across commands, explicitly launch a shell that keeps reading stdin (for example, bash -i on Linux/macOS where available), then send subsequent commands through session_control(action=input) using the same session_id. Repeated session_start calls create independent processes. The interpreter is reported by list_clients as client_info.shell; choose a command suitable for the target platform. Linux/macOS use a PTY; Windows uses pipes without terminal emulation. Shell state lasts only while that shell is alive; client disconnection terminates sessions and reconnect does not restore them. Each token retains up to six sessions. Finished records may expire after 30 minutes or be evicted when later sessions start.",
-    "zh-CN": "在选定设备上新建 shell 启动交互或长时间运行的进程，在完成前返回 session_id。适合下载、安装、构建、大范围扫描、耗时不确定的命令、增量输出、交互输入或跨命令共享 shell 状态。只需最终结果或分别获取 stdout 和 stderr 的快速非交互检查，优先使用 execute_command；会话输出为单一流。不适合必须在设备断线后继续运行的无人值守服务，也不适合作为永久日志存储。长任务只启动一次，保留 session_id，再用 session_read 设置最长 20000 毫秒的 wait_ms，按 next_cursor 继续读取，直到 done=true 且 has_more=false；检查 exit_code、timed_out、canceled 和 error 判断结果。session_read 请求超时或取消不会取消运行中的会话；需要取消任务时使用 session_control(action=stop)。timeout_ms 限制远端进程的运行期限（默认 0，不设进程超时）；长任务无需一次同样长的 MCP 请求。若未收到 session_start 响应，重试前应通过 session_list 检查会话是否已经启动。一次性命令退出后，会话即结束。如需跨命令保留工作目录、变量、函数或已激活的环境，请显式启动持续读取标准输入的 shell（例如在已安装 bash 的 Linux/macOS 上使用 bash -i），再通过 session_control(action=input) 向同一个 session_id 发送后续命令。重复调用 session_start 会创建独立进程。解释器由 list_clients 的 client_info.shell 字段提供，请选择适合目标平台的命令。Linux/macOS 使用 PTY；Windows 使用管道，不模拟终端。shell 状态仅在该 shell 存活期间保留；客户端断线会终止会话，重连不会恢复。每个 token 最多保留六个会话；已结束的记录可能在 30 分钟后过期，或在后续会话启动时被替换。"
-  },
   "mcp.read.new.output.while.the.session.is.running": {
-    "en": "Read incremental session output and current state, limited by max_bytes (default 16384, maximum 65536; UTF-8 characters are not split). Resume from next_cursor; has_more=true means retained output remains, including when done=true. Continue draining until has_more=false even after the process exits. done and exit_code describe the entire session, not individual commands in a persistent shell. Determine command completion from program output. Empty output with done=false does not confirm command completion. Returns immediately if output or a terminal state is available; otherwise waits up to wait_ms. Dropped output sets truncated=true and reading resumes at the earliest retained byte; pagination alone does not set truncated. A cursor beyond available output or inside a UTF-8 character is an error. Terminal result fields are included only when done=true.",
-    "zh-CN": "读取会话的增量输出和当前状态，单次受 max_bytes 限制（默认 16384，最多 65536 字节；不切断 UTF-8 字符）。用 next_cursor 继续读取；has_more=true 表示仍有保留输出，包括 done=true 时。进程退出后也应继续读取，直到 has_more=false。done 和 exit_code 描述整个会话，而非常驻 shell 中的单条命令。请根据程序输出判断单条命令是否完成；output 为空且 done=false 不能证明命令完成。有输出或终态时立即返回，否则最多等待 wait_ms。输出被丢弃时设置 truncated=true，并从最早保留的字节继续读取；仅分页不会设置 truncated。超出已有输出范围或位于 UTF-8 字符内部的游标会报错。仅在 done=true 时包含终态结果字段。"
+    "en": "Read paginated terminal output and command status. command_done and exit_code describe the latest command; done means the terminal ended. session_alive indicates whether it can be reused. Supply the previous next_cursor and optionally command_id. Drain has_more even after completion. Output availability alone never proves completion.",
+    "zh-CN": "分页读取终端输出和命令状态。command_done 和 exit_code 描述最新命令，done 表示终端结束，session_alive 表示是否可复用。传入上次 next_cursor，可附带 command_id。命令完成后仍应读完 has_more，不能仅根据输出判断完成。"
   },
   "mcp.session.identifier": {
     "en": "Session identifier",
@@ -683,10 +675,6 @@
     "en": "Connection restored.",
     "zh-CN": "连接已恢复。"
   },
-  "execution.timeout.invalid": {
-    "en": "timeout_ms must be between 0 and %d (0 disables the timeout)",
-    "zh-CN": "timeout_ms 必须介于 0 和 %d 之间（0 表示不限时）"
-  },
   "execution.cwd.invalid": {
     "en": "cwd must not contain NUL bytes",
     "zh-CN": "cwd 不能包含 NUL 字符"
@@ -695,29 +683,21 @@
     "en": "environment names must be nonempty and contain neither = nor NUL; values must not contain NUL",
     "zh-CN": "环境变量名不能为空，且不能包含 = 或 NUL；变量值不能包含 NUL"
   },
-  "execution.timed.out": {
-    "en": "command timed out",
-    "zh-CN": "命令执行超时"
-  },
   "execution.canceled": {
     "en": "command canceled",
     "zh-CN": "命令已取消"
   },
   "mcp.execution.cwd": {
-    "en": "Working directory for this process on the target device.",
-    "zh-CN": "本次进程在目标设备上的工作目录。"
+    "en": "Initial working directory of a new persistent session. Omit when reusing a session; use cd to change its directory.",
+    "zh-CN": "新持续会话的初始目录；复用会话时省略，通过 cd 修改目录。"
   },
   "mcp.execution.env": {
-    "en": "Environment overrides for this command, merged with the client environment. Values must be strings.",
-    "zh-CN": "本条命令的环境变量覆盖项，与客户端继承的环境变量合并。变量值必须为字符串。"
-  },
-  "mcp.execution.timeout": {
-    "en": "Remote process execution timeout in milliseconds. 0 disables only the process timeout. This does not extend the MCP caller's or a proxy's request timeout; use session_start and session_read for long-running commands.",
-    "zh-CN": "远端进程执行超时毫秒数。0 仅关闭进程超时，不会延长 MCP 调用方或代理的请求超时；长任务应使用 session_start 和 session_read。"
+    "en": "Initial environment overrides of a new persistent session, merged with client environment. Omit when reusing; change variables through the shell.",
+    "zh-CN": "新持续会话的初始环境变量，与客户端环境合并；复用时省略，通过 shell 命令修改变量。"
   },
   "mcp.execution.workflow": {
-    "en": "Commands run with the target user's permissions and can change files or system state. Each execute_command call starts a fresh shell; shell state does not carry over to later calls. Each session_start also creates an independent process. For commands that depend on shared working directory, variables, functions or environment activation, explicitly start a persistent shell with session_start, then reuse its session_id with session_control(action=input) and session_read. State persists across those operations while that shell remains alive, not across separate session_start or execute_command calls. cwd and env initialize only the new process. A one-shot command does not leave a persistent shell behind. Client disconnection terminates sessions; reconnect does not restore shell state. Use session_list to rediscover retained sessions. Use session_control(action=interrupt) for a foreground interruption, session_control(action=eof) for end-of-input, and session_control(action=stop) to cancel the entire session; check advertised session_controls first. Drain paginated output using next_cursor and has_more, even after done=true.",
-    "zh-CN": "命令以目标用户的权限执行，可修改文件或系统状态。每次 execute_command 调用都会启动独立 shell，shell 状态不会传递给后续调用。每次 session_start 也会创建独立进程。若后续命令依赖共同的工作目录、变量、函数或环境激活状态，请通过 session_start 显式启动常驻 shell，再用 session_control(action=input) 和 session_read 复用其 session_id。状态在该 shell 存活期间跨这些操作保留，不会跨独立的 session_start 或 execute_command 调用共享。cwd 和 env 仅初始化新进程。一次性命令结束后不会留下常驻 shell。客户端断线会终止会话，重连不会恢复 shell 状态。 可通过 session_list 找回保留会话。session_control(action=interrupt) 用于中断前台任务，session_control(action=eof) 用于发送输入结束，session_control(action=stop) 用于取消整个会话；请先查看声明的 session_controls。请用 next_cursor 和 has_more 读完分页输出，包括 done=true 之后。"
+    "en": "Execute commands in client-managed terminals. Omit terminal_name and session_id for a new anonymous terminal: close automatically when the command finishes within wait_ms, or retain the same shell with a random terminal_name when waiting expires. Named terminals are persistent: terminal_name reuses an existing name or creates it; session_id reuses an exact instance and rejects unknown/closed IDs. Never automatically reuse another terminal. Names are scoped to the target client connection. session_created identifies creation/reuse; persistent, promoted and terminal_name describe retention. wait_ms defaults to 10000 ms, range 0–20000; 0 retains anonymous terminals immediately. Waiting never kills commands. cwd/env initialize only new shells and are rejected on reuse. Busy targets return session_busy, without queueing or creating a replacement. At most ten live terminals per client process: new anonymous/named creation fails at capacity, explicitly selecting an existing terminal still permits reuse. The client alone owns selection, creation/reuse, quotas, busy/input checks, promotion and closure. The server authorizes, routes and caches client facts. Persistent terminals have no idle expiry; close them with session_control(action=stop). Read output with session_read and drain has_more using next_cursor. command_done/exit_code describe the latest command; done describes shell termination; session_alive indicates availability. Use session_list to find retained terminals after a lost response. Disconnect loses shell state. Do not override reserved prompt hooks/PS1 or terminal echo settings. Commands run with target user permissions.",
+    "zh-CN": "在客户端管理的终端中执行命令。省略 terminal_name 和 session_id 时新建匿名终端：命令在 wait_ms 内完成则自动关闭；等待到期则保留同一 shell 并返回随机 terminal_name。具名终端始终持久：terminal_name 存在则复用、不存在则创建；session_id 精确复用已有实例，未知或已关闭 ID 报错。不会自动复用其他终端。名称作用域为目标客户端连接。session_created 标识创建或复用，persistent、promoted 和 terminal_name 描述保留状态。wait_ms 默认 10000 毫秒，范围 0–20000；0 立即保留匿名终端。等待不会终止命令。cwd/env 仅初始化新 shell，复用时携带会报错。忙碌时返回 session_busy，不排队、不另建替代。每个客户端进程最多十个存活终端，满额时新建匿名或具名终端均报错，明确指定已有终端仍可复用。选择、创建与复用、配额、忙碌及输入校验、转为持久和关闭均由客户端唯一管理，服务端仅鉴权、路由和缓存客户端事实。持久终端没有空闲回收，需要 session_control(action=stop) 主动关闭。通过 session_read 按 next_cursor 读完 has_more；command_done/exit_code 描述最新命令，done 描述终端结束，session_alive 表示可用状态。响应丢失后用 session_list 找回保留终端。断线丢失 shell 状态。不要覆盖提示符钩子、PS1 或终端回显设置。命令以目标用户权限执行。"
   },
   "mcp.connection.wait.failed": {
     "en": "Connection wait failed: %v",
@@ -764,8 +744,8 @@
     "zh-CN": "客户端进程架构，例如 amd64 或 arm64。"
   },
   "mcp.result.default_cwd": {
-    "en": "Client working directory at connection time, inherited by commands when cwd is omitted.",
-    "zh-CN": "连接时的客户端工作目录，未指定 cwd 的命令继承此目录。"
+    "en": "Client working directory at connection time; inherited by a newly created session when cwd is omitted.",
+    "zh-CN": "连接时客户端的工作目录；新建会话未指定 cwd 时继承此目录。"
   },
   "mcp.result.hostname": {
     "en": "Device-reported hostname for display only, not authentication.",
@@ -776,8 +756,8 @@
     "zh-CN": "设备上报的操作系统。"
   },
   "mcp.result.shell": {
-    "en": "Device-reported command interpreter path used by execute_command and session_start. Empty means unknown or not reported.",
-    "zh-CN": "设备上报的命令解释器路径，供 execute_command 和 session_start 使用。空值表示未知或未上报。"
+    "en": "Device-reported persistent command interpreter path. Windows sessions use PowerShell; Linux/macOS use the reported shell. Empty means unknown.",
+    "zh-CN": "设备上报的持续命令解释器路径；Windows 会话使用 PowerShell，Linux/macOS 使用上报的 shell。空值表示未知。"
   },
   "mcp.result.connected_at": {
     "en": "UTC connection time in RFC 3339 format.",
@@ -795,10 +775,6 @@
     "en": "Session identifier used by session_read and session_control.",
     "zh-CN": "供 session_read 和 session_control 使用的会话标识。"
   },
-  "mcp.result.cursor": {
-    "en": "Initial output byte cursor, always 0 for a new session.",
-    "zh-CN": "新会话的初始输出字节游标，固定为 0。"
-  },
   "mcp.result.output": {
     "en": "Combined terminal output from the requested cursor; may contain echoed input.",
     "zh-CN": "从指定游标开始的终端合并输出，可能包含回显输入。"
@@ -808,16 +784,16 @@
     "zh-CN": "本次返回输出之后的字节偏移；下次 session_read 请用它作为 cursor，包括 done=true 且 has_more=true 时。"
   },
   "mcp.result.truncated": {
-    "en": "True if output exceeded the 1 MiB retention limit. Commands discard excess captured output; sessions discard older buffered bytes.",
-    "zh-CN": "输出超过 1 MiB 保留上限时为 true；普通命令丢弃超出部分，会话丢弃较旧的缓冲字节。"
+    "en": "True if the requested cursor preceded the oldest retained output; the session keeps only the latest 1 MiB. Pagination alone does not set this flag.",
+    "zh-CN": "请求游标早于最早保留输出时为 true；会话仅保留最近 1 MiB。单纯分页不会设置此标记。"
   },
   "mcp.result.done": {
-    "en": "True when a terminal result is available or the device connection closed. False means no terminal result is available yet.",
-    "zh-CN": "收到终态结果或设备连接关闭时为 true；false 表示尚无终态结果。"
+    "en": "True when the terminal has ended; a completed command can have done=false and command_done=true.",
+    "zh-CN": "终端已结束时为 true；单条命令完成时可以 done=false 且 command_done=true。"
   },
   "mcp.result.exit_code": {
-    "en": "Reported process exit code: 0 means success; -1 means execution failed, was interrupted, or the device disconnected before a normal exit report.",
-    "zh-CN": "进程退出码；0 表示成功，-1 表示启动失败、中断，或正常退出回报前设备已断线。"
+    "en": "Exit code of the latest completed command, or terminal termination if it ended; 0 is success, -1 denotes execution/connection failure. Absent while a command is running.",
+    "zh-CN": "最新完成命令的退出码，或终端结束时的退出码；0 表示成功，-1 表示执行或连接失败。命令执行中不提供此字段。"
   },
   "mcp.result.canceled": {
     "en": "True only when the target reported cancellation; a disconnect alone does not confirm cancellation.",
@@ -838,14 +814,6 @@
   "mcp.result.already_done": {
     "en": "True if the session was already ended when this stop call began; no new cancellation request is sent.",
     "zh-CN": "本次停止调用开始时会话已结束则为 true，此时不会发送新的取消请求。"
-  },
-  "mcp.result.stdout": {
-    "en": "Captured standard output, sharing a 1 MiB combined limit with stderr.",
-    "zh-CN": "捕获的标准输出，与 stderr 共用 1 MiB 上限。"
-  },
-  "mcp.result.stderr": {
-    "en": "Captured standard error, sharing a 1 MiB combined limit with stdout.",
-    "zh-CN": "捕获的标准错误，与 stdout 共用 1 MiB 上限。"
   },
   "mcp.result.token_identifier": {
     "en": "Public identifier for recognizing the connection token; not an authentication secret.",
@@ -880,8 +848,8 @@
     "zh-CN": "固定的英文纯文本连接模板，与工具的文本内容一致。仅将标题和说明文字翻译为与用户交流的语言。保留所有段落、顺序和换行，命令、URL、令牌、有效期数值及截止时间保持原样，不得省略内容或添加 Markdown 格式。"
   },
   "mcp.session.list": {
-    "en": "List retained sessions owned by the selected client token, optionally filtered by client_id. Does not require an online device. Returns session_id, device, original command, timestamps, lifecycle status and retained output cursor range, sorted by start time. Use output_start_cursor to read retained output; output_end_cursor skips to the current end. Finished records expire after 30 minutes or may be evicted when new sessions start. No shell state or live working directory is inferred. Only this token's sessions are visible.",
-    "zh-CN": "列出所选客户端 token 拥有的保留会话，可用 client_id 筛选，无需设备在线。返回会话标识、设备、原始启动命令、时间、生命周期状态及保留输出游标范围，按启动时间排序。用 output_start_cursor 读取保留输出；output_end_cursor 可跳到当前末尾。已结束的记录在 30 分钟后过期，也可能在新建会话时被替换。不推断 shell 状态或当前工作目录；仅返回该 token 的会话。"
+    "en": "List retained terminal records for this token, including running, idle and finished terminals. Filter by client_id. terminal_name, persistent and promoted describe client-owned lifetime. Live terminal quota is enforced only by the client. Persistent shells require explicit stop and do not expire when idle; ended output records last up to 30 minutes or replacement.",
+    "zh-CN": "列出此 token 的保留终端记录，包括运行、空闲和已结束终端，可按 client_id 筛选。terminal_name、persistent 和 promoted 描述客户端管理的生命周期。存活终端配额仅由客户端裁决。持久 shell 需要主动 stop，不按空闲时间回收；已结束输出记录最多保留 30 分钟或被新记录替换。"
   },
   "mcp.session.max.bytes": {
     "en": "Maximum output bytes per read, 4–65536; default 16384. May return fewer bytes to preserve UTF-8 boundaries. Continue with next_cursor while has_more=true.",
@@ -904,12 +872,12 @@
     "zh-CN": "会话结束时间，UTC，RFC 3339 格式；仅在会话结束后返回。"
   },
   "mcp.result.command": {
-    "en": "Original command used to start this session; does not track subsequent stdin commands.",
-    "zh-CN": "创建会话时的原始命令，不跟踪后续通过标准输入发送的命令。"
+    "en": "Latest command submitted through execute_command for this session; does not track subsequent stdin input.",
+    "zh-CN": "此会话最新通过 execute_command 提交的命令，不跟踪后续通过标准输入发送的内容。"
   },
   "mcp.session.status": {
-    "en": "Session lifecycle: running, stopping (cancellation requested), or finished. Does not indicate whether an individual shell command is running.",
-    "zh-CN": "会话生命周期：running（运行中）、stopping（已请求取消）或 finished（已结束）。不表示 shell 中某条命令是否仍在执行。"
+    "en": "idle: terminal ready; running: command active; stopping: terminal closing; finished: terminal ended.",
+    "zh-CN": "idle：终端空闲；running：命令执行中；stopping：终端正在关闭；finished：终端已结束。"
   },
   "mcp.result.output_start_cursor": {
     "en": "Earliest retained output byte offset; pass as cursor to read available history.",
@@ -964,8 +932,8 @@
     "zh-CN": "会话输入队列已满，此次输入未入队。"
   },
   "mcp.session.control": {
-    "en": "Control an existing session with action=input, interrupt, eof or stop; does not create a new shell. Reuse session_id to preserve state while its shell lives. Every result includes action. input requires input text (no automatic newline) and returns accepted: the request was sent, not consumed or completed. Input reaches the program currently reading stdin. interrupt requests SIGINT for the terminal foreground process group on Linux/macOS, without forcibly stopping the whole session; Windows pipes do not support it. eof follows queued input: canonical Linux/macOS terminals receive their configured VEOF character, which may first flush pending input and require another EOF; raw mode or disabled VEOF is an error. Windows EOF permanently closes stdin while keeping output readable. EOF at a shell prompt may exit it. For interrupt/eof check list_clients.client_info.session_controls; delivered=true means the client acknowledged the OS operation within 5 seconds, not that the program stopped. stop cancels the whole session and accepts only optional wait_ms (default 1000, range 0–20000); done/status/canceled confirm the outcome. accepted alone never proves termination. If stop returns done=false, use session_read to check further state and output. Repeated stop does not resend pending cancellation and returns terminal state for an ended session; other actions error on ended sessions. Unknown or unauthorized sessions error. Only input accepts input; only stop accepts wait_ms. Input, interrupt and terminal EOF may repeat side effects; do not blindly retry. Timeout or cancellation can leave delivery uncertain. Use session_read to verify effects and drain output.",
-    "zh-CN": "通过 action=input、interrupt、eof 或 stop 控制现有会话，不会创建新 shell。复用 session_id 可在 shell 存活期间保留状态。所有结果均带 action。input 必须提供 input 文本，不自动添加换行符；返回 accepted 仅表示请求已发送，不代表已读取或执行完成，输入由当前读取标准输入的程序接收。interrupt 在 Linux/macOS 向终端前台进程组发送 SIGINT，不强制结束整个会话；Windows 管道不支持中断。eof 排在先前输入之后：Linux/macOS 规范终端发送配置的 VEOF 字符，可能先交付待处理输入而需再次 EOF；原始模式或禁用 VEOF 时报错。Windows EOF 永久关闭标准输入，输出仍可读取。在 shell 提示符处 EOF 可能退出 shell。interrupt/eof 前请查看 list_clients.client_info.session_controls；delivered=true 表示 5 秒内收到客户端对操作系统操作的确认，不代表程序已停止。stop 取消整个会话，仅可附带 wait_ms（默认 1000，范围 0–20000）；用 done/status/canceled 判断结果，不能仅凭 accepted 确认停止。stop 返回 done=false 时，必须通过 session_read 继续检查状态和输出。重复 stop 不重发待确认的取消请求，已结束时返回终态；其他 action 对已结束会话报错。未知或无权限的会话报错。仅 input 可带 input，仅 stop 可带 wait_ms。重复输入、中断或终端 EOF 可能重复产生副作用，请勿盲目重试；超时或取消后投递状态可能不确定。通过 session_read 核实效果并读完输出。"
+    "en": "Control an existing session with action=input, interrupt, eof or stop; does not create a new shell. Reuse session_id to preserve state while its shell lives. Every result includes action. input requires input text (no automatic newline) and returns accepted: the request was sent, not consumed or completed. Input reaches the active command currently reading stdin; idle sessions reject input. Submit subsequent commands with execute_command. interrupt requests SIGINT for the terminal foreground process group on Linux/macOS, without forcibly stopping the whole session; Windows pipes do not support it. eof follows queued input: canonical Linux/macOS terminals receive their configured VEOF character, which may first flush pending input and require another EOF; raw mode or disabled VEOF is an error. Windows EOF permanently closes stdin while keeping output readable. EOF at a shell prompt may exit it. For interrupt/eof check list_clients.client_info.session_controls; delivered=true means the client acknowledged the OS operation within 5 seconds, not that the program stopped. stop cancels the whole session and accepts only optional wait_ms (default 1000, range 0–20000); done/status/canceled confirm the outcome. accepted alone never proves termination. If stop returns done=false, use session_read to check further state and output. Repeated stop does not resend pending cancellation and returns terminal state for an ended session; other actions error on ended sessions. Unknown or unauthorized sessions error. Only input accepts input; only stop accepts wait_ms. Input, interrupt and terminal EOF may repeat side effects; do not blindly retry. Timeout or cancellation can leave delivery uncertain. Use session_read to verify effects and drain output.",
+    "zh-CN": "通过 action=input、interrupt、eof 或 stop 控制现有会话，不会创建新 shell。复用 session_id 可在 shell 存活期间保留状态。所有结果均带 action。input 必须提供 input 文本，不自动添加换行符；返回 accepted 仅表示请求已发送，不代表已读取或执行完成，输入由当前执行的命令接收；空闲会话拒绝 input，后续命令请通过 execute_command 提交。interrupt 在 Linux/macOS 向终端前台进程组发送 SIGINT，不强制结束整个会话；Windows 管道不支持中断。eof 排在先前输入之后：Linux/macOS 规范终端发送配置的 VEOF 字符，可能先交付待处理输入而需再次 EOF；原始模式或禁用 VEOF 时报错。Windows EOF 永久关闭标准输入，输出仍可读取。在 shell 提示符处 EOF 可能退出 shell。interrupt/eof 前请查看 list_clients.client_info.session_controls；delivered=true 表示 5 秒内收到客户端对操作系统操作的确认，不代表程序已停止。stop 取消整个会话，仅可附带 wait_ms（默认 1000，范围 0–20000）；用 done/status/canceled 判断结果，不能仅凭 accepted 确认停止。stop 返回 done=false 时，必须通过 session_read 继续检查状态和输出。重复 stop 不重发待确认的取消请求，已结束时返回终态；其他 action 对已结束会话报错。未知或无权限的会话报错。仅 input 可带 input，仅 stop 可带 wait_ms。重复输入、中断或终端 EOF 可能重复产生副作用，请勿盲目重试；超时或取消后投递状态可能不确定。通过 session_read 核实效果并读完输出。"
   },
   "mcp.session.control.action": {
     "en": "Operation on this session: input sends stdin text (requires input); interrupt signals the foreground task; eof ends input according to platform semantics; stop cancels the entire session (optional wait_ms).",
@@ -1022,5 +990,81 @@
   "mcp.result.p2p": {
     "en": "Whether the client supports built-in p2p-cli initialization.",
     "zh-CN": "客户端是否支持内置 p2p-cli 初始化。"
+  },
+  "session.client.upgrade.required": {
+    "en": "This client does not support persistent sessions. Update the client before executing commands.",
+    "zh-CN": "此客户端不支持持续会话，请更新客户端后执行命令。"
+  },
+  "session.busy": {
+    "en": "session_busy: session %s is running a command. Read or control it, or omit the terminal target for independent work.",
+    "zh-CN": "session_busy：会话 %s 正在执行命令，请读取或控制该会话，或不指定终端以独立执行。"
+  },
+  "session.initial.options.only": {
+    "en": "cwd and env initialize a new terminal only. Change a reused shell with cd/export, or create another terminal.",
+    "zh-CN": "cwd 和 env 仅用于初始化新终端；复用时通过 shell 命令修改目录和环境，或新建其他终端。"
+  },
+  "session.new.conflict": {
+    "en": "terminal_name cannot be combined with session_id.",
+    "zh-CN": "terminal_name 不能与 session_id 同时使用。"
+  },
+  "session.command.changed": {
+    "en": "A newer command has started in this session. Use session_read without command_id to read the retained session output.",
+    "zh-CN": "此会话已开始更新的命令；可不带 command_id 调用 session_read 读取保留输出。"
+  },
+  "mcp.execution.command.id": {
+    "en": "Optional command identity returned by execute_command; rejects a snapshot if the session has advanced to another command.",
+    "zh-CN": "execute_command 返回的可选命令标识；若会话已切换到下一条命令则拒绝返回混淆的快照。"
+  },
+  "mcp.execution.wait": {
+    "en": "Completion wait in milliseconds, 0–20000; default 10000. Anonymous terminals close if the command finishes first; otherwise the client retains the same shell under a random terminal_name. 0 retains immediately. Never stops a running command.",
+    "zh-CN": "等待命令完成的时间，0–20000 毫秒，默认 10000。匿名终端内命令先完成则自动关闭，否则客户端将同一 shell 保留并返回随机 terminal_name；0 表示立即保留。不会终止运行中的命令。"
+  },
+  "mcp.result.session_created": {
+    "en": "True when this call created a fresh shell; previous shell state is unavailable.",
+    "zh-CN": "本次调用创建了新 shell，之前的 shell 状态不可用。"
+  },
+  "mcp.result.session_alive": {
+    "en": "Whether this terminal can accept another command when idle.",
+    "zh-CN": "此终端在空闲时是否可继续执行命令。"
+  },
+  "mcp.result.command_done": {
+    "en": "Whether the latest command has completed, independently of terminal lifetime.",
+    "zh-CN": "最新命令是否已结束，与终端生命周期独立。"
+  },
+  "mcp.result.command_id": {
+    "en": "Identity of the latest submitted command.",
+    "zh-CN": "最新提交命令的标识。"
+  },
+  "mcp.result.persistent_sessions": {
+    "en": "Whether this client supports persistent command sessions.",
+    "zh-CN": "此客户端是否支持持续命令会话。"
+  },
+  "mcp.execution.status": {
+    "en": "running: latest command still active; completed: latest command ended. Check session_alive separately.",
+    "zh-CN": "running：最新命令尚在执行；completed：最新命令已结束。终端是否可复用请检查 session_alive。"
+  },
+  "mcp.execution.session.id": {
+    "en": "Reuse this exact terminal instance. Closed or unknown IDs are rejected. Cannot be combined with terminal_name. Omit both to create an anonymous terminal.",
+    "zh-CN": "精确复用此终端实例；已关闭或未知 ID 会报错，不能与 terminal_name 同时使用。两者均省略则新建匿名终端。"
+  },
+  "session.input.requires.command": {
+    "en": "No command is waiting for input. Submit new commands with execute_command.",
+    "zh-CN": "当前没有命令可接收输入，请使用 execute_command 执行新命令。"
+  },
+  "mcp.execution.terminal.name": {
+    "en": "Optional terminal name (1–64 printable characters), scoped to the target client connection. Reuse it if present; otherwise create a persistent shell. Cannot be combined with session_id. Omit both for a fresh anonymous terminal.",
+    "zh-CN": "可选终端名称（1–64 个可打印字符），作用域为目标客户端连接。存在则复用，不存在则创建持久 shell；不能与 session_id 同时使用。两者均省略则新建匿名终端。"
+  },
+  "mcp.result.terminal_name": {
+    "en": "Persistent terminal name; empty for a one-shot anonymous terminal.",
+    "zh-CN": "持久终端名称；一次性匿名终端为空。"
+  },
+  "mcp.result.persistent": {
+    "en": "Whether the terminal is retained after command completion and requires explicit stop (unless its shell exits or disconnects).",
+    "zh-CN": "终端是否在命令完成后继续保留，需要主动 stop 关闭（shell 自行退出或断线除外）。"
+  },
+  "mcp.result.promoted": {
+    "en": "Whether this terminal began anonymously and was retained when its initial wait elapsed (including wait_ms=0).",
+    "zh-CN": "终端是否从匿名终端在首次等待到期后保留而来，包括 wait_ms=0。"
   }
 }

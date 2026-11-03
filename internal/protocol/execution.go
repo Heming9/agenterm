@@ -2,24 +2,24 @@ package protocol
 
 import (
 	"agenterm/internal/i18n"
+	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
-const DefaultCommandTimeoutMS = 60_000
-const MaxCommandTimeoutMS = 24 * 60 * 60 * 1000
+// MaxTerminalsPerClient bounds live terminals in a client process. Finished
+// session records and P2P bootstrap processes do not consume terminal slots.
+const MaxTerminalsPerClient = 10
 
-// ExecOptions apply to one command only. Env overrides the inherited environment.
-// A zero timeout leaves the command running until it exits or is canceled.
+// ExecOptions initialize a new terminal. Commands run until they exit or the
+// session is explicitly stopped; a tool's wait_ms never limits execution.
 type ExecOptions struct {
-	Cwd       string            `json:"cwd,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	TimeoutMS int64             `json:"timeout_ms,omitempty"`
+	Cwd string            `json:"cwd,omitempty"`
+	Env map[string]string `json:"env,omitempty"`
 }
 
 func (o ExecOptions) Validate() error {
-	if o.TimeoutMS < 0 || o.TimeoutMS > MaxCommandTimeoutMS {
-		return i18n.NewError("execution.timeout.invalid", MaxCommandTimeoutMS)
-	}
 	if strings.ContainsRune(o.Cwd, 0) {
 		return i18n.NewError("execution.cwd.invalid")
 	}
@@ -31,17 +31,19 @@ func (o ExecOptions) Validate() error {
 	return nil
 }
 
-// CommandResult is returned as MCP structuredContent and as JSON text.
-type CommandResult struct {
-	Stdout    string `json:"stdout"`
-	Stderr    string `json:"stderr"`
-	ExitCode  int    `json:"exit_code"`
-	TimedOut  bool   `json:"timed_out"`
-	Canceled  bool   `json:"canceled"`
-	Truncated bool   `json:"truncated"`
-	Error     string `json:"error,omitempty"`
-}
-
-func (r CommandResult) Failed() bool {
-	return r.ExitCode != 0 || r.TimedOut || r.Canceled || r.Error != ""
+// ValidateTerminalName is shared by admission and the public API. Names are
+// scoped to a client connection; IDs always identify one immutable shell.
+func ValidateTerminalName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if !utf8.ValidString(name) || utf8.RuneCountInString(name) > 64 || strings.TrimSpace(name) == "" {
+		return fmt.Errorf("invalid terminal_name: use 1–64 printable characters")
+	}
+	for _, r := range name {
+		if !unicode.IsPrint(r) {
+			return fmt.Errorf("invalid terminal_name: use 1–64 printable characters")
+		}
+	}
+	return nil
 }

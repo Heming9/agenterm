@@ -17,7 +17,7 @@ var shellOnce sync.Once
 var selectedShell commandShell
 
 // Shell reports the shell selected for commands in this client process.
-func Shell() string { return getShell().path }
+func Shell() string { return persistentShellPath() }
 
 func getShell() commandShell {
 	shellOnce.Do(func() {

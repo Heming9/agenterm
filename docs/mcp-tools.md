@@ -1,28 +1,46 @@
 # MCP tool reference
 
-Current source builds publish explicit output schemas and behavior annotations for all eight tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
+Current source builds publish explicit output schemas and behavior annotations for all seven tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
 
 | Tool | When to use it | Main result fields |
 | --- | --- | --- |
 | `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
 | `list_clients` | Inspect devices or wait for a connection. | `clients`; waiting calls also return `status`. |
 | `p2p_transfer_start` | Bootstrap p2p-cli remotely and return Agent-side scripts after remote signaling registration. | `connection_id`, endpoint IDs, `state`, `shell_script`, `powershell_script`. |
-| `execute_command` | Run a short non-interactive command and wait for its result. | `stdout`, `stderr`, `exit_code`, `timed_out`, `canceled`, `truncated`, optional `error`. |
-| `session_start` | Start an interactive or long-running process. | `session_id`, initial `cursor=0`. |
-| `session_read` | Read paginated output and check session completion. | `output`, `next_cursor`, `has_more`, `truncated`, `done`; terminal results add exit, timeout, cancellation and error fields. |
+| `execute_command` | Create an anonymous one-shot terminal, retaining it on wait expiry; create/reuse persistent terminals by name. | `session_id`, `command_id`, `session_created`, `status`, `output`, `next_cursor`, `command_done`, `session_alive`, and completion fields. |
+| `session_read` | Read paginated output and inspect command completion separately from terminal lifetime. | `output`, `next_cursor`, `has_more`, `truncated`, `command_done`, `session_alive`, `done`, and completion fields. |
 | `session_control` | Send input, interrupt, EOF or stop using `action`. | `action`; input returns `accepted`, interrupt/EOF return `delivered`, stop returns confirmation and terminal fields. |
-| `session_list` | Rediscover this token's retained sessions, optionally filtered by `client_id`, even for offline devices. | `sessions`: session, device, original command, timestamps, lifecycle status and retained output cursor range. |
+| `session_list` | Rediscover this token's retained sessions, optionally filtered by `client_id`, even for offline devices. | `sessions`: session, device, latest command, timestamps, lifecycle status and retained output cursor range. |
 
 
 ## Common usage
 
-Create an invitation and share its connection command privately. Once the device connects, execute commands. For interactive work or persistent shell state, start a session and send input:
+Create an invitation and share its connection command privately. Once the device connects, execute commands. Specify a terminal name or ID through execute_command to preserve shell state across subsequent commands. When the current command requests input, use session_control:
 
 ```json
 {"session_id":"…","action":"input","input":"pwd\n"}
 ```
 
 Use the connected server’s `tools/list` as the source of truth for tools and fields.
+
+Fast anonymous command (automatically closed on completion):
+
+```json
+{"command":"pwd"}
+```
+
+Independent terminal for a long task:
+
+```json
+{"command":"npm run build","cwd":"/project","terminal_name":"build","wait_ms":1000}
+```
+
+Reuse the terminal:
+
+```json
+{"session_id":"…","command":"git status"}
+```
+
 
 ## Details
 
@@ -43,27 +61,51 @@ After generating connection instructions with `create_client`, the agent must pr
 </details>
 
 <details>
+<summary>Responsibility and state ownership</summary>
+
+| Responsibility | Owner |
+| --- | --- |
+| Terminal IDs and names, creation/reuse, busy and input validation | Shared client execution core for CLI and GUI |
+| Ten live-terminal limit, processes, retention on wait expiry and closure | Client |
+| Authorization, device routing, request correlation, waiting and output caching | Server |
+| Finished-record retention and cache capacity | Server; cache cleanup never closes a terminal |
+
+The client reports its canonical terminal ID, name, creation/reuse decision and retention policy before output starts. The server mirrors these facts and never selects or keeps terminals alive based on cached state. Late admission remains discoverable after waiter cancellation. The client alone decides whether anonymous completion closes the shell or waiting expiry retains it; server cache cleanup never closes terminals.
+
+</details>
+
+<details>
 <summary>Commands and interactive sessions</summary>
 
-Each `execute_command` starts a fresh shell. Set `cwd` and `env` explicitly; they do not persist across calls. Its timeout defaults to 60 seconds, with `timeout_ms=0` disabling it. Captured stdout/stderr share a 1 MiB limit. Use session tools for prompts, incremental output or long jobs, and retain the `session_id` and the byte-based `next_cursor`. Session buffers retain the latest 1 MiB; inspect `truncated` to detect missing older output.
+`execute_command` handles short commands, long jobs and interactive tasks; `session_start` and `new_session` have been removed. Without `terminal_name` or `session_id`, every call creates a fresh anonymous terminal. If its command completes within `wait_ms`, the terminal closes automatically and releases its slot before returning. If waiting expires first, the client retains the same shell under a random `terminal_name`; its state and running process continue without restarting. `terminal_name` reuses an existing named terminal or creates a persistent one if absent. Names are scoped to the target client connection. `session_id` reuses an exact instance; unknown or closed IDs error and never create replacements. These two targets cannot be combined. Multi-device mode requires `client_id` unless `session_id` identifies the device. `session_created=true` identifies a new shell; false means reuse. There is no default terminal or implicit reuse.
 
-To preserve working directory, variables, functions or an activated environment, explicitly launch a persistent shell with `session_start` (for example, `bash -i` where installed on Linux/macOS), then send commands through `session_control(action="input")` using the same `session_id`. Each `session_start` creates an independent process; a one-shot command leaves no persistent shell behind. Client disconnection ends sessions; reconnect does not restore shell state.
+Directory, variables, functions and environment activation persist within the shell. `cwd`/`env` initialize new sessions only and are rejected on reuse; use `cd`, `export` or the target shell equivalents afterward. A terminal accepts one command at a time. Busy terminals return `session_busy` with the session ID, without opening another terminal or queueing work.
+
+`wait_ms` defaults to 10000 (10 seconds), range 0–20000. It begins at client admission and includes shell startup for a new anonymous terminal. Setting 0 retains an anonymous terminal immediately; the call still waits for client admission. Waiting expiry never kills execution. Fast results report `status=completed`; running results include available output and `next_cursor`. Read with `session_read` and interact with `session_control`. `persistent=true` means command completion will leave the shell alive; `promoted=true` identifies an anonymous terminal retained after its initial wait (including 0). Named and promoted terminals do not expire when idle; close them with `session_control(action=stop)`. Canceling an MCP waiter does not cancel accepted work or its client-owned retention timer. `timeout_ms` is no longer supported.
+
+Output is a combined terminal `output` stream. `command_done`/`exit_code` describe the latest command; `done` means the terminal ended; `session_alive` indicates availability. A fast anonymous command returns `command_done=true`, `done=true`, `session_alive=false`, `persistent=false`, `promoted=false`, and an empty terminal name. A completed named or promoted command returns `done=false`, `session_alive=true`, `persistent=true`. Client shell integration reports command boundaries and exit codes without guessing visible prompts.
+
+Linux/macOS use the reported shell and a PTY. Windows uses PowerShell and pipes for basic input interaction without full terminal emulation. Persistent terminals inherit client environment but do not load user shell startup files, so the integration remains reliable. Prompt hooks/PS1 are reserved; do not override them or terminal echo settings. Initialize additional environments explicitly in commands. Both server and client must be updated; older clients receive an upgrade error.
+
+Each client process permits at most 10 live terminals, including starting, running, idle and closing shells until the OS process exits. CLI/GUI share the same client execution layer and quota; multiple connections within a process share the limit. Other processes using the same token have independent limits. At capacity, anonymous creation or a missing named terminal returns a terminal-limit error. Explicitly selecting an existing terminal by name or ID still permits reuse; another terminal is never chosen automatically. Closed output history consumes no slots. The server applies only output-cache retention, never terminal quotas or idle cancellation. Disconnect terminates the connection’s terminals; reconnect loses shell state. Restarting the server frontend preserves runtime-owned connections and terminals.
 
 </details>
 
 <details>
 <summary>Reading output and finding sessions</summary>
 
-`session_read.max_bytes` defaults to 16384, with a range of 4–65536 bytes. Output never splits a UTF-8 character. Continue from each returned `next_cursor`. `has_more=true` means retained output remains; even with `done=true`, keep reading until `has_more=false`. `done` and `exit_code` describe the whole session process, not individual commands in a persistent shell. Pagination alone does not set `truncated`.
+`session_read.max_bytes` defaults to 16384, with a range of 4–65536 bytes. Output never splits a UTF-8 character. Continue from each returned `next_cursor`. `has_more=true` means retained output remains; even with `done=true`, keep reading until `has_more=false`. `command_done` and `exit_code` describe the latest command; `done` only indicates terminal termination. Pagination alone does not set `truncated`.
 
-`session_list` returns this token's sessions in start-time order, including retained results for offline devices. `output_start_cursor` points to the earliest retained output; `output_end_cursor` points after the latest output, so reading from it skips existing output. Session `status` is `running`, `stopping` or `finished`; it does not infer shell idleness, current directory or individual command state. Finished records are retained for up to 30 minutes and may be evicted when new sessions start.
+`session_list` returns terminals in creation order, including retained records for offline devices. Filter by `client_id`; `terminal_name`, `persistent` and `promoted` describe client-reported retention. The old `default` flag has been removed. `status` is `idle`, `running`, `stopping` or `finished`. `command`/`command_id` identify the latest submitted command, `command_done` means command completion, and `done` means terminal termination. `output_start_cursor` is the earliest retained offset and `output_end_cursor` the end. Ended records last up to 30 minutes or until replaced by newer terminals.
+
+Optionally pass `command_id` to `session_read` to pin its status to that command; if a newer command has started, the read fails rather than mislabeling the result. Omit it to read retained session output by byte cursor across commands. Buffers retain the latest 1 MiB; dropping older requested output sets `truncated=true`, while pagination alone does not. Drain `has_more` even after command completion.
 
 </details>
 
 <details>
 <summary>Session control: input, interrupt, EOF and stop</summary>
 
-`session_control` requires `session_id` and `action`. Only `action=input` accepts and requires `input`; only `action=stop` accepts optional `wait_ms` (default 1000). Unrelated parameters are rejected. Every successful result includes its `action`, with separate result schemas for sent input, acknowledged control and stop confirmation. The tool is conservatively marked non-idempotent because input and interruption can repeat side effects; repeated stop remains safe as described below. Management access exposes eight tools; device-scoped access exposes seven, excluding `create_client`.
+`session_control` requires `session_id` and `action`. Input is only accepted by an active command; idle terminals reject it. Submit subsequent commands through `execute_command`. Only `action=input` accepts and requires `input`; only `action=stop` accepts optional `wait_ms` (default 1000). Unrelated parameters are rejected. Every successful result includes its `action`, with separate result schemas for sent input, acknowledged control and stop confirmation. The tool is conservatively marked non-idempotent because input and interruption can repeat side effects; repeated stop remains safe as described below. Management access exposes seven tools; device-scoped access exposes six, excluding `create_client`.
 
 Before interrupt or EOF, check `list_clients.client_info.session_controls` (`interrupt` and/or `eof`). An empty list means unavailable; older clients may need updating. Both operations wait up to 5 seconds for client acknowledgment. `delivered=true` does not guarantee the program handled the operation; read output to verify. A timeout or cancellation leaves delivery uncertain, so do not blindly retry.
 

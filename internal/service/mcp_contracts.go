@@ -1,7 +1,6 @@
 package service
 
 import (
-	"agenterm/internal/protocol"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -16,22 +15,29 @@ type clientsResult struct {
 	Status  string       `json:"status,omitempty"`
 }
 
-type sessionStartResult struct {
-	SessionID string `json:"session_id"`
-	Cursor    int64  `json:"cursor"`
+type executeResult struct {
+	sessionReadResult
+	SessionCreated bool `json:"session_created"`
 }
 
 type sessionReadResult struct {
-	SessionID  string `json:"session_id"`
-	Output     string `json:"output"`
-	NextCursor int64  `json:"next_cursor"`
-	Truncated  bool   `json:"truncated"`
-	HasMore    bool   `json:"has_more"`
-	Done       bool   `json:"done"`
-	ExitCode   *int   `json:"exit_code,omitempty"`
-	TimedOut   *bool  `json:"timed_out,omitempty"`
-	Canceled   *bool  `json:"canceled,omitempty"`
-	Error      string `json:"error,omitempty"`
+	TerminalName string `json:"terminal_name,omitempty"`
+	Persistent   *bool  `json:"persistent,omitempty"`
+	Promoted     *bool  `json:"promoted,omitempty"`
+	SessionAlive *bool  `json:"session_alive,omitempty"`
+	CommandDone  *bool  `json:"command_done,omitempty"`
+	CommandID    string `json:"command_id,omitempty"`
+	Status       string `json:"status,omitempty"`
+	SessionID    string `json:"session_id"`
+	Output       string `json:"output"`
+	NextCursor   int64  `json:"next_cursor"`
+	Truncated    bool   `json:"truncated"`
+	HasMore      bool   `json:"has_more"`
+	Done         bool   `json:"done"`
+	ExitCode     *int   `json:"exit_code,omitempty"`
+	TimedOut     *bool  `json:"timed_out,omitempty"`
+	Canceled     *bool  `json:"canceled,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 type sessionWriteResult struct {
@@ -43,6 +49,12 @@ type sessionListResult struct {
 }
 
 type sessionInfo struct {
+	TerminalName      string     `json:"terminal_name,omitempty"`
+	Persistent        bool       `json:"persistent"`
+	Promoted          bool       `json:"promoted"`
+	CommandID         string     `json:"command_id,omitempty"`
+	CommandDone       bool       `json:"command_done"`
+	SessionAlive      bool       `json:"session_alive"`
 	SessionID         string     `json:"session_id"`
 	ClientID          string     `json:"client_id"`
 	Command           string     `json:"command"`
@@ -98,11 +110,15 @@ func describeResult(schema *jsonschema.Schema) {
 	}
 	for name, property := range schema.Properties {
 		property.Description = serverText("mcp.result." + name)
+		if name == "status" && schema.Properties["command_done"] != nil && schema.Properties["client_id"] == nil {
+			property.Description = serverText("mcp.execution.status")
+			property.Enum = []any{"running", "completed"}
+		}
 		if name == "status" && schema.Properties["client_id"] != nil {
 			property.Description = serverText("mcp.client.status")
 			if schema.Properties["session_id"] != nil {
 				property.Description = serverText("mcp.session.status")
-				property.Enum = []any{"running", "stopping", "finished"}
+				property.Enum = []any{"idle", "running", "stopping", "finished"}
 			}
 		}
 		describeResult(property)
@@ -149,9 +165,7 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 	case "list_clients":
 		output = resultSchema[clientsResult]()
 	case "execute_command":
-		output = resultSchema[protocol.CommandResult]()
-	case "session_start":
-		output = resultSchema[sessionStartResult]()
+		output = resultSchema[executeResult]()
 	case "session_read":
 		output = resultSchema[sessionReadResult]()
 	case "session_list":
@@ -162,7 +176,7 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 		output = resultSchema[p2pStartResult]()
 	}
 	readOnly := name == "list_clients" || name == "session_read" || name == "session_list"
-	destructive := name == "execute_command" || name == "session_start" || name == "session_control" || name == "p2p_transfer_start"
+	destructive := name == "execute_command" || name == "session_control" || name == "p2p_transfer_start"
 	openWorld := destructive
 	return &mcp.Tool{
 		Name: name, Description: serverText(description), InputSchema: input, OutputSchema: output,

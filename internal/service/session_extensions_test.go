@@ -4,6 +4,7 @@ import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +14,66 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func TestPersistentProtocolCapability(t *testing.T) {
+	for _, tc := range []struct {
+		name, header string
+		accepted     bool
+	}{
+		{name: "missing"},
+		{name: "legacy", header: "1"},
+		{name: "current", header: protocol.PersistentSessionsVersion, accepted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newMultiHarness(t, 0)
+			token := h.create(t, false)
+			decoded, _ := protocol.Decode(token)
+			headers := http.Header{"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current}}
+			if tc.header != "" {
+				headers.Set(protocol.PersistentSessionsHeader, tc.header)
+			}
+			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), headers)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ws.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if _, err := h.s.waitForClients(ctx, decoded.Secret, time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if tc.accepted {
+				go serveTestDevice(ws, "compatible", nil, nil)
+			}
+			out := h.call(t, token, "execute_command", map[string]any{"command": "probe", "wait_ms": 0}, !tc.accepted).(map[string]any)
+			h.s.mu.Lock()
+			count := len(h.s.sessions)
+			h.s.mu.Unlock()
+			if tc.accepted {
+				if count != 1 || out["session_id"] == "" {
+					t.Fatalf("compatible client rejected: sessions=%d result=%v", count, out)
+				}
+			} else {
+				if count != 0 {
+					t.Fatalf("unsupported client acquired %d sessions", count)
+				}
+				_ = ws.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+				for {
+					var message protocol.Message
+					if err := ws.ReadJSON(&message); err != nil {
+						if timeout, ok := err.(net.Error); !ok || !timeout.Timeout() {
+							t.Fatal(err)
+						}
+						break
+					}
+					if message.Type != "latency" {
+						t.Fatalf("dispatched to unsupported client: %+v", message)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestSessionReadUTF8PaginationAfterExit(t *testing.T) {
 	p := &session{id: "utf8", changed: make(chan struct{})}
 	want := "abc你好🙂xyz"
@@ -21,7 +82,7 @@ func TestSessionReadUTF8PaginationAfterExit(t *testing.T) {
 	var got strings.Builder
 	var cursor int64
 	for {
-		r, err := p.read(context.Background(), cursor, 0, 4)
+		r, err := p.readCommand(context.Background(), cursor, 0, 4, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,18 +103,18 @@ func TestSessionReadUTF8PaginationAfterExit(t *testing.T) {
 	if got.String() != want || cursor != int64(len(want)) {
 		t.Fatalf("lost output: %q", got.String())
 	}
-	if _, err := p.read(context.Background(), 4, 0, 4); err == nil {
+	if _, err := p.readCommand(context.Background(), 4, 0, 4, ""); err == nil {
 		t.Fatal("accepted a cursor inside a multibyte character")
 	}
 	for _, limit := range []int{0, 1, 3, maxSessionReadBytes + 1} {
-		if _, err := p.read(context.Background(), 0, 0, limit); err == nil {
+		if _, err := p.readCommand(context.Background(), 0, 0, limit, ""); err == nil {
 			t.Fatalf("accepted invalid limit %d", limit)
 		}
 	}
-	if _, err := p.read(context.Background(), -1, 0, 4); err == nil {
+	if _, err := p.readCommand(context.Background(), -1, 0, 4, ""); err == nil {
 		t.Fatal("accepted negative cursor")
 	}
-	if _, err := p.read(context.Background(), cursor+1, 0, 4); err == nil {
+	if _, err := p.readCommand(context.Background(), cursor+1, 0, 4, ""); err == nil {
 		t.Fatal("accepted cursor beyond output")
 	}
 }
@@ -61,7 +122,7 @@ func TestSessionReadUTF8PaginationAfterExit(t *testing.T) {
 func TestSessionTruncationPreservesUTF8Boundary(t *testing.T) {
 	p := &session{id: "utf8", changed: make(chan struct{})}
 	p.accept(protocol.Message{Type: "output", Output: strings.Repeat("你", maxSessionOutput/3+2)})
-	r, err := p.read(context.Background(), 0, 0, 4)
+	r, err := p.readCommand(context.Background(), 0, 0, 4, "")
 	if err != nil || r["truncated"] != true || r["output"] != "你" || !utf8.Valid(p.output) || p.offset%3 != 0 {
 		t.Fatalf("invalid truncated page: %v err=%v offset=%d", r, err, p.offset)
 	}
@@ -100,7 +161,7 @@ func TestSessionListIsolationFilterAndDisconnectedHistory(t *testing.T) {
 	go serveTestDevice(wsB, "B", nil, nil)
 	go serveTestDevice(wsOther, "other", nil, nil)
 	start := func(auth, clientID, command string) string {
-		return h.call(t, auth, "session_start", map[string]any{"client_id": clientID, "command": command}, false).(map[string]any)["session_id"].(string)
+		return h.call(t, auth, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "client_id": clientID, "command": command}, false).(map[string]any)["session_id"].(string)
 	}
 	idA := start(token, a, "first")
 	idB := start(token, b, "second")
@@ -116,7 +177,7 @@ func TestSessionListIsolationFilterAndDisconnectedHistory(t *testing.T) {
 		t.Fatalf("list order/isolation: %v", items)
 	}
 	info := items[0].(map[string]any)
-	if info["command"] != "first" || info["status"] != "running" || info["done"] != false || info["started_at"] == "" || info["output_start_cursor"] != float64(0) || info["output_end_cursor"] != float64(len("A:first")) {
+	if info["command"] != "first" || info["status"] != "idle" || info["done"] != false || info["started_at"] == "" || info["output_start_cursor"] != float64(0) || info["output_end_cursor"] != float64(len("A:first")) {
 		t.Fatalf("missing session metadata: %v", info)
 	}
 	if len(list(token, map[string]any{"client_id": b})) != 1 || len(list(token, map[string]any{"client_id": otherID})) != 0 || len(list(other, map[string]any{})) != 1 {
@@ -168,12 +229,15 @@ func TestSessionControlAcknowledgmentAndErrors(t *testing.T) {
 			if ws.ReadJSON(&m) != nil {
 				return
 			}
+			if m.Type == "session_exec" {
+				m = acceptTestSession(ws, m)
+			}
 			if m.Type == "eof" {
 				_ = ws.WriteJSON(protocol.Message{Type: "control_done", ID: m.RequestID, Error: "raw terminal rejects EOF"})
 			}
 		}
 	}()
-	id := h.call(t, token, "session_start", map[string]any{"command": "test"}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
 	r := h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, true).(map[string]any)
 	if !strings.Contains(r["error"].(string), "raw terminal") {
 		t.Fatalf("client failure was lost: %v", r)
@@ -185,14 +249,13 @@ func TestSessionControlAcknowledgmentAndErrors(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	if out, err := p.control(ctx, "interrupt"); err == nil || out.Delivered {
+	if out, err := p.requestControl(ctx, "interrupt", ""); err == nil || out.Delivered {
 		t.Fatal("unacknowledged signal reported as delivered")
 	}
 	p.client.mu.Lock()
-	_, leaked := p.client.pending[id]
 	count := len(p.client.pending)
 	p.client.mu.Unlock()
-	if !leaked || count != 1 {
+	if count != 0 {
 		t.Fatalf("control waiter leaked: %d", count)
 	}
 }
@@ -205,7 +268,7 @@ func TestSessionControlsRequireAdvertisedCapabilities(t *testing.T) {
 			decoded, _ := protocol.Decode(token)
 			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
-				protocol.SessionControlsHeader: {capabilities}, protocol.PlatformHeader: {"windows"},
+				protocol.SessionControlsHeader: {capabilities}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion}, protocol.PlatformHeader: {"windows"},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -218,7 +281,7 @@ func TestSessionControlsRequireAdvertisedCapabilities(t *testing.T) {
 			if err != nil || len(clients) != 1 || len(clients[0].Environment.SessionControls) != map[string]int{"": 0, "eof": 1}[capabilities] {
 				t.Fatalf("capability discovery: %v %v", clients, err)
 			}
-			id := h.call(t, token, "session_start", map[string]any{"command": "test"}, false).(map[string]any)["session_id"].(string)
+			id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
 			h.call(t, token, "session_control", map[string]any{"action": "interrupt", "session_id": id}, true)
 			h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, capabilities == "")
 		})
@@ -237,6 +300,9 @@ func TestConcurrentSessionControlsMatchTheirAcknowledgments(t *testing.T) {
 			if ws.ReadJSON(&m) != nil {
 				return
 			}
+			if m.Type == "session_exec" {
+				m = acceptTestSession(ws, m)
+			}
 			if m.Type == "interrupt" || m.Type == "eof" {
 				requests = append(requests, m)
 			}
@@ -250,7 +316,7 @@ func TestConcurrentSessionControlsMatchTheirAcknowledgments(t *testing.T) {
 			_ = ws.WriteJSON(reply)
 		}
 	}()
-	id := h.call(t, token, "session_start", map[string]any{"command": "test"}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
 	decoded, _ := protocol.Decode(token)
 	p, err := h.s.getSession(decoded.Secret, id)
 	if err != nil {
@@ -266,7 +332,7 @@ func TestConcurrentSessionControlsMatchTheirAcknowledgments(t *testing.T) {
 	results := make(chan result, 2)
 	for _, action := range []string{"interrupt", "eof"} {
 		go func() {
-			out, err := p.control(ctx, action)
+			out, err := p.requestControl(ctx, action, "")
 			results <- result{action, out, err}
 		}()
 	}

@@ -49,15 +49,16 @@ type Callbacks struct {
 }
 
 type connection struct {
-	ws       *websocket.Conn
-	write    sync.Mutex
-	mu       sync.Mutex
-	running  map[string]*process
-	log      io.Writer
-	command  func(CommandEvent)
-	output   func(string, []byte)
-	workers  sync.WaitGroup
-	outputMu sync.Mutex
+	ws            *websocket.Conn
+	write         sync.Mutex
+	mu            sync.Mutex
+	terminalNames map[string]string
+	running       map[string]*process
+	log           io.Writer
+	command       func(CommandEvent)
+	output        func(string, []byte)
+	workers       sync.WaitGroup
+	outputMu      sync.Mutex
 }
 
 func (c *connection) commandStarted(m protocol.Message) CommandEvent {
@@ -91,16 +92,19 @@ func (c *connection) send(m protocol.Message) error {
 }
 
 type process struct {
-	cancel     context.CancelFunc
-	mu         sync.Mutex
-	inputMu    sync.Mutex
-	ready      chan struct{}
-	readyOnce  sync.Once
-	input      io.WriteCloser
-	output     io.ReadCloser
-	stopped    bool
-	inputEOF   bool
-	inputQueue chan protocol.Message
+	ownsTerminalSlot bool
+	terminalSlotOnce sync.Once
+	terminal         *persistentTerminal
+	cancel           context.CancelFunc
+	mu               sync.Mutex
+	inputMu          sync.Mutex
+	ready            chan struct{}
+	readyOnce        sync.Once
+	input            io.WriteCloser
+	output           io.ReadCloser
+	stopped          bool
+	inputEOF         bool
+	inputQueue       chan protocol.Message
 }
 
 func (p *process) stop() {
@@ -192,6 +196,11 @@ func (c *connection) inputWorker(ctx context.Context, p *process) {
 		case <-ctx.Done():
 			return
 		case m := <-p.inputQueue:
+			if p.terminal != nil {
+				if p.terminal.waitSubmitted(ctx) != nil {
+					return
+				}
+			}
 			if m.Type == "eof" {
 				c.replyControl(p, m)
 			} else if err := p.write(m.Input); err != nil {
@@ -208,25 +217,47 @@ type outputWriter struct {
 }
 
 func (o outputWriter) Write(p []byte) (int, error) {
-	o.c.outputMu.Lock()
-	defer o.c.outputMu.Unlock()
-	if o.c.output != nil {
-		o.c.output(o.id, p)
-	} else {
-		_, _ = o.c.log.Write(p)
-	}
-	if err := o.c.send(protocol.Message{Type: "output", ID: o.id, Output: string(p), Stream: o.stream}); err != nil {
+	if err := o.c.forwardOutput(protocol.Message{Type: "output", ID: o.id, Stream: o.stream}, o.id, p); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
 
-func (c *connection) run(m protocol.Message) {
-	ctx, cancel := context.WithCancel(context.Background())
-	if m.TimeoutMS > 0 && m.TimeoutMS <= protocol.MaxCommandTimeoutMS {
-		cancel()
-		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(m.TimeoutMS)*time.Millisecond)
+// An empty command ID keeps idle terminal output out of command callbacks.
+func (c *connection) forwardOutput(m protocol.Message, commandID string, data []byte) error {
+	c.outputMu.Lock()
+	defer c.outputMu.Unlock()
+	if c.output != nil {
+		if commandID != "" {
+			c.output(commandID, data)
+		}
+	} else {
+		_, _ = c.log.Write(data)
 	}
+	m.Output = string(data)
+	return c.send(m)
+}
+
+func processResult(cmd *exec.Cmd, err error) (code int, detail string) {
+	code = -1
+	if cmd != nil && cmd.ProcessState != nil {
+		code = cmd.ProcessState.ExitCode()
+	}
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		detail = err.Error()
+	}
+	return
+}
+
+func (c *connection) run(m protocol.Message) {
+	// Legacy execution paths share the same resource budget. P2P bootstraps
+	// are transport helpers rather than managed terminals.
+	if m.P2P == nil && !acquireTerminalSlot() {
+		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: -1, Error: i18n.Text(i18n.Terminal(), "session.limit.reached.try.again.later")})
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 	if m.P2P != nil {
 		original := cancel
 		var once sync.Once
@@ -234,7 +265,7 @@ func (c *connection) run(m protocol.Message) {
 		m.Command = m.P2P.Script
 		m.Env = map[string]string{"AGENTERM_P2P_CONFIG_B64": m.P2P.ConfigBase64}
 	}
-	p := &process{cancel: cancel, ready: make(chan struct{}), inputQueue: make(chan protocol.Message, 32)}
+	p := &process{cancel: cancel, ready: make(chan struct{}), inputQueue: make(chan protocol.Message, 32), ownsTerminalSlot: m.P2P == nil}
 	c.mu.Lock()
 	c.running[m.ID] = p
 	c.mu.Unlock()
@@ -245,6 +276,7 @@ func (c *connection) run(m protocol.Message) {
 	}
 	go func() {
 		defer c.workers.Done()
+		defer p.releaseTerminalSlot()
 		defer func() { p.stop(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
 		stopIO := context.AfterFunc(ctx, p.stop)
 		defer stopIO()
@@ -254,9 +286,9 @@ func (c *connection) run(m protocol.Message) {
 		}
 		event := c.commandStarted(display)
 		err := m.ExecOptions.Validate()
-		code := -1
+		var cmd *exec.Cmd
 		if err == nil {
-			cmd := shellCommand(ctx, m.Command)
+			cmd = shellCommand(ctx, m.Command)
 			if m.P2P != nil {
 				cmd = p2pCommand(ctx, m.Command)
 			}
@@ -285,29 +317,17 @@ func (c *connection) run(m protocol.Message) {
 				_ = stdout.Close()
 				_ = stderr.Close()
 			}
-			if cmd.ProcessState != nil {
-				code = cmd.ProcessState.ExitCode()
-			}
 		}
-		detail := ""
-		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+		code, detail := processResult(cmd, err)
 		canceled := errors.Is(ctx.Err(), context.Canceled)
-		if timedOut || canceled {
-			code = -1
-		} else if err != nil {
-			var exitError *exec.ExitError
-			if !errors.As(err, &exitError) {
-				code, detail = -1, err.Error()
-			}
-		}
-		if timedOut {
-			detail = i18n.Text(i18n.Terminal(), "execution.timed.out")
-		}
 		if canceled {
-			detail = i18n.Text(i18n.Terminal(), "execution.canceled")
+			code, detail = -1, i18n.Text(i18n.Terminal(), "execution.canceled")
+		} else if detail != "" {
+			code = -1
 		}
 		c.commandFinished(event, code, detail)
-		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail, TimedOut: timedOut, Canceled: canceled})
+		p.releaseTerminalSlot()
+		_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: code, Error: detail, Canceled: canceled})
 	}()
 }
 
@@ -363,6 +383,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	headers.Set(protocol.ArchHeader, runtime.GOARCH)
 	headers.Set(protocol.SessionControlsHeader, strings.Join(interactiveControls(), ","))
 	headers.Set(protocol.P2PCapabilityHeader, "1")
+	headers.Set(protocol.PersistentSessionsHeader, protocol.PersistentSessionsVersion)
 	headers.Set(protocol.ShellHeader, base64.RawURLEncoding.EncodeToString([]byte(Shell())))
 	cwd, _ := os.Getwd()
 	headers.Set(protocol.DefaultCwdHeader, base64.RawURLEncoding.EncodeToString([]byte(cwd)))
@@ -444,6 +465,8 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			if callbacks.Latency != nil && m.LatencyMS >= 0 && m.LatencyMS <= protocol.HeartbeatTimeout.Milliseconds() {
 				callbacks.Latency(time.Duration(m.LatencyMS) * time.Millisecond)
 			}
+		case "session_exec":
+			c.runPersistent(m)
 		case "exec":
 			c.run(m)
 		case "p2p_start":
@@ -455,7 +478,15 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			p := c.running[m.ID]
 			c.mu.Unlock()
 			if p != nil {
+				if p.terminal != nil {
+					p.terminal.mu.Lock()
+					p.terminal.closed = true
+					p.terminal.stopRetentionTimerLocked()
+					p.terminal.mu.Unlock()
+				}
 				p.stop()
+			} else {
+				_ = c.send(protocol.Message{Type: "done", ID: m.ID, ExitCode: -1, Error: i18n.Text(i18n.Terminal(), "session.already.ended")})
 			}
 		case "interrupt":
 			c.mu.Lock()
@@ -468,19 +499,32 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			p := c.running[m.ID]
 			c.mu.Unlock()
 			detail := i18n.Text(i18n.Terminal(), "session.already.ended")
-			if p != nil {
+			allowed := p != nil
+			if allowed && m.Type == "input" && p.terminal != nil {
+				if err := p.terminal.inputError(); err != nil {
+					detail = err.Error()
+					allowed = false
+				}
+			}
+			if allowed {
 				select {
 				case p.inputQueue <- m:
+					// Input acceptance confirms validation and queueing, not a
+					// potentially blocking stdin write or program consumption.
+					if m.Type == "input" && m.RequestID != "" {
+						_ = c.send(protocol.Message{Type: "control_done", ID: m.RequestID})
+					}
 					continue
 				default:
 					detail = i18n.Text(i18n.Terminal(), "session.input.queue.full")
 				}
 			}
-			if m.Type == "eof" {
+			if m.RequestID != "" {
 				_ = c.send(protocol.Message{Type: "control_done", ID: m.RequestID, Error: detail})
 			} else {
 				_ = c.send(protocol.Message{Type: "output", ID: m.ID, Stream: "stderr", Output: detail})
 			}
+
 		}
 	}
 }

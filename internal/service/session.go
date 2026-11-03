@@ -2,7 +2,6 @@ package service
 
 import (
 	"agenterm/internal/i18n"
-	"agenterm/internal/logging"
 	"context"
 	"fmt"
 	"log/slog"
@@ -16,28 +15,35 @@ import (
 )
 
 const maxSessionOutput = 1 << 20
-const maxSessionsPerToken = 6
+const maxFinishedSessionsPerClient = 10
 const defaultSessionReadBytes = 16 << 10
 const maxSessionReadBytes = 64 << 10
 
 type session struct {
-	log           *slog.Logger
-	id            string
-	owner         string
-	client        *client
-	mu            sync.Mutex
-	output        []byte
-	offset        int64
-	done          bool
-	exitCode      int
-	err           string
-	timedOut      bool
-	canceled      bool
-	ended         time.Time
-	changed       chan struct{}
-	stopRequested bool
-	command       string
-	started       time.Time
+	log            *slog.Logger
+	id             string
+	owner          string
+	client         *client
+	mu             sync.Mutex
+	output         []byte
+	offset         int64
+	done           bool
+	exitCode       int
+	err            string
+	timedOut       bool
+	canceled       bool
+	ended          time.Time
+	changed        chan struct{}
+	keepAlive      bool
+	terminalName   string
+	promoted       bool
+	commandDone    bool
+	commandID      string
+	commandLog     *slog.Logger
+	commandStarted time.Time
+	stopRequested  bool
+	command        string
+	started        time.Time
 }
 
 func (p *session) signal() { close(p.changed); p.changed = make(chan struct{}) }
@@ -59,7 +65,22 @@ func (p *session) accept(m protocol.Message) {
 			p.offset += int64(n)
 		}
 		p.signal()
+	case "session_retained":
+		p.keepAlive, p.terminalName, p.promoted = m.SessionPersistent, m.TerminalName, m.SessionPromoted
+		p.signal()
+	case "command_done":
+		if m.RequestID != p.commandID || p.commandDone {
+			return
+		}
+		p.logCommandCompletion(m)
+		p.commandDone, p.exitCode, p.err = true, m.ExitCode, m.Error
+		p.timedOut, p.canceled = m.TimedOut, m.Canceled
+		p.signal()
 	case "done":
+		if !p.commandDone {
+			p.logCommandCompletion(m)
+		}
+		p.commandDone = true
 		p.done = true
 		p.exitCode = m.ExitCode
 		p.err = m.Error
@@ -76,7 +97,19 @@ func (p *session) accept(m protocol.Message) {
 		p.signal()
 	}
 }
-func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, maxBytes int) (map[string]any, error) {
+
+func (p *session) logCommandCompletion(m protocol.Message) {
+	if p.commandLog == nil {
+		return
+	}
+	level := slog.LevelInfo
+	if m.ExitCode != 0 || m.Error != "" || m.TimedOut || m.Canceled {
+		level = slog.LevelWarn
+	}
+	p.commandLog.Log(context.Background(), level, "command completed", "duration_ms", time.Since(p.commandStarted).Milliseconds(), "exit_code", m.ExitCode, "timed_out", m.TimedOut, "canceled", m.Canceled, "has_error", m.Error != "")
+}
+
+func (p *session) readCommand(ctx context.Context, cursor int64, wait time.Duration, maxBytes int, commandID string) (map[string]any, error) {
 	if maxBytes < 4 || maxBytes > maxSessionReadBytes {
 		return nil, i18n.NewError("session.read.invalid.limit")
 	}
@@ -87,6 +120,10 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, ma
 	defer timer.Stop()
 	for {
 		p.mu.Lock()
+		if commandID != "" && p.commandID != commandID {
+			p.mu.Unlock()
+			return nil, i18n.NewError("session.command.changed")
+		}
 		end := p.offset + int64(len(p.output))
 		if cursor > end {
 			p.mu.Unlock()
@@ -96,7 +133,7 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, ma
 		if truncated {
 			cursor = p.offset
 		}
-		if cursor < end || p.done || wait == 0 {
+		if cursor < end || p.done || p.commandDone || wait == 0 {
 			if cursor < end && !utf8.RuneStart(p.output[cursor-p.offset]) {
 				p.mu.Unlock()
 				return nil, i18n.NewError("session.cursor.invalid.boundary")
@@ -107,13 +144,19 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, ma
 			}
 			text := string(p.output[cursor-p.offset : next-p.offset])
 			result := map[string]any{"session_id": p.id, "output": text, "next_cursor": next, "has_more": next < end, "truncated": truncated, "done": p.done}
-			if p.done {
+			if p.done || p.commandDone {
 				result["exit_code"] = p.exitCode
 				result["timed_out"] = p.timedOut
 				result["canceled"] = p.canceled
 				if p.err != "" {
 					result["error"] = p.err
 				}
+			}
+			result["persistent"], result["promoted"], result["terminal_name"] = p.keepAlive, p.promoted, p.terminalName
+			result["session_alive"], result["command_done"], result["command_id"] = !p.done && !p.stopRequested, p.commandDone, p.commandID
+			result["status"] = "running"
+			if p.commandDone {
+				result["status"] = "completed"
 			}
 			p.mu.Unlock()
 			return result, nil
@@ -129,71 +172,6 @@ func (p *session) read(ctx context.Context, cursor int64, wait time.Duration, ma
 		}
 	}
 }
-func (s *runtimeState) startSession(ctx context.Context, secret, clientID, command string, options protocol.ExecOptions) (*session, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	c, err := s.targetClientLocked(secret, clientID)
-	if err != nil {
-		return nil, err
-	}
-	if s.sessions == nil {
-		s.sessions = make(map[string]*session)
-	}
-	owned := 0
-	oldestFinishedID := ""
-	var oldestFinishedAt time.Time
-	for id, p := range s.sessions {
-		p.mu.Lock()
-		expired := p.done && time.Since(p.ended) > 30*time.Minute
-		if !expired && p.owner == secret {
-			owned++
-			if p.done && (oldestFinishedID == "" || p.ended.Before(oldestFinishedAt)) {
-				oldestFinishedID, oldestFinishedAt = id, p.ended
-			}
-		}
-		p.mu.Unlock()
-		if expired {
-			delete(s.sessions, id)
-		}
-	}
-	if owned >= maxSessionsPerToken && oldestFinishedID == "" {
-		return nil, i18n.NewError("session.limit.reached.try.again.later")
-	}
-	p := &session{id: random(), owner: secret, client: c, changed: make(chan struct{}), command: command, started: time.Now().UTC()}
-	p.log = logging.FromContext(ctx).With("client_id", c.info.ID, "session_id", p.id)
-	ch := make(chan protocol.Message, 256)
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return nil, i18n.NewError("client.disconnected")
-	}
-	c.pending[p.id] = ch
-	c.mu.Unlock()
-	if err := c.send(protocol.Message{Type: "exec", ID: p.id, Command: command, ExecOptions: options, Interactive: true}); err != nil {
-		c.mu.Lock()
-		delete(c.pending, p.id)
-		c.mu.Unlock()
-		return nil, err
-	}
-	// Keep each token's history bounded without evicting running sessions or
-	// allowing one token to consume another token's session allowance.
-	if owned >= maxSessionsPerToken {
-		delete(s.sessions, oldestFinishedID)
-	}
-	s.sessions[p.id] = p
-	p.log.InfoContext(ctx, "session started", "timeout_ms", options.TimeoutMS)
-	go func() {
-		defer func() { c.mu.Lock(); delete(c.pending, p.id); c.mu.Unlock() }()
-		for m := range ch {
-			p.accept(m)
-			if m.Type == "done" {
-				return
-			}
-		}
-		p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: i18n.Text(i18n.Terminal(), "client.disconnected")})
-	}()
-	return p, nil
-}
 func (s *runtimeState) getSession(secret, id string) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,14 +180,6 @@ func (s *runtimeState) getSession(secret, id string) (*session, error) {
 		return nil, i18n.NewError("unknown.session")
 	}
 	return p, nil
-}
-func (p *session) send(typ, input string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.done {
-		return i18n.NewError("session.already.ended")
-	}
-	return p.client.send(protocol.Message{Type: typ, ID: p.id, Input: input})
 }
 
 // Listing also includes disconnected devices' retained results and does not
@@ -231,7 +201,11 @@ func (s *runtimeState) listSessions(secret, clientID string) []sessionInfo {
 		if clientID == "" || clientID == p.client.info.ID {
 			info := sessionInfo{SessionID: p.id, ClientID: p.client.info.ID, Command: p.command,
 				StartedAt: p.started, Status: "running", Done: p.done,
+				TerminalName: p.terminalName, Persistent: p.keepAlive, Promoted: p.promoted, CommandID: p.commandID, CommandDone: p.commandDone, SessionAlive: !p.done && !p.stopRequested,
 				OutputStartCursor: p.offset, OutputEndCursor: p.offset + int64(len(p.output))}
+			if p.commandDone {
+				info.Status = "idle"
+			}
 			if p.stopRequested {
 				info.Status = "stopping"
 			}
@@ -251,23 +225,44 @@ func (s *runtimeState) listSessions(secret, clientID string) []sessionInfo {
 	return items
 }
 
+func (s *runtimeState) controlSession(ctx context.Context, in toolRequest[sessionActionArgs]) (any, error) {
+	if err := in.Args.validate(); err != nil {
+		return nil, err
+	}
+	p, err := s.getSession(in.Secret, in.Args.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	a := in.Args
+	if a.Action == "stop" {
+		wait := 1000
+		if a.WaitMS != nil {
+			wait = *a.WaitMS
+		}
+		return p.stop(ctx, time.Duration(wait)*time.Millisecond)
+	}
+	input := ""
+	if a.Input != nil {
+		input = *a.Input
+	}
+	out, err := p.requestControl(ctx, a.Action, input)
+	if a.Action == "input" {
+		return sessionWriteResult{Accepted: err == nil}, err
+	}
+	return out, err
+}
+
 // Controls wait for acknowledgment of the OS operation. Old clients without
 // advertised support are rejected rather than silently ignoring new messages.
-func (p *session) control(ctx context.Context, action string) (sessionControlResult, error) {
+func (p *session) requestControl(ctx context.Context, action, input string) (sessionControlResult, error) {
 	if err := ctx.Err(); err != nil {
 		return sessionControlResult{}, err
 	}
-	if action != "interrupt" && action != "eof" {
+	if action != "interrupt" && action != "eof" && action != "input" {
 		return sessionControlResult{}, i18n.NewError("session.control.unsupported")
 	}
-	p.mu.Lock()
-	done := p.done
-	p.mu.Unlock()
-	if done {
-		return sessionControlResult{}, i18n.NewError("session.already.ended")
-	}
 	c := p.client
-	if !slices.Contains(c.info.Environment.SessionControls, action) {
+	if action != "input" && !slices.Contains(c.info.Environment.SessionControls, action) {
 		return sessionControlResult{}, i18n.NewError("session.control.unsupported")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -282,7 +277,7 @@ func (p *session) control(ctx context.Context, action string) (sessionControlRes
 	c.pending[id] = ch
 	c.mu.Unlock()
 	defer func() { c.mu.Lock(); delete(c.pending, id); c.mu.Unlock() }()
-	if err := c.send(protocol.Message{Type: action, ID: p.id, RequestID: id}); err != nil {
+	if err := c.send(protocol.Message{Type: action, ID: p.id, RequestID: id, Input: input}); err != nil {
 		return sessionControlResult{}, err
 	}
 	select {

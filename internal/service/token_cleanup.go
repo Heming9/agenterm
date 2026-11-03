@@ -45,11 +45,6 @@ func (s *runtimeState) cleanupTokensLocked(now time.Time) {
 		}
 	}
 	s.deleteTokensLocked(expired)
-	for id, p := range s.executions {
-		if !p.ended.IsZero() && now.Sub(p.ended) > 30*time.Minute {
-			delete(s.executions, id)
-		}
-	}
 	for id, p := range s.sessions {
 		p.mu.Lock()
 		old := p.done && now.Sub(p.ended) > 30*time.Minute
@@ -64,12 +59,6 @@ func (s *runtimeState) cleanupTokensLocked(now time.Time) {
 func (s *runtimeState) deleteTokensLocked(secrets map[string]bool) {
 	if len(secrets) == 0 {
 		return
-	}
-	for id, p := range s.executions {
-		if secrets[p.owner] {
-			p.cancel()
-			delete(s.executions, id)
-		}
 	}
 	for key, entry := range s.invitations {
 		if secrets[s.tokens[entry.token]] {

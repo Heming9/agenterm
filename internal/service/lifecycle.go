@@ -176,7 +176,7 @@ func runRuntime(ctx context.Context, s *runtimeState, public net.Listener, contr
 		return serveUntilStopped(lifetime, &http.Server{Handler: s.ingress(serverSocket), ReadHeaderTimeout: 10 * time.Second}, public, 5*time.Second)
 	})
 	group.Go(func() error {
-		return serveUntilStopped(lifetime, &http.Server{Handler: s.controlHandler(lifetime, cancel), ReadHeaderTimeout: 10 * time.Second}, controlListener, 5*time.Second)
+		return serveUntilStopped(lifetime, &http.Server{Handler: s.controlHandler(cancel), ReadHeaderTimeout: 10 * time.Second}, controlListener, 5*time.Second)
 	})
 	err := group.Wait()
 	slog.Info("runtime stopped", "error_kind", logging.ErrorKind(err))

@@ -22,7 +22,7 @@ func TestSessionControlDiscoveryAndRetiredTools(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"execute_command", "list_clients", "p2p_transfer_start", "session_control", "session_list", "session_read", "session_start"}
+		want := []string{"execute_command", "list_clients", "p2p_transfer_start", "session_control", "session_list", "session_read"}
 		if auth == "admin-test" {
 			want = append(want, "create_client")
 		}
@@ -35,7 +35,7 @@ func TestSessionControlDiscoveryAndRetiredTools(t *testing.T) {
 		if !slices.Equal(got, want) {
 			t.Fatalf("tools for %q: got %v want %v", auth, got, want)
 		}
-		for _, name := range []string{"session_write", "session_interrupt", "session_eof", "session_stop"} {
+		for _, name := range []string{"session_start", "session_write", "session_interrupt", "session_eof", "session_stop"} {
 			args := map[string]any{"session_id": "unknown", "input": "text"}
 			if auth == "admin-test" {
 				args["client_token"] = token
@@ -59,13 +59,19 @@ func TestSessionControlRejectsInvalidArgumentsBeforeSending(t *testing.T) {
 			if ws.ReadJSON(&m) != nil {
 				return
 			}
+			if m.Type == "session_exec" {
+				m = acceptTestSession(ws, m)
+			}
 			switch m.Type {
 			case "input", "interrupt", "eof", "cancel":
 				forwarded <- m
+				if m.Type == "input" && m.RequestID != "" {
+					_ = ws.WriteJSON(protocol.Message{Type: "control_done", ID: m.RequestID})
+				}
 			}
 		}
 	}()
-	id := h.call(t, token, "session_start", map[string]any{"command": "interactive"}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 	for _, args := range []map[string]any{
 		{},
 		{"action": "unknown"},
@@ -145,6 +151,8 @@ func TestSessionControlArgumentValidationWithoutSDK(t *testing.T) {
 	} {
 		if err := args.validate(); err == nil {
 			t.Fatalf("invalid arguments accepted: %+v", args)
+		} else if _, got := controlCall[any](context.Background(), localControl{&runtimeState{}}, "session/control", toolRequest[sessionActionArgs]{Args: args}); got == nil || got.Error() != err.Error() {
+			t.Fatalf("runtime must reject invalid arguments before session lookup: %+v: %v", args, got)
 		}
 	}
 }

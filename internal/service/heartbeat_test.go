@@ -81,9 +81,8 @@ func TestHeartbeatAndReconnectWithRealClient(t *testing.T) {
 	h.s.mu.Unlock()
 	old.conn.Close() // Simulate transport loss without restarting or losing tokens.
 	second := waitClient(first.ID)
-	decoded, _ := protocol.Decode(token)
-	out, err := h.s.execute(ctx, decoded.Secret, second.ID, "echo recovered", protocol.ExecOptions{})
-	if err != nil || !strings.Contains(out.Stdout, "recovered") {
+	out, failed, err := h.request(token, "execute_command", map[string]any{"client_id": second.ID, "command": "echo recovered"})
+	if err != nil || failed || !strings.Contains(out.(map[string]any)["output"].(string), "recovered") {
 		t.Fatalf("reconnected command: %+v %v", out, err)
 	}
 	select {

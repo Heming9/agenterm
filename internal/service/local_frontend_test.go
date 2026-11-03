@@ -26,7 +26,7 @@ func (c localControl) call(ctx context.Context, method string, in, out any) erro
 	r := httptest.NewRequest(http.MethodPost, "/v1/"+method, bytes.NewReader(body)).WithContext(ctx)
 	r.Header.Set(controlVersionHeader, controlVersion)
 	w := httptest.NewRecorder()
-	c.state.controlHandler(context.Background()).ServeHTTP(w, r)
+	c.state.controlHandler().ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		var ce controlError
 		if err := json.Unmarshal(w.Body.Bytes(), &ce); err != nil {

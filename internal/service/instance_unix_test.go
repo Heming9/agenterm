@@ -29,7 +29,7 @@ func TestAutomaticSwitchFromLegacySocketKeepsReplacementReachable(t *testing.T) 
 		t.Fatal(err)
 	}
 	state := &runtimeState{}
-	controlServer := &http.Server{Handler: state.controlHandler(context.Background())}
+	controlServer := &http.Server{Handler: state.controlHandler()}
 	go controlServer.Serve(controlListener)
 	defer controlServer.Close()
 	legacy, err := listenUnix(paths.Server)

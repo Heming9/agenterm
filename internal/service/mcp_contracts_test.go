@@ -126,7 +126,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, true)
 	}
 	call("execute_command", map[string]any{"client_token": token, "command": "example"})
-	started := call("session_start", map[string]any{"client_token": token, "command": "interactive"})
+	started := call("execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "client_token": token, "command": "interactive"})
 	id := started["session_id"].(string)
 	call("session_read", map[string]any{"client_token": token, "session_id": id})
 	call("session_control", map[string]any{"action": "input", "client_token": token, "session_id": id, "input": "yes\n"})
@@ -141,7 +141,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	}
 	call("session_read", map[string]any{"client_token": token, "session_id": id})
 	call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
-	if len(seen) != 8 {
+	if len(seen) != 7 {
 		t.Fatalf("validated %d tools", len(seen))
 	}
 }

@@ -6,10 +6,12 @@ import (
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -75,7 +77,7 @@ func connectExecutionClient(t *testing.T, h *multiHarness, token string) <-chan 
 	return events
 }
 
-func callExecution(t *testing.T, session *mcp.ClientSession, args map[string]any) (protocol.CommandResult, bool) {
+func callExecution(t *testing.T, session *mcp.ClientSession, args map[string]any) (executeResult, bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -87,16 +89,13 @@ func callExecution(t *testing.T, session *mcp.ClientSession, args map[string]any
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out protocol.CommandResult
+	var out executeResult
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Content) != 1 || result.Content[0].(*mcp.TextContent).Text != string(data) {
-		// JSON object key order may differ after SDK decoding.
-		var textOut protocol.CommandResult
-		if len(result.Content) != 1 || json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &textOut) != nil || textOut != out {
-			t.Fatalf("structured and text results differ: %+v", result)
-		}
+	var textOut executeResult
+	if len(result.Content) != 1 || json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &textOut) != nil || !reflect.DeepEqual(textOut, out) {
+		t.Fatalf("text/structured mismatch: %+v", result)
 	}
 	return out, result.IsError
 }
@@ -107,125 +106,97 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 	connectExecutionClient(t, h, token)
 	session := connectMCPClient(t, h, token)
 	dir := filepath.Join(t.TempDir(), "working directory")
-	// Use an existing directory containing spaces to catch shell interpolation.
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("AGENTERM_EXEC_TEST", "inherited")
-	command := `printf '%s\n' "$AGENTERM_EXEC_TEST"; pwd; printf 'stderr only\n' >&2; exit 7`
+	command := `printf '%s\n' "$AGENTERM_EXEC_TEST"; pwd; printf 'stderr only\n' >&2; false`
 	if runtime.GOOS == "windows" {
-		command = `echo %AGENTERM_EXEC_TEST% & cd & echo stderr only 1>&2 & exit /b 7`
+		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location; [Console]::Error.WriteLine('stderr only'); cmd /c exit 1`
 	}
-	out, isError := callExecution(t, session, map[string]any{
-		"command": command, "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "overridden"},
-	})
-	if !isError || out.ExitCode != 7 || out.TimedOut || out.Canceled || out.Truncated || out.Error != "" ||
-		!strings.Contains(out.Stdout, "overridden") || !strings.Contains(out.Stdout, dir) ||
-		strings.Contains(out.Stdout, "stderr only") || strings.TrimSpace(out.Stderr) != "stderr only" {
-		t.Fatalf("execution options/result: %+v isError=%v", out, isError)
+	out, isError := callExecution(t, session, map[string]any{"terminal_name": "options", "command": command, "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "overridden"}})
+	if !isError || out.ExitCode == nil || *out.ExitCode != 1 || out.Status != "completed" || !strings.Contains(out.Output, "overridden") || !strings.Contains(out.Output, dir) || !strings.Contains(out.Output, "stderr only") {
+		t.Fatalf("result: %+v error=%v", out, isError)
 	}
-	// Directory and environment apply to this command only.
 	command = `printf '%s\n' "$AGENTERM_EXEC_TEST"; pwd`
 	if runtime.GOOS == "windows" {
-		command = `echo %AGENTERM_EXEC_TEST% & cd`
+		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location`
 	}
-	out, isError = callExecution(t, session, map[string]any{"command": command, "timeout_ms": 0})
-	if isError || out.ExitCode != 0 || !strings.Contains(out.Stdout, "inherited") || strings.Contains(out.Stdout, dir) {
-		t.Fatalf("command state leaked: %+v", out)
+	reused, isError := callExecution(t, session, map[string]any{"terminal_name": "options", "command": command})
+	if isError || reused.SessionID != out.SessionID || reused.SessionCreated || !strings.Contains(reused.Output, "overridden") || !strings.Contains(reused.Output, dir) {
+		t.Fatalf("state lost: %+v", reused)
 	}
-	out, isError = callExecution(t, session, map[string]any{"command": "echo never", "cwd": filepath.Join(dir, "missing")})
-	if !isError || out.ExitCode != -1 || out.Error == "" || strings.Contains(out.Stdout, "never") {
-		t.Fatalf("missing cwd was not reported: %+v", out)
+	bad, isError := callExecution(t, session, map[string]any{"command": "echo never", "terminal_name": random(), "cwd": filepath.Join(dir, "missing")})
+	if !isError || bad.ExitCode == nil || *bad.ExitCode != -1 || bad.Error == "" || strings.Contains(bad.Output, "never") {
+		t.Fatalf("missing cwd: %+v", bad)
 	}
 }
 
 func longCommand() string {
 	if runtime.GOOS == "windows" {
-		return `echo ready & ping -n 31 127.0.0.1 >nul & echo late`
+		return `Write-Output ready; Start-Sleep -Seconds 30; Write-Output late`
 	}
 	return `printf 'ready\n'; sleep 30; printf 'late\n'`
 }
 
-func TestExecutionTimeoutAndSessionCancellation(t *testing.T) {
-	h := newMultiHarness(t, 0)
-	token := h.create(t, false)
-	events := connectExecutionClient(t, h, token)
-	session := connectMCPClient(t, h, token)
-	start := time.Now()
-	out, isError := callExecution(t, session, map[string]any{"command": longCommand(), "timeout_ms": 1000})
-	if !isError || !out.TimedOut || out.Canceled || out.ExitCode != -1 || !strings.Contains(out.Stdout, "ready") || strings.Contains(out.Stdout, "late") || time.Since(start) > 6*time.Second {
-		t.Fatalf("timeout: %+v elapsed=%s", out, time.Since(start))
-	}
-	// HTTP request cancellation must reach the process via the MCP SDK.
-	ctx, cancel := context.WithCancel(context.Background())
-	finished := make(chan error, 1)
-	go func() {
-		_, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "execute_command", Arguments: map[string]any{"command": longCommand(), "timeout_ms": 0}})
-		finished <- err
-	}()
-	for {
-		select {
-		case e := <-events:
-			if !e.Done && e.Command == longCommand() && e.StartedAt.After(start.Add(time.Second)) {
-				cancel()
-				goto canceled
-			}
-		case <-time.After(5 * time.Second):
-			cancel()
-			t.Fatal("cancel command did not start")
-		}
-	}
-canceled:
-	if err := <-finished; err == nil {
-		t.Fatal("canceled MCP call succeeded")
-	}
-	for {
-		select {
-		case e := <-events:
-			if e.Done {
-				if e.ExitCode != -1 {
-					t.Fatalf("cancel exit: %+v", e)
+func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
+	for _, retain := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retain=%t", retain), func(t *testing.T) {
+			h := newMultiHarness(t, 0)
+			token := h.create(t, false)
+			events := connectExecutionClient(t, h, token)
+			session := connectMCPClient(t, h, token)
+			command, wait := longCommand(), 20000
+			if retain {
+				command, wait = "sleep 0.4; printf finished", 150
+				if runtime.GOOS == "windows" {
+					command = "Start-Sleep -Milliseconds 400; Write-Output finished"
 				}
-				goto stopped
 			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("MCP cancellation did not stop the process")
-		}
-	}
-stopped:
-	// Interactive commands keep their own process timeout and stop semantics.
-	started := h.call(t, token, "session_start", map[string]any{"command": longCommand(), "timeout_ms": 1000}, false).(map[string]any)
-	id := started["session_id"].(string)
-	var cursor float64
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 1000}, false).(map[string]any)
-		cursor = r["next_cursor"].(float64)
-		if r["done"] == true {
-			if r["timed_out"] != true || r["canceled"] != false || r["exit_code"] != float64(-1) {
-				t.Fatal(r)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			finished := make(chan error, 1)
+			go func() {
+				_, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "execute_command", Arguments: map[string]any{"command": command, "wait_ms": wait}})
+				finished <- err
+			}()
+			select {
+			case <-events:
+				cancel()
+			case <-time.After(5 * time.Second):
+				t.Fatal("command did not start")
 			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("session timeout did not finish")
-		}
-	}
-	started = h.call(t, token, "session_start", map[string]any{"command": longCommand()}, false).(map[string]any)
-	id = started["session_id"].(string)
-	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id}, false)
-	deadline = time.Now().Add(5 * time.Second)
-	for {
-		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "wait_ms": 1000}, false).(map[string]any)
-		if r["done"] == true {
-			if r["canceled"] != true || r["timed_out"] != false || r["exit_code"] != float64(-1) {
-				t.Fatal(r)
+			select {
+			case err := <-finished:
+				if err == nil {
+					t.Fatal("canceled waiter returned success")
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("waiter did not cancel")
 			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("session_control(action=stop) did not finish")
-		}
+			deadline := time.Now().Add(5 * time.Second)
+			var item map[string]any
+			for {
+				items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
+				if len(items) != 1 {
+					t.Fatalf("lost canceled execution: %v", items)
+				}
+				item = items[0].(map[string]any)
+				if !retain || item["command_done"] == true {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("client did not retain after waiter cancellation")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if (!retain && item["status"] != "running") || (retain && (item["persistent"] != true || item["promoted"] != true || item["session_alive"] != true || item["terminal_name"] == "")) {
+				t.Fatalf("waiter changed execution lifetime: %v", item)
+			}
+			stopped := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": item["session_id"]}, false).(map[string]any)
+			if stopped["done"] != true || stopped["canceled"] != true {
+				t.Fatal(stopped)
+			}
+		})
 	}
 }
 
@@ -239,15 +210,16 @@ func TestExecutionOutputLimitKeepsExitStatus(t *testing.T) {
 			if ws.ReadJSON(&m) != nil {
 				return
 			}
-			if m.Type != "exec" {
+			if m.Type != "session_exec" {
 				continue
 			}
-			for _, output := range []protocol.Message{
-				{Type: "output", ID: m.ID, Stream: "stdout", Output: strings.Repeat("界", maxCommandOutput/3+3)},
-				{Type: "output", ID: m.ID, Stream: "stderr", Output: "error"},
+			m = acceptTestSession(ws, m)
+			for _, reply := range []protocol.Message{
+				{Type: "output", ID: m.ID, Output: strings.Repeat("界", maxSessionOutput/3+3)},
+				{Type: "command_done", ID: m.ID, RequestID: m.RequestID, ExitCode: 7},
 				{Type: "done", ID: m.ID, ExitCode: 7},
 			} {
-				if ws.WriteJSON(output) != nil {
+				if ws.WriteJSON(reply) != nil {
 					return
 				}
 			}
@@ -255,8 +227,8 @@ func TestExecutionOutputLimitKeepsExitStatus(t *testing.T) {
 	}()
 	session := connectMCPClient(t, h, token)
 	out, isError := callExecution(t, session, map[string]any{"command": "large"})
-	if !isError || !out.Truncated || out.ExitCode != 7 || len(out.Stdout)+len(out.Stderr) > maxCommandOutput || !utf8.ValidString(out.Stdout) || len(out.Stdout) < maxCommandOutput-3 {
-		t.Fatalf("truncated result: stdout=%d stderr=%d exit=%d truncated=%v", len(out.Stdout), len(out.Stderr), out.ExitCode, out.Truncated)
+	if !isError || !out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) > defaultSessionReadBytes || !utf8.ValidString(out.Output) || !out.HasMore {
+		t.Fatalf("paged result: %+v", out)
 	}
 }
 
@@ -269,41 +241,56 @@ func TestMCPExecutionValidationAndSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range tools.Tools {
-		if tool.Name == "execute_command" && tool.OutputSchema == nil {
-			t.Fatal("missing execution output schema")
+		if tool.Name == "session_start" || tool.Name == "create_client" {
+			t.Fatalf("unexpected tool %s", tool.Name)
 		}
-		if tool.Name == "execute_command" || tool.Name == "session_start" {
-			data, _ := json.Marshal(tool.InputSchema)
-			var schema struct {
-				Properties map[string]struct{ Default int64 }
-			}
-			if err := json.Unmarshal(data, &schema); err != nil {
-				t.Fatal(err)
-			}
-			want := int64(0)
-			if tool.Name == "execute_command" {
-				want = protocol.DefaultCommandTimeoutMS
-			}
-			if schema.Properties["timeout_ms"].Default != want {
-				t.Fatalf("%s timeout default: %s", tool.Name, data)
-			}
+		if tool.Name != "execute_command" {
+			continue
 		}
-		if tool.Name == "create_client" {
-			t.Fatal("device credential can discover management tools")
+		if tool.OutputSchema == nil {
+			t.Fatal("missing output schema")
+		}
+		data, _ := json.Marshal(tool.InputSchema)
+		var schema struct {
+			Properties map[string]struct{ Default int64 }
+		}
+		if err := json.Unmarshal(data, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := schema.Properties["terminal_name"]; !exists {
+			t.Fatal("missing terminal_name")
+		}
+		if _, exists := schema.Properties["new_session"]; exists {
+			t.Fatal("retired new_session still published")
+		}
+		if _, exists := schema.Properties["timeout_ms"]; exists {
+			t.Fatal("retired timeout_ms still published")
+		}
+		if schema.Properties["wait_ms"].Default != 10000 {
+			t.Fatal(string(data))
 		}
 	}
+	// An invalid argument must be rejected even with an executable target;
+	// otherwise a missing device could hide a silently accepted retired field.
+	connectExecutionClient(t, h, token)
 	for _, args := range []map[string]any{
-		{"command": "echo never", "timeout_ms": -1},
-		{"command": "echo never", "timeout_ms": protocol.MaxCommandTimeoutMS + 1},
-		{"command": "echo never", "timeout_ms": 1.5},
+		{"command": "echo never", "timeout_ms": 0},
+		{"command": "echo never", "new_session": true},
+		{"command": "echo never", "terminal_name": ""},
+		{"command": "echo never", "terminal_name": "  "},
+		{"command": "echo never", "terminal_name": "bad\nname"},
+		{"command": "echo never", "terminal_name": strings.Repeat("x", 65)},
 		{"command": "echo never", "env": map[string]any{"X": 1}},
 		{"command": "echo never", "env": map[string]string{"A=B": "bad"}},
 		{"command": "echo never", "cwd": "bad\x00dir"},
 		{"command": "   "},
+		{"command": "echo never", "terminal_name": random(), "session_id": "other"},
+		{"command": "echo never", "wait_ms": -1},
+		{"command": "echo never", "wait_ms": 20001},
 	} {
 		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "execute_command", Arguments: args})
 		if err != nil || !result.IsError {
-			t.Fatalf("invalid arguments accepted: %v result=%+v err=%v", args, result, err)
+			t.Fatalf("invalid args: %v %v %v", args, result, err)
 		}
 	}
 }
@@ -316,29 +303,34 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	command := `IFS= read -r AGENTERM_REPLY; printf 'received:%s:%s\n' "$AGENTERM_REPLY" "$AGENTERM_EXEC_TEST"; pwd`
+	command := `printf 'ready\n'; IFS= read -r AGENTERM_REPLY; printf 'received:%s:%s\n' "$AGENTERM_REPLY" "$AGENTERM_EXEC_TEST"; pwd`
 	want := "received:early-input:session-env"
 	if runtime.GOOS == "windows" {
-		command = `set /p AGENTERM_REPLY= & set AGENTERM_REPLY & set AGENTERM_EXEC_TEST & cd`
-		want = "AGENTERM_REPLY=early-input"
+		command = `Write-Output ready; $reply=Read-Host; Write-Output "received:${reply}:$env:AGENTERM_EXEC_TEST"; Get-Location`
 	}
-	start := h.call(t, token, "session_start", map[string]any{
-		"command": command, "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "session-env"}, "timeout_ms": 4000,
-	}, false).(map[string]any)
-	id := start["session_id"].(string)
-	// Send input immediately, without waiting for process startup or a prompt.
+	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": command, "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "session-env"}}, false).(map[string]any)
+	id := started["session_id"]
+	if started["status"] != "running" || started["command_done"] != false {
+		t.Fatal(started)
+	}
+	busy := h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo must-not-run"}, true).(map[string]any)
+	if !strings.Contains(busy["error"].(string), "session_busy") || !strings.Contains(busy["error"].(string), id.(string)) {
+		t.Fatal(busy)
+	}
 	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "early-input\n"}, false)
-	var output strings.Builder
-	var cursor float64
-	for {
-		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 1000}, false).(map[string]any)
-		output.WriteString(r["output"].(string))
-		cursor = r["next_cursor"].(float64)
-		if r["done"] == true {
-			if r["exit_code"] != float64(0) || r["timed_out"] != false || !strings.Contains(output.String(), want) || !strings.Contains(output.String(), "session-env") || !strings.Contains(output.String(), dir) {
-				t.Fatalf("session input/options: %v output=%q", r, output.String())
-			}
-			break
-		}
+	output, completed := readExecutionToCompletion(t, h, token, started)
+	if completed["exit_code"] != float64(0) || completed["timed_out"] != false || completed["done"] != false || completed["session_alive"] != true || !strings.Contains(output, "ready") || !strings.Contains(output, want) || !strings.Contains(output, dir) {
+		t.Fatalf("input/options: %v output=%q", completed, output)
+	}
+	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo next"}, false)
+	h.call(t, token, "session_read", map[string]any{"session_id": id, "command_id": started["command_id"]}, true)
+	stopped := h.call(t, token, "session_control", map[string]any{"session_id": id, "action": "stop"}, false).(map[string]any)
+	if stopped["done"] != true || stopped["canceled"] != true {
+		t.Fatal(stopped)
+	}
+	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo closed"}, true)
+	fresh := h.call(t, token, "execute_command", map[string]any{"command": "echo fresh"}, false).(map[string]any)
+	if fresh["session_created"] != true || fresh["session_id"] == id {
+		t.Fatal(fresh)
 	}
 }

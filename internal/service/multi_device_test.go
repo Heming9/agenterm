@@ -97,7 +97,7 @@ func (h *multiHarness) dial(token, hostname string) (*websocket.Conn, *http.Resp
 	return websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 		protocol.HostnameHeader: {base64.RawURLEncoding.EncodeToString([]byte(hostname))}, protocol.PlatformHeader: {"linux"},
-		protocol.SessionControlsHeader: {"interrupt,eof"},
+		protocol.SessionControlsHeader: {"interrupt,eof"}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion},
 	})
 }
 
@@ -123,7 +123,31 @@ func (h *multiHarness) connect(t *testing.T, token, hostname string) (*websocket
 	}
 }
 
+// Simulate client-owned names and canonical IDs without server selection.
+func acceptTestSession(ws *websocket.Conn, m protocol.Message, names ...map[string]string) protocol.Message {
+	target := m.SessionID
+	if target == "" && m.TerminalName != "" && len(names) > 0 {
+		target = names[0][m.TerminalName]
+	}
+	created := target == ""
+	if created {
+		target = "client-" + m.ID
+		if m.TerminalName != "" && len(names) > 0 {
+			names[0][m.TerminalName] = target
+		}
+	}
+	persistent := m.TerminalName != "" || m.SessionID != "" || m.WaitMS == 0
+	promoted := persistent && m.TerminalName == "" && m.SessionID == ""
+	if promoted {
+		m.TerminalName = "term-" + target
+	}
+	_ = ws.WriteJSON(protocol.Message{Type: "command_accepted", ID: m.ID, RequestID: m.RequestID, SessionID: target, SessionCreate: created, SessionPersistent: persistent, SessionPromoted: promoted, TerminalName: m.TerminalName, Command: m.Command})
+	m.ID, m.SessionPersistent = target, persistent
+	return m
+}
+
 func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, release <-chan struct{}) {
+	names := make(map[string]string)
 	for {
 		var m protocol.Message
 		if ws.ReadJSON(&m) != nil {
@@ -134,20 +158,27 @@ func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, re
 			if registerTestP2P(m.P2P.ConfigBase64) != nil {
 				return
 			}
-		case "exec":
+		case "session_exec":
+			m = acceptTestSession(ws, m, names)
 			if m.Command == "parallel" {
 				arrived <- label
 				<-release
 			}
-			if ws.WriteJSON(protocol.Message{Type: "output", ID: m.ID, Output: label + ":" + m.Command}) != nil {
+			if ws.WriteJSON(protocol.Message{Type: "output", ID: m.ID, RequestID: m.RequestID, Output: label + ":" + m.Command}) != nil {
 				return
 			}
-			if !m.Interactive {
-				if ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID}) != nil {
+			if m.Command != "interactive" {
+				if ws.WriteJSON(protocol.Message{Type: "command_done", ID: m.ID, RequestID: m.RequestID}) != nil {
 					return
+				}
+				if !m.SessionPersistent {
+					_ = ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID})
 				}
 			}
 		case "input":
+			if m.RequestID != "" {
+				_ = ws.WriteJSON(protocol.Message{Type: "control_done", ID: m.RequestID})
+			}
 			if ws.WriteJSON(protocol.Message{Type: "output", ID: m.ID, Output: label + ":" + m.Input}) != nil {
 				return
 			}
@@ -188,7 +219,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	if len(h.call(t, other, "list_clients", map[string]any{}, false).(map[string]any)["clients"].([]any)) != 0 {
 		t.Fatal("cross-token device listing")
 	}
-	for _, name := range []string{"execute_command", "session_start"} {
+	for _, name := range []string{"execute_command"} {
 		h.call(t, token, name, map[string]any{"command": "test"}, true)
 		h.call(t, other, name, map[string]any{"command": "test", "client_id": a}, true)
 		h.call(t, token, name, map[string]any{"command": "test", "client_id": "invalid"}, true)
@@ -197,7 +228,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	for _, target := range []struct{ id, label string }{{a, "A"}, {b, "B"}} {
 		go func(id, label string) {
 			out, toolError, err := h.request(token, "execute_command", map[string]any{"client_id": id, "command": "parallel"})
-			if err == nil && (toolError || !strings.HasPrefix(fmt.Sprint(out.(map[string]any)["stdout"]), label+":parallel")) {
+			if err == nil && (toolError || !strings.HasPrefix(fmt.Sprint(out.(map[string]any)["output"]), label+":parallel")) {
 				err = fmt.Errorf("wrong output: %v", out)
 			}
 			results <- err
@@ -226,7 +257,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 
 	sessions := map[string]string{}
 	for _, target := range []struct{ id, label string }{{a, "A"}, {b, "B"}} {
-		sid := h.call(t, token, "session_start", map[string]any{"client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
+		sid := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 		sessions[target.label] = sid
 		out := h.call(t, token, "session_read", map[string]any{"session_id": sid, "wait_ms": 1000}, false).(map[string]any)
 		if out["output"] != target.label+":interactive" {
@@ -254,7 +285,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	}
 	h.call(t, token, "execute_command", map[string]any{"client_id": a, "command": "stale"}, true)
 	out := h.call(t, token, "execute_command", map[string]any{"client_id": b, "command": "still online"}, false)
-	if !strings.HasPrefix(out.(map[string]any)["stdout"].(string), "B:still online") {
+	if !strings.HasPrefix(out.(map[string]any)["output"].(string), "B:still online") {
 		t.Fatal(out)
 	}
 	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": sessions["B"]}, false)
@@ -336,9 +367,9 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 		for _, tool := range payload.Result.Tools {
 			names[tool.Name] = true
 		}
-		want := 7
+		want := 6
 		if auth == "admin-test" {
-			want = 8
+			want = 7
 		}
 		if len(names) != want || !names["list_clients"] || names["wait_for_client"] || names["wait_for_clients"] {
 			t.Fatal(names)

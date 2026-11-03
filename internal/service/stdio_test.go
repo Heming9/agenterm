@@ -45,7 +45,7 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 8 {
+	if err != nil || len(tools.Tools) != 7 {
 		t.Fatalf("tools: %v %v", tools, err)
 	}
 	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_client", Arguments: map[string]any{}})

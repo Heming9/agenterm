@@ -3,7 +3,6 @@ package service
 import (
 	"agenterm/internal/i18n"
 	"agenterm/internal/logging"
-	"agenterm/internal/protocol"
 	"bytes"
 	"context"
 	"crypto/subtle"
@@ -20,7 +19,7 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-const controlVersion = "1"
+const controlVersion = "3"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {
@@ -183,7 +182,7 @@ func registerControl[I, O any](mux *http.ServeMux, method string, f func(context
 
 // Only the runtime constructs this handler. It is reachable exclusively over a
 // private, owner-only Unix socket; principals from server are trusted local RPC.
-func (s *runtimeState) controlHandler(lifetime context.Context, shutdown ...context.CancelFunc) http.Handler {
+func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+runtimeInfoPath, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -233,38 +232,13 @@ func (s *runtimeState) controlHandler(lifetime context.Context, shutdown ...cont
 	})
 	registerControl(mux, "p2p/start", s.startP2P)
 	registerControl(mux, "p2p/signal", s.p2pSignal)
-	registerControl(mux, "execute/start", func(ctx context.Context, in toolRequest[executeArgs]) (string, error) {
-		return s.startExecution(logging.WithRequestID(lifetime, logging.RequestID(ctx)), in)
-	})
-	registerControl(mux, "execute/wait", func(ctx context.Context, in executionRequest) (protocol.CommandResult, error) {
-		p, err := s.getExecution(in)
+	registerControl(mux, "session/execute", s.executeInSession)
+	registerControl(mux, "session/wait", func(ctx context.Context, in toolRequest[waitExecutionArgs]) (map[string]any, error) {
+		p, err := s.getSession(in.Secret, in.Args.SessionID)
 		if err != nil {
-			return protocol.CommandResult{}, err
+			return nil, err
 		}
-		select {
-		case <-p.done:
-			return p.result, p.err
-		case <-ctx.Done():
-			return protocol.CommandResult{}, ctx.Err()
-		}
-	})
-	registerControl(mux, "execute/cancel", func(_ context.Context, in executionRequest) (bool, error) {
-		p, err := s.getExecution(in)
-		if err != nil {
-			return false, err
-		}
-		p.cancel()
-		return true, nil
-	})
-	registerControl(mux, "session/start", func(ctx context.Context, in toolRequest[executeArgs]) (sessionStartResult, error) {
-		if err := validateExecution(in.Args); err != nil {
-			return sessionStartResult{}, err
-		}
-		p, err := s.startSession(ctx, in.Secret, in.Args.ClientID, in.Args.Command, in.Args.ExecOptions)
-		if err != nil {
-			return sessionStartResult{}, err
-		}
-		return sessionStartResult{SessionID: p.id, Cursor: 0}, nil
+		return p.waitExecution(ctx, in.Args)
 	})
 	registerControl(mux, "session/read", func(ctx context.Context, in toolRequest[readSessionArgs]) (map[string]any, error) {
 		p, err := s.getSession(in.Secret, in.Args.SessionID)
@@ -275,35 +249,12 @@ func (s *runtimeState) controlHandler(lifetime context.Context, shutdown ...cont
 		if in.Args.MaxBytes != nil {
 			limit = *in.Args.MaxBytes
 		}
-		return p.read(ctx, in.Args.Cursor, time.Duration(in.Args.WaitMS)*time.Millisecond, limit)
+		return p.readCommand(ctx, in.Args.Cursor, time.Duration(in.Args.WaitMS)*time.Millisecond, limit, in.Args.CommandID)
 	})
 	registerControl(mux, "session/list", func(_ context.Context, in toolRequest[listSessionsArgs]) (sessionListResult, error) {
 		return sessionListResult{Sessions: s.listSessions(in.Secret, in.Args.ClientID)}, nil
 	})
-	for _, action := range []string{"interrupt", "eof"} {
-		registerControl(mux, "session/"+action, func(ctx context.Context, in toolRequest[controlSessionArgs]) (sessionControlResult, error) {
-			p, err := s.getSession(in.Secret, in.Args.SessionID)
-			if err != nil {
-				return sessionControlResult{}, err
-			}
-			return p.control(ctx, action)
-		})
-	}
-	registerControl(mux, "session/write", func(_ context.Context, in toolRequest[writeSessionArgs]) (sessionWriteResult, error) {
-		p, err := s.getSession(in.Secret, in.Args.SessionID)
-		if err != nil {
-			return sessionWriteResult{}, err
-		}
-		err = p.send("input", in.Args.Input)
-		return sessionWriteResult{Accepted: err == nil}, err
-	})
-	registerControl(mux, "session/stop", func(ctx context.Context, in toolRequest[stopSessionArgs]) (sessionStopResult, error) {
-		p, err := s.getSession(in.Secret, in.Args.SessionID)
-		if err != nil {
-			return sessionStopResult{}, err
-		}
-		return p.stop(ctx, time.Duration(in.Args.WaitMS)*time.Millisecond)
-	})
+	registerControl(mux, "session/control", s.controlSession)
 	registerControl(mux, "invitation", func(_ context.Context, in invitationRequest) (installerInvitation, error) {
 		secret := in.Secret
 		s.mu.Lock()

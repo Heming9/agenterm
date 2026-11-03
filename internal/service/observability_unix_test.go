@@ -114,14 +114,14 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	readLogRecords(t, serverLog, func(entry map[string]any) bool {
 		return entry["msg"] == "mcp tool completed" && entry["request_id"] == id && entry["tool"] == "execute_command"
 	})
-	session := h.call(t, token, "session_start", map[string]any{"command": `read value; printf '%s' "$value"`}, false).(map[string]any)
+	session := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": `read value; printf '%s' "$value"`}, false).(map[string]any)
 	sessionID := session["session_id"].(string)
 	h.call(t, token, "session_control", map[string]any{"session_id": sessionID, "action": "input", "input": "private-session-input\n"}, false)
 	sessionLogs := readLogRecords(t, runtimeLog, func(entry map[string]any) bool {
-		return entry["msg"] == "session completed" && entry["session_id"] == sessionID
+		return entry["msg"] == "command completed" && entry["session_id"] == sessionID
 	})
 	readLogRecords(t, serverLog, func(entry map[string]any) bool {
-		return entry["msg"] == "mcp tool completed" && entry["tool"] == "session_start" && entry["request_id"] == sessionLogs[0]["request_id"]
+		return entry["msg"] == "mcp tool completed" && entry["tool"] == "execute_command" && entry["request_id"] == sessionLogs[0]["request_id"]
 	})
 	first.stop(t, true)
 	response, err = http.Get(origin + "/agenterm/c/private-install-code?secret=private-query")

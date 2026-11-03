@@ -125,7 +125,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 		t.Fatal(devices)
 	}
 	deviceID := devices[0].(map[string]any)["client_id"]
-	id := h.call(t, token, "session_start", map[string]any{"command": `printf 'ready\n'; read answer; printf 'answer:%s\n' "$answer"`}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": `printf 'ready\n'; read answer; printf 'answer:%s\n' "$answer"`}, false).(map[string]any)["session_id"].(string)
 	before := h.call(t, token, "session_read", map[string]any{"session_id": id, "wait_ms": 4000}, false).(map[string]any)
 	if !strings.Contains(before["output"].(string), "ready") {
 		t.Fatal(before)
@@ -161,7 +161,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 		read := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 4000}, false).(map[string]any)
 		output.WriteString(read["output"].(string))
 		cursor = read["next_cursor"]
-		if read["done"] == true && read["has_more"] == false {
+		if read["command_done"] == true && read["has_more"] == false {
 			break
 		}
 	}

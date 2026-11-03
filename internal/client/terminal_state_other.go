@@ -12,3 +12,5 @@ const disabledTerminalChar = 0
 func terminalState(int) (*unix.Termios, error) {
 	return nil, i18n.NewError("session.control.unsupported")
 }
+
+func setTerminalState(int, *unix.Termios) error { return i18n.NewError("session.control.unsupported") }

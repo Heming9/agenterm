@@ -109,7 +109,7 @@ func TestExecutionShellAvailableBeforeFirstCommand(t *testing.T) {
 	// The shell is available without running any discovery command remotely.
 	session := connectMCPClient(t, h, token)
 	result, isError := callExecution(t, session, map[string]any{"command": "echo shell-ready"})
-	if isError || !strings.Contains(result.Stdout, "shell-ready") {
+	if isError || !strings.Contains(result.Output, "shell-ready") {
 		t.Fatalf("first command failed: %+v", result)
 	}
 }

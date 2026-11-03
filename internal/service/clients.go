@@ -23,14 +23,15 @@ type clientInfo struct {
 }
 
 type clientEnvironment struct {
-	Hostname        string   `json:"hostname"`
-	Platform        string   `json:"platform"`
-	Arch            string   `json:"arch"`
-	Shell           string   `json:"shell"`
-	DefaultCwd      string   `json:"default_cwd"`
-	ClientVersion   string   `json:"client_version"`
-	SessionControls []string `json:"session_controls"`
-	P2P             bool     `json:"p2p"`
+	Hostname           string   `json:"hostname"`
+	Platform           string   `json:"platform"`
+	Arch               string   `json:"arch"`
+	Shell              string   `json:"shell"`
+	DefaultCwd         string   `json:"default_cwd"`
+	ClientVersion      string   `json:"client_version"`
+	SessionControls    []string `json:"session_controls"`
+	PersistentSessions bool     `json:"persistent_sessions"`
+	P2P                bool     `json:"p2p"`
 }
 
 func sessionControlsHeader(r *http.Request) []string {
