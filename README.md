@@ -41,13 +41,14 @@ Run the invitation command for your operating system, read the notice, and autho
 
 Keep the agent conversation active while the device connects, then start the task. The target computer can disconnect at any time; close the client when finished.
 
-Invitations are single-use by default and expire after 5 minutes. Set `timeout_seconds` when calling `create_client` to customize the invitation lifetime. Connections grant terminal access with the current user's permissions. Share invitations and tokens only with people you trust.
+Connections grant terminal access with the current user's permissions. Only authorize people you trust.
 
-## What you can do
+## When to use it
 
-- **Troubleshoot development environments:** “Help my colleague check their Python setup and find why the project won't start.”
-- **Inspect system status:** “Check this server's disk usage and application logs.”
-- **Work across computers:** “Connect several test machines, check their environments, and summarize the results.”
+- **Help a colleague or customer troubleshoot:** Let your agent inspect the remote environment and logs without passing commands and output back and forth.
+- **Help family with computer problems:** Once they run the client and authorize access, use your familiar agent to assist through the terminal.
+- **Work on another development machine or server:** Keep using your existing agent without configuring a full agent and model account on the target machine.
+- **Check multiple computers:** Connect test machines, inspect their environments, and summarize the results.
 
 Interactive terminal tasks are supported. Use the CLI or GUI on the target computer to follow progress; the client automatically attempts to reconnect after temporary network failures.
 

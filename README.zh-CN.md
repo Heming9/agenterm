@@ -15,7 +15,7 @@
   <a href="docs/demo/agenterm-cleanup.mp4"><img src="docs/demo/quickstart.gif" alt="Agent 发出邀请，目标电脑授权连接，随后执行任务" width="800"></a>
 </p>
 <p align="center">生成邀请 → 确认授权 → 设备上线 → 执行任务</p>
-<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">完整演示 · 1 分 42 秒</a> · <a href="docs/demo/subtitles.zh-en.srt">中英字幕</a></p>
+<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">完整演示 · 1 分 42 秒</a></p>
 
 ## 快速开始
 
@@ -23,31 +23,18 @@
   <img src="docs/design/connection-flow-zh.gif" alt="使用流程：让 Agent 接入 MCP，生成连接命令，分享连接命令，对方执行并授权连接，Agent 开始远程协助" width="1000">
 </p>
 
-### 1. 发起协助的人：接入 Agent
+1. **接入 Agent：** 在支持 Streamable HTTP 的 Agent 中添加 MCP 服务 `https://agenterm.net/mcp`。[查看配置示例](docs/usage.zh-CN.md#接入-agent)
+2. **邀请并授权：** 让 Agent 创建邀请，将连接命令私下发给对方。对方运行命令并确认授权。
+3. **开始协助：** 设备上线后，告诉 Agent 要完成的任务。对方可查看命令和输出，并随时断开。
 
-在支持 Streamable HTTP 的 Agent 中添加 MCP 服务：
+连接授予目标电脑当前用户的终端权限，请只向信任的人授权。
 
-```text
-https://agenterm.net/mcp
-```
+## 适合什么场景
 
-[查看配置示例](docs/usage.zh-CN.md#接入-agent)。接入后，告诉 Agent 要完成的任务，并让它创建连接邀请，将生成的一键命令私下发送给目标电脑的使用者。
-
-### 2. 目标电脑的使用者：连接并授权
-
-运行适合自己系统的邀请命令，阅读提示并确认授权。客户端会显示连接状态，以及 Agent 执行的命令和输出；无需配置 MCP 或 Server。
-
-### 3. 双方：完成任务并断开
-
-保持 Agent 对话进行，等待设备上线后开始任务。目标电脑可随时断开；任务结束后关闭客户端。
-
-邀请默认单次使用、5 分钟有效。调用 `create_client` 时可通过 `timeout_seconds` 自定义邀请有效期，单位秒。连接授予当前用户的终端操作权限，请只向信任的人分享邀请和 token。
-
-## 适合哪些任务
-
-- **排查开发环境：**“帮同事检查 Python 环境，定位项目启动失败的原因。”
-- **检查系统状态：**“查看这台服务器的磁盘占用和应用日志。”
-- **协作检查多台电脑：**“连接几台测试机器，分别检查运行环境并汇总结果。”
+- **帮助同事或客户排障：** 不用反复传递命令和输出，让 Agent 直接协助检查远程环境和日志。
+- **帮助家人解决电脑问题：** 对方运行客户端并授权后，借助你熟悉的 Agent 进行终端协助。
+- **操作另一台开发机或服务器：** 继续使用现有 Agent，无需在目标机器上配置完整 Agent 和模型账号。
+- **协作检查多台电脑：** 连接几台测试机器，分别检查运行环境并汇总结果。
 
 支持交互式终端任务。目标电脑可以选择 CLI 或 GUI 查看执行过程，临时网络故障后客户端会自动尝试重连。
 
