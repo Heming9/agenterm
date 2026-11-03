@@ -68,25 +68,6 @@ $process.StartInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
 # ProcessStartInfo.StandardInputEncoding requires newer .NET versions.
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-# Only the explicitly redirected child streams should be inherited. A later
-# detached daemon must not keep the Agent's original capture pipes open.
-if (-not ('AgentermP2PNativeHandles' -as [type])) {
-  Add-Type -TypeDefinition '
-using System;
-using System.Runtime.InteropServices;
-public static class AgentermP2PNativeHandles {
-  [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int kind);
-  [DllImport("kernel32.dll")] private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
-  public static void ProtectCapturePipes() {
-    foreach (int kind in new int[] { -10, -11, -12 }) {
-      IntPtr handle = GetStdHandle(kind);
-      if (handle != IntPtr.Zero && handle != new IntPtr(-1)) { SetHandleInformation(handle, 1, 0); }
-    }
-  }
-}
-'
-}
-[AgentermP2PNativeHandles]::ProtectCapturePipes()
 try {
   $null = $process.Start()
   $stdout = $process.StandardOutput.ReadToEndAsync()

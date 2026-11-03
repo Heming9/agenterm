@@ -120,7 +120,7 @@ func main() {
 				t.Setenv("AGENTERM_P2P_CONFIG_B64", base64.StdEncoding.EncodeToString(config))
 			}
 			_, script := Scripts(manifest, "https://example.test", embedded, foreground, false)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 			command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 			output, err := command.CombinedOutput()

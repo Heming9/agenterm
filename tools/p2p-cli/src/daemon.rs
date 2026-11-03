@@ -7,6 +7,8 @@ use crate::{
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::process::{Command, Stdio};
 use std::{
     collections::VecDeque,
     error::Error,
@@ -14,7 +16,6 @@ use std::{
     io::{self, BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -233,44 +234,27 @@ pub fn run() -> Result<()> {
             }
             let config_path = dir.join(format!("startup-{}.json", nonce()?));
             serde_json::to_writer(private_file(&config_path)?, &config)?;
-            let log = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(dir.join("daemon.log"))?;
-            let mut command = Command::new(std::env::current_exe()?);
-            command
-                .args(["_serve", "--config"])
-                .arg(&config_path)
-                .arg("--state-dir")
-                .arg(&dir)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(log);
             #[cfg(unix)]
-            {
+            let mut child = {
                 use std::os::unix::process::CommandExt;
+                let log = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(dir.join("daemon.log"))?;
+                let mut command = Command::new(std::env::current_exe()?);
+                command
+                    .args(["_serve", "--config"])
+                    .arg(&config_path)
+                    .arg("--state-dir")
+                    .arg(&dir)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(log);
                 command.process_group(0);
-            }
+                command.spawn()?
+            };
             #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                use windows_sys::Win32::{
-                    Foundation::{HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation},
-                    System::Console::{
-                        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
-                    },
-                };
-                // The launcher may itself have inherited an Agent's output pipes.
-                // Those original handles must not keep its caller's capture open.
-                for kind in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
-                    let handle = unsafe { GetStdHandle(kind) };
-                    if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
-                        unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) };
-                    }
-                }
-                command.creation_flags(0x00000208); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-            }
-            let mut child = command.spawn()?;
+            let mut child = crate::background_windows::spawn(&config_path, &dir)?;
             let deadline = Instant::now() + Duration::from_secs(30);
             loop {
                 if let Some(code) = child.try_wait()? {
@@ -298,6 +282,8 @@ pub fn run() -> Result<()> {
             }
         }
         Some("_serve") => {
+            #[cfg(windows)]
+            crate::background_windows::attach_log(&dir)?;
             let i = args
                 .iter()
                 .position(|v| v == "--config")

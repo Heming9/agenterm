@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ctrlc",
  "fs2",

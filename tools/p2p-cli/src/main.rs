@@ -6,6 +6,8 @@ use std::{
     time::{Duration, Instant},
 };
 use str0m::{Candidate, CandidateKind};
+#[cfg(windows)]
+mod background_windows;
 mod daemon;
 mod signaling;
 mod transfer;

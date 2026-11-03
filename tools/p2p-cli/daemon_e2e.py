@@ -29,7 +29,31 @@ def main(binary):
         (root / f"{name}.json").write_text(json.dumps(dict(config, client_id=name, offerer=name == "A")))
 
     def cli(name, *args, ok=True, timeout=70):
-        result = subprocess.run([binary, *args, "--state-dir", str(states[name])], capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+        options = {}
+        capture = None
+        if os.name == 'nt' and args[0] == 'start' and '--foreground' not in args:
+            import msvcrt
+            reader, writer = os.pipe()
+            os.set_inheritable(writer, True)
+            startup = subprocess.STARTUPINFO()
+            startup.lpAttributeList = {'handle_list': [msvcrt.get_osfhandle(writer)]}
+            options = dict(startupinfo=startup, close_fds=True)
+            capture = (reader, writer)
+        try:
+            result = subprocess.run([binary, *args, "--state-dir", str(states[name])], capture_output=True, text=True, encoding="utf-8", timeout=timeout, **options)
+        finally:
+            if capture is not None:
+                os.close(capture[1])
+                drained = threading.Event()
+                receipt = []
+                def drain():
+                    try:
+                        receipt.append(os.read(capture[0], 1))
+                    finally:
+                        os.close(capture[0])
+                        drained.set()
+                threading.Thread(target=drain, daemon=True).start()
+                assert drained.wait(2) and receipt == [b''], 'background worker inherited an unrelated parent pipe'
         assert (result.returncode == 0) == ok, (args, result.returncode, result.stdout, result.stderr)
         return json.loads(result.stdout) if ok else result
 
