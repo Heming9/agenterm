@@ -87,7 +87,8 @@ jobs:
         run: |
           cd cmd/agenterm-client-gui
           "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon --release
-          cp Agenterm.app/Contents/MacOS/Agenterm ../../agenterm-client-gui-macos-arm64
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' Agenterm.app/Contents/Info.plist)
+          cp "Agenterm.app/Contents/MacOS/$executable" ../../agenterm-client-gui-macos-arm64
           chmod +x ../../agenterm-client-gui-macos-arm64
       - uses: actions/upload-artifact@v4
         with:

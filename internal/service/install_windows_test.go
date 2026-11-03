@@ -84,7 +84,14 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 			}
 			prefix = `function Get-Command { [CmdletBinding()] param([string]$Name); if (` + hidden + `) { return }; Microsoft.PowerShell.Core\Get-Command @PSBoundParameters }; `
 		}
-		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+prefix+command)
+		// Execute the returned launcher's inner command in this PowerShell.
+		// Starting another process would discard the fallback command overrides.
+		script, ok := strings.CutPrefix(command, `powershell -NoP -c "`)
+		if !ok || !strings.HasSuffix(script, `"`) {
+			t.Fatalf("unexpected PowerShell launcher: %s", command)
+		}
+		script = strings.TrimSuffix(script, `"`)
+		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+prefix+script)
 		// CI runs under PowerShell 7. Let Windows PowerShell construct its own
 		// module path instead of trying to load the inherited PowerShell 7 modules.
 		for _, value := range os.Environ() {
