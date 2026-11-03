@@ -32,6 +32,29 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		if err := json.Unmarshal(data, &schema); err != nil || len(schema.Properties) == 0 {
 			t.Fatalf("%s has no concrete result schema: %s %v", tool.Name, data, err)
 		}
+		if tool.Name == "execute_command" || tool.Name == "session_read" {
+			expected := []string{"session_id", "command_id", "status", "output", "next_cursor", "has_more"}
+			if len(schema.Properties) != 9 || len(schema.Required) != len(expected) {
+				t.Fatalf("%s result is not compact: %s", tool.Name, data)
+			}
+			for _, field := range expected {
+				found := false
+				for _, required := range schema.Required {
+					if field == required {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("%s missing required %s", tool.Name, field)
+				}
+			}
+			if !reflect.DeepEqual(schema.Properties["status"].Enum, []any{"running", "idle", "closed"}) {
+				t.Fatalf("%s has wrong states", tool.Name)
+			}
+			if !reflect.DeepEqual(schema.Properties["truncated"].Enum, []any{true}) {
+				t.Fatalf("%s permits a redundant false truncation field", tool.Name)
+			}
+		}
 		var checkDescriptions func(*jsonschema.Schema)
 		checkDescriptions = func(s *jsonschema.Schema) {
 			if s == nil {
@@ -106,6 +129,9 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		}
 		if _, exists := structured["next_action"]; exists {
 			t.Fatalf("%s still returns next_action", name)
+		}
+		if name == "execute_command" || name == "session_read" {
+			assertCompactReadResult(t, structured)
 		}
 		seen[name] = true
 		return structured

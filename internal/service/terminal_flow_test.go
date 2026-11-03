@@ -23,8 +23,9 @@ func readExecutionToCompletion(t *testing.T, h *multiHarness, token string, init
 	result := initial
 	deadline := time.Now().Add(5 * time.Second)
 	for {
+		assertCompactReadResult(t, result)
 		output.WriteString(result["output"].(string))
-		if result["command_done"] == true && result["has_more"] == false {
+		if result["status"] != "running" && result["has_more"] == false {
 			return output.String(), result
 		}
 		if time.Now().After(deadline) {
@@ -58,7 +59,7 @@ func TestAnonymousCommandsCloseAndReleaseSlots(t *testing.T) {
 		if failed {
 			wantCode = 1
 		}
-		if result["status"] != "completed" || result["command_done"] != true || result["done"] != true || result["session_alive"] != false || result["persistent"] != false || result["promoted"] != false || result["session_created"] != true || result["canceled"] != false || result["exit_code"] != wantCode || result["output"] != "unset" {
+		if result["status"] != "closed" || result["exit_code"] != wantCode || result["output"] != "unset" {
 			t.Fatalf("iteration %d: %v", i, result)
 		}
 	}
@@ -83,11 +84,11 @@ func TestAnonymousWaitRetainsOriginalShellAndRandomName(t *testing.T) {
 	}
 	result := h.call(t, token, "execute_command", map[string]any{"command": command, "wait_ms": 50}, false).(map[string]any)
 	name, ok := result["session_id"].(string)
-	if !ok || name == "" || result["persistent"] != true || result["promoted"] != true || result["session_alive"] != true || result["done"] != false || result["status"] != "running" {
+	if !ok || name == "" || result["status"] != "running" {
 		t.Fatal(result)
 	}
 	output, completed := readExecutionToCompletion(t, h, token, result)
-	if output != "once" || completed["exit_code"] != float64(0) || completed["canceled"] != false || completed["timed_out"] != false || completed["session_alive"] != true || completed["done"] != false {
+	if completed["status"] != "idle" || output != "once" || completed["exit_code"] != float64(0) {
 		t.Fatalf("command restarted, lost output or stopped: %v output=%q", completed, output)
 	}
 	executions, err := os.ReadFile(sideEffectPath)
@@ -95,7 +96,7 @@ func TestAnonymousWaitRetainsOriginalShellAndRandomName(t *testing.T) {
 		t.Fatalf("command executed more than once: side effect=%q err=%v", executions, err)
 	}
 	reused := h.call(t, token, "execute_command", map[string]any{"session_id": name, "command": inspect}, false).(map[string]any)
-	if reused["session_id"] != result["session_id"] || reused["session_created"] != false || reused["output"] != "retained" || reused["persistent"] != true || reused["promoted"] != true || reused["done"] != false {
+	if reused["status"] != "idle" || reused["session_id"] != result["session_id"] || reused["output"] != "retained" {
 		t.Fatal(reused)
 	}
 	h.call(t, token, "session_control", map[string]any{"session_id": result["session_id"], "action": "stop"}, false)
@@ -106,11 +107,11 @@ func TestZeroWaitAnonymousIsPersistentEvenWhenCommandFinishesQuickly(t *testing.
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
 	result := h.call(t, token, "execute_command", map[string]any{"command": "echo quick", "wait_ms": 0}, false).(map[string]any)
-	if result["persistent"] != true || result["promoted"] != true || result["session_id"] == "" || result["done"] != false {
+	if result["session_id"] == "" || result["status"] == "closed" {
 		t.Fatal(result)
 	}
 	_, completed := readExecutionToCompletion(t, h, token, result)
-	if completed["session_alive"] != true || completed["done"] != false || completed["exit_code"] != float64(0) {
+	if completed["status"] != "idle" || completed["exit_code"] != float64(0) {
 		t.Fatal(completed)
 	}
 	h.call(t, token, "session_control", map[string]any{"session_id": result["session_id"], "action": "stop"}, false)
@@ -122,18 +123,18 @@ func TestSetupCreatesAndRecreatesClosedSession(t *testing.T) {
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
 	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": "keep=old"}, false).(map[string]any)
-	if first["session_id"] != "workspace" || first["persistent"] != true || first["promoted"] != false {
+	if first["status"] != "idle" || first["session_id"] != "workspace" {
 		t.Fatal(first)
 	}
 	h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": "echo never"}, true)
 	h.call(t, token, "session_control", map[string]any{"session_id": first["session_id"], "action": "stop"}, false)
 	h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "echo never"}, true)
 	next := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
-	if next["session_created"] != true || next["session_id"] != first["session_id"] || next["session_id"] != "workspace" || next["output"] != "new" {
+	if next["status"] != "idle" || next["session_id"] != first["session_id"] || next["session_id"] != "workspace" || next["output"] != "new" {
 		t.Fatal(next)
 	}
 	reused := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "echo alive"}, false).(map[string]any)
-	if reused["session_id"] != next["session_id"] || reused["session_created"] != false {
+	if reused["status"] != "idle" || reused["session_id"] != next["session_id"] {
 		t.Fatal(reused)
 	}
 }
@@ -146,7 +147,7 @@ func TestSuppliedSessionIDIsIsolatedBetweenTokens(t *testing.T) {
 		ws, _ := h.connect(t, token, label)
 		go serveTestDevice(ws, label, nil, nil)
 		result := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "shared"}, "command": "quick"}, false).(map[string]any)
-		if result["session_id"] != "shared" || result["session_created"] != true || result["output"] != label+":quick" {
+		if result["status"] != "idle" || result["session_id"] != "shared" || result["output"] != label+":quick" {
 			t.Fatal(result)
 		}
 	}
@@ -181,7 +182,7 @@ func TestSetupWithoutIDUsesAnonymousLifetimeAndInitialOptions(t *testing.T) {
 				command = "Write-Output $env:SETUP_TEST_VALUE; Get-Location"
 			}
 			started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"cwd": dir, "env": map[string]string{"SETUP_TEST_VALUE": "initialized"}}, "command": command, "wait_ms": wait}, false).(map[string]any)
-			if started["session_id"] == "" || started["session_created"] != true {
+			if started["session_id"] == "" {
 				t.Fatal(started)
 			}
 			output, completed := readExecutionToCompletion(t, h, token, started)
@@ -189,7 +190,11 @@ func TestSetupWithoutIDUsesAnonymousLifetimeAndInitialOptions(t *testing.T) {
 				t.Fatalf("setup lost: %v output=%q", completed, output)
 			}
 			retained := wait == 0
-			if completed["persistent"] != retained || completed["promoted"] != retained || completed["session_alive"] != retained || completed["done"] == retained {
+			wantStatus := "closed"
+			if retained {
+				wantStatus = "idle"
+			}
+			if completed["status"] != wantStatus {
 				t.Fatal(completed)
 			}
 			if retained {

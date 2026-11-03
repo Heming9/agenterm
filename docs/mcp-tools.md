@@ -7,8 +7,8 @@ Current source builds publish explicit output schemas and behavior annotations f
 | `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
 | `list_clients` | Inspect devices or wait for a connection. | `clients`; waiting calls also return `status`. |
 | `p2p_transfer_start` | Bootstrap p2p-cli remotely and return Agent-side scripts after remote signaling registration. | `connection_id`, endpoint IDs, `state`, `shell_script`, `powershell_script`. |
-| `execute_command` | Create through setup or reuse through session_id; anonymous terminals close on fast completion or are retained on wait expiry. | `session_id`, `command_id`, `session_created`, `status`, `output`, `next_cursor`, `command_done`, `session_alive`, and completion fields. |
-| `session_read` | Read paginated output and inspect command completion separately from terminal lifetime. | `output`, `next_cursor`, `has_more`, `truncated`, `command_done`, `session_alive`, `done`, and completion fields. |
+| `execute_command` | Create through setup or reuse through session_id; anonymous commands close quickly or retain on wait expiry. | `session_id`, `command_id`, `status`, `output`, `next_cursor`, `has_more`; optional `exit_code`, `error`, `truncated`. |
+| `session_read` | Read paginated output using the same result format as execute_command. | Six regular fields; completion adds exit_code, with error/truncated only when needed. |
 | `session_control` | Send input, interrupt, EOF or stop using `action`. | `action`; input returns `accepted`, interrupt/EOF return `delivered`, stop returns confirmation and terminal fields. |
 | `session_list` | Rediscover this token's retained sessions, optionally filtered by `client_id`, even for offline devices. | `sessions`: session, device, latest command, timestamps, lifecycle status and retained output cursor range. |
 
@@ -77,13 +77,13 @@ The client reports its terminal ID, creation/reuse decision and retention policy
 <details>
 <summary>Commands and interactive sessions</summary>
 
-Top-level `execute_command.session_id` only reuses an existing terminal and rejects unknown/closed IDs. `setup` always creates a terminal and contains optional `cwd`, `env` and `session_id`; an existing setup ID is rejected, never overwritten or reused. setup and top-level session_id cannot be combined. An explicit setup ID creates a persistent terminal; omit that ID for a generated anonymous terminal. Omitting both also creates an anonymous terminal: fast completion closes it; wait expiry retains the same shell. IDs are unique within a token; multi-device creation requires client_id, while existing IDs identify their devices. session_created=true means creation; false means reuse.
+Top-level `execute_command.session_id` only reuses an existing terminal and rejects unknown/closed IDs. `setup` always creates a terminal and contains optional `cwd`, `env` and `session_id`; an existing setup ID is rejected, never overwritten or reused. setup and top-level session_id cannot be combined. An explicit setup ID creates a persistent terminal; omit that ID for a generated anonymous terminal. Omitting both also creates an anonymous terminal: fast completion closes it; wait expiry retains the same shell. IDs are unique within a token; multi-device creation requires client_id, while existing IDs identify their devices.
 
 Directory, variables, functions and environment activation persist within the shell. `cwd`/`env` are available only inside setup to initialize new terminals. Reuse without setup; change state with cd/export or shell equivalents. Each terminal accepts one command at a time and returns session_busy when occupied, without queueing or opening a replacement.
 
-`wait_ms` defaults to 10000 (10 seconds), range 0–20000. It begins at client admission and includes shell startup for a new anonymous terminal. Setting 0 retains an anonymous terminal immediately; the call still waits for client admission. Waiting expiry never kills execution. Fast results report `status=completed`; running results include available output and `next_cursor`. Read with `session_read` and interact with `session_control`. `persistent=true` means command completion will leave the shell alive; `promoted=true` identifies an anonymous terminal retained after its initial wait (including 0). Named and promoted terminals do not expire when idle; close them with `session_control(action=stop)`. Canceling an MCP waiter does not cancel accepted work or its client-owned retention timer. `timeout_ms` is no longer supported.
+`wait_ms` defaults to 10000 (10 seconds), range 0–20000, from client admission including shell startup. Zero immediately retains anonymous terminals while still waiting for admission. Expiry never kills execution. Results use running while busy, idle after command completion in a retained shell, and closed once shell exit is confirmed. Named and retained shells require explicit session_control(action=stop), with no idle expiry. Canceling an MCP waiter does not cancel accepted work.
 
-Output is a combined terminal `output` stream. `command_done`/`exit_code` describe the latest command; `done` means the terminal ended; `session_alive` indicates availability. A fast anonymous command returns `command_done=true`, `done=true`, `session_alive=false`, `persistent=false`, `promoted=false`. A completed named or promoted command returns `done=false`, `session_alive=true`, `persistent=true`. Client shell integration reports command boundaries and exit codes without guessing visible prompts.
+execute_command and session_read share six regular fields: session_id, command_id, status, output, next_cursor and has_more. status is running (busy, including pending stop confirmation), idle (command finished and shell reusable), or closed (exit confirmed). Fast anonymous commands finish closed; completed named/retained commands become idle. Completion adds exit_code including successful 0; error appears only on failure and truncated only as true when old output was lost. Removed execution/read fields: session_created, command_done, done, session_alive, persistent, promoted, timed_out and canceled.
 
 Linux/macOS use the reported shell and a PTY. Windows uses PowerShell and pipes for basic input interaction without full terminal emulation. Persistent terminals inherit client environment but do not load user shell startup files, so the integration remains reliable. Prompt hooks/PS1 are reserved; do not override them or terminal echo settings. Initialize additional environments explicitly in commands. Both server and client must be updated; older clients receive an upgrade error.
 
@@ -94,7 +94,7 @@ Each client process permits at most 10 live terminals, including starting, runni
 <details>
 <summary>Reading output and finding sessions</summary>
 
-`session_read.max_bytes` defaults to 16384, with a range of 4–65536 bytes. Output never splits a UTF-8 character. Continue from each returned `next_cursor`. `has_more=true` means retained output remains; even with `done=true`, keep reading until `has_more=false`. `command_done` and `exit_code` describe the latest command; `done` only indicates terminal termination. Pagination alone does not set `truncated`.
+`session_read.max_bytes` defaults to 16384, range 4–65536 bytes, preserving UTF-8 boundaries. Continue from next_cursor and drain has_more even after idle/closed. Empty output or a drained page does not prove completion; inspect status. truncated appears only for discarded older output, never merely for pagination.
 
 `session_list` returns terminals in creation order, including retained records for offline devices. Filter by `client_id`; `session_id`, `persistent` and `promoted` describe client-reported retention. The old `default` flag has been removed. `status` is `idle`, `running`, `stopping` or `finished`. `command`/`command_id` identify the latest submitted command, `command_done` means command completion, and `done` means terminal termination. `output_start_cursor` is the earliest retained offset and `output_end_cursor` the end. Ended records last up to 30 minutes or until replaced by newer terminals.
 
@@ -116,7 +116,7 @@ Before interrupt or EOF, check `list_clients.client_info.session_controls` (`int
 
 | Status | Meaning and next step |
 | --- | --- |
-| `stopping` | Request sent or already pending, but termination is not confirmed. Continue `session_read` until `done=true`. |
+| `stopping` | Request sent or already pending, but termination is not confirmed. Continue `session_read` until `status=closed`. |
 | `stopped` | The target reported a terminal result with `canceled=true`. Read any remaining session output. |
 | `finished` | The session ended for another reason. Inspect `exit_code`, `timed_out`, `canceled` and `error`; a disconnect does not confirm a remote cancellation. |
 

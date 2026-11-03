@@ -87,7 +87,7 @@ func TestSessionReadUTF8PaginationAfterExit(t *testing.T) {
 			t.Fatal(err)
 		}
 		output := r["output"].(string)
-		if len(output) > 4 || !utf8.ValidString(output) || r["done"] != true || r["exit_code"] != 7 || r["truncated"] != false {
+		if len(output) > 4 || !utf8.ValidString(output) || r["status"] != "closed" || r["exit_code"] != 7 || r["truncated"] != nil {
 			t.Fatalf("invalid page: %v", r)
 		}
 		next := r["next_cursor"].(int64)
@@ -139,11 +139,11 @@ func TestSessionReadLimitThroughMCP(t *testing.T) {
 	h.s.sessions = map[string]*session{sessionKey(p.owner, p.id): p}
 	h.s.mu.Unlock()
 	r := h.call(t, token, "session_read", map[string]any{"session_id": p.id}, false).(map[string]any)
-	if len(r["output"].(string)) != defaultSessionReadBytes || r["has_more"] != true || r["done"] != true {
+	if len(r["output"].(string)) != defaultSessionReadBytes || r["has_more"] != true || r["status"] != "closed" {
 		t.Fatalf("default paging: %v", r)
 	}
 	r = h.call(t, token, "session_read", map[string]any{"session_id": p.id, "cursor": r["next_cursor"], "max_bytes": maxSessionReadBytes}, false).(map[string]any)
-	if len(r["output"].(string)) != maxSessionReadBytes || r["next_cursor"] != float64(defaultSessionReadBytes+maxSessionReadBytes) || r["truncated"] != false {
+	if len(r["output"].(string)) != maxSessionReadBytes || r["next_cursor"] != float64(defaultSessionReadBytes+maxSessionReadBytes) || r["truncated"] != nil {
 		t.Fatal("explicit read limit not applied")
 	}
 	for _, limit := range []any{-1, 0, 3, maxSessionReadBytes + 1, 4.5, "100"} {

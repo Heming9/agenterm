@@ -292,7 +292,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		out := h.call(t, token, "session_read", map[string]any{"session_id": sessions["A"], "wait_ms": 100}, false).(map[string]any)
-		if out["done"] == true {
+		if out["status"] == "closed" {
 			break
 		}
 		if time.Now().After(deadline) {

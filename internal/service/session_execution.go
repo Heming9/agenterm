@@ -17,7 +17,6 @@ type sessionExecution struct {
 	SessionID       string `json:"session_id"`
 	CommandID       string `json:"command_id"`
 	Cursor          int64  `json:"cursor"`
-	SessionCreated  bool   `json:"session_created"`
 	AwaitSettlement bool   `json:"await_settlement,omitempty"`
 }
 type waitExecutionArgs struct {
@@ -32,7 +31,6 @@ type pendingSessionCommand struct {
 	log     *slog.Logger
 	session *session
 	cursor  int64
-	created bool
 }
 
 func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[executeArgs]) (sessionExecution, error) {
@@ -108,7 +106,7 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 		if reply.Type != "command_accepted" || request.session == nil {
 			return sessionExecution{}, i18n.NewError("session.control.invalid.response")
 		}
-		return sessionExecution{SessionID: reply.SessionID, CommandID: id, Cursor: request.cursor, SessionCreated: request.created, AwaitSettlement: !reply.SessionPersistent}, nil
+		return sessionExecution{SessionID: reply.SessionID, CommandID: id, Cursor: request.cursor, AwaitSettlement: !reply.SessionPersistent}, nil
 	case <-ctx.Done():
 		return sessionExecution{}, ctx.Err()
 	}
@@ -155,7 +153,7 @@ func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error 
 	p.commandLog = p.log.With("command_id", m.RequestID)
 	if request != nil {
 		p.commandLog = request.log.With("client_id", c.info.ID, "session_id", p.id, "command_id", m.RequestID)
-		request.session, request.cursor, request.created = p, commandStart, m.SessionCreate
+		request.session, request.cursor = p, commandStart
 	}
 	p.commandLog.Info("command started")
 	p.signal()
@@ -239,11 +237,7 @@ func (p *session) waitExecution(ctx context.Context, a waitExecutionArgs) (map[s
 	}
 	// Pin the command identity through the snapshot so a concurrent new command
 	// cannot relabel the output of this execution.
-	out, err := p.readCommand(ctx, a.Cursor, 0, defaultSessionReadBytes, a.CommandID)
-	if err == nil {
-		out["session_created"] = a.SessionCreated
-	}
-	return out, err
+	return p.readCommand(ctx, a.Cursor, 0, defaultSessionReadBytes, a.CommandID)
 }
 
 func (s *frontend) executeSession(ctx context.Context, secret string, a executeArgs) (map[string]any, error) {

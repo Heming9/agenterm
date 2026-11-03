@@ -15,28 +15,20 @@ type clientsResult struct {
 	Status  string       `json:"status,omitempty"`
 }
 
-type executeResult struct {
-	sessionReadResult
-	SessionCreated bool `json:"session_created"`
-}
+type executeResult = sessionReadResult
 
+// Execution and incremental reads share six regular fields. Completion and
+// exceptional output conditions add only the fields needed by the caller.
 type sessionReadResult struct {
-	Persistent   *bool  `json:"persistent,omitempty"`
-	Promoted     *bool  `json:"promoted,omitempty"`
-	SessionAlive *bool  `json:"session_alive,omitempty"`
-	CommandDone  *bool  `json:"command_done,omitempty"`
-	CommandID    string `json:"command_id,omitempty"`
-	Status       string `json:"status,omitempty"`
-	SessionID    string `json:"session_id"`
-	Output       string `json:"output"`
-	NextCursor   int64  `json:"next_cursor"`
-	Truncated    bool   `json:"truncated"`
-	HasMore      bool   `json:"has_more"`
-	Done         bool   `json:"done"`
-	ExitCode     *int   `json:"exit_code,omitempty"`
-	TimedOut     *bool  `json:"timed_out,omitempty"`
-	Canceled     *bool  `json:"canceled,omitempty"`
-	Error        string `json:"error,omitempty"`
+	SessionID  string `json:"session_id"`
+	CommandID  string `json:"command_id"`
+	Status     string `json:"status"`
+	Output     string `json:"output"`
+	NextCursor int64  `json:"next_cursor"`
+	HasMore    bool   `json:"has_more"`
+	ExitCode   *int   `json:"exit_code,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Truncated  bool   `json:"truncated,omitempty"`
 }
 
 type sessionWriteResult struct {
@@ -108,9 +100,12 @@ func describeResult(schema *jsonschema.Schema) {
 	}
 	for name, property := range schema.Properties {
 		property.Description = serverText("mcp.result." + name)
-		if name == "status" && schema.Properties["command_done"] != nil && schema.Properties["client_id"] == nil {
+		if name == "truncated" && schema.Properties["next_cursor"] != nil {
+			property.Enum = []any{true}
+		}
+		if name == "status" && schema.Properties["next_cursor"] != nil {
 			property.Description = serverText("mcp.execution.status")
-			property.Enum = []any{"running", "completed"}
+			property.Enum = []any{"running", "idle", "closed"}
 		}
 		if name == "status" && schema.Properties["client_id"] != nil {
 			property.Description = serverText("mcp.client.status")

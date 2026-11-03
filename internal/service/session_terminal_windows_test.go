@@ -24,8 +24,8 @@ func TestSessionEOFKeepsWindowsOutputReadable(t *testing.T) {
 		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 1000, "max_bytes": 16}, false).(map[string]any)
 		cursor = r["next_cursor"].(float64)
 		output.WriteString(r["output"].(string))
-		if r["done"] == true && r["has_more"] == false {
-			if r["exit_code"] != float64(0) || r["canceled"] != false || r["timed_out"] != false || !strings.Contains(output.String(), "alpha\r\nbeta") || !strings.Contains(output.String(), "after-eof") {
+		if r["status"] == "closed" && r["has_more"] == false {
+			if r["exit_code"] != float64(0) || !strings.Contains(output.String(), "alpha\r\nbeta") || !strings.Contains(output.String(), "after-eof") {
 				t.Fatalf("EOF closed output or canceled execution: %v output=%q", r, output.String())
 			}
 			break

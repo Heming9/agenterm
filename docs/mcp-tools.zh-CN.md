@@ -7,8 +7,8 @@
 | `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
 | `list_clients` | 查看设备或等待连接。 | `clients`；等待时还返回 `status`。 |
 | `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
-| `execute_command` | 通过 setup 创建、session_id 复用；匿名终端快速完成关闭，等待到期则保留。 | `session_id`、`command_id`、`session_created`、`status`、`output`、`next_cursor`、`command_done`、`session_alive`，以及完成后的退出信息。 |
-| `session_read` | 分页读取输出，分别检查命令完成与终端存活。 | `output`、`next_cursor`、`has_more`、`truncated`、`command_done`、`session_alive`、`done`；完成后提供退出信息。 |
+| `execute_command` | 通过 setup 创建、session_id 复用；匿名任务快速完成关闭，等待到期保留。 | `session_id`、`command_id`、`status`、`output`、`next_cursor`、`has_more`；按需返回 `exit_code`、`error`、`truncated`。 |
+| `session_read` | 分页读取输出，与 execute_command 使用同一返回格式。 | 六个常规字段；命令结束时带 `exit_code`，有错误或丢失输出时带对应字段。 |
 | `session_control` | 用 `action` 选择输入、中断、EOF 或停止。 | `action`；输入返回 `accepted`，中断/EOF 返回 `delivered`，停止返回确认状态及终态字段。 |
 | `session_list` | 找回所选 token 的保留会话，可按 `client_id` 筛选，无需设备在线。 | `sessions`：会话、设备、最新命令、时间、状态及保留输出游标范围。 |
 
@@ -77,13 +77,13 @@
 <details>
 <summary>命令与交互式会话</summary>
 
-`execute_command` 的顶级 `session_id` 只复用已有终端，未知或已关闭 ID 报错。传 `setup` 始终新建终端，其中可包含 `cwd`、`env` 和 `session_id`；指定 ID 已存在时会报错，不覆盖或复用。setup 与顶级 session_id 不能同时使用。setup.session_id 指定时创建持久终端；省略时生成随机 ID，仍走匿名终端流程。两者均省略也新建匿名终端：快速完成自动关闭，等待先到期则保留同一 shell。同一 token 内 ID 唯一，多设备创建需 client_id，已有 ID 可定位设备。session_created=true 表示新建，false 表示复用。
+`execute_command` 的顶级 `session_id` 只复用已有终端，未知或已关闭 ID 报错。传 `setup` 始终新建终端，其中可包含 `cwd`、`env` 和 `session_id`；指定 ID 已存在时会报错，不覆盖或复用。setup 与顶级 session_id 不能同时使用。setup.session_id 指定时创建持久终端；省略时生成随机 ID，仍走匿名终端流程。两者均省略也新建匿名终端：快速完成自动关闭，等待先到期则保留同一 shell。同一 token 内 ID 唯一，多设备创建需 client_id，已有 ID 可定位设备。
 
 目录、变量、函数和虚拟环境状态在同一 shell 中保留。`cwd` 和 `env` 只存在于 setup 中，用于初始化新终端；复用时不传 setup，通过 cd、export 或目标 shell 对应命令修改状态。每个终端同一时间执行一条命令，忙碌时返回 session_busy，不另开终端、不排队。
 
-`wait_ms` 默认 10000（10 秒），范围 0–20000，从客户端接受开始计时，新匿名终端的 shell 启动时间也计算在内。0 表示立即保留匿名终端，仍需先等待客户端接受回执。等待到期不会终止命令。快速完成返回 `status=completed`，未完成返回 `status=running`、已有输出和 next_cursor，之后通过 session_read 读取、session_control 交互。`persistent=true` 表示命令完成后仍保留 shell；`promoted=true` 表示该终端由匿名终端在首次等待到期后保留而来（包括 0）。具名和保留后的终端没有空闲回收，需要 `session_control(action=stop)` 主动关闭。MCP 等待取消不会取消已接受任务，也不会停止客户端保留计时。已移除 timeout_ms。
+`wait_ms` 默认 10000（10 秒），范围 0–20000，从客户端接受开始计时，包括新 shell 的启动时间。0 立即保留匿名终端，仍需等待接受回执。等待到期不会终止命令。执行中返回 status=running，完成且保留 shell 时返回 idle，终端确认关闭后返回 closed。具名和等待到期保留的终端需 session_control(action=stop) 主动关闭，不按空闲时间回收。MCP 等待取消不会取消已接受任务。
 
-终端输出统一为合并的 output。command_done 和 exit_code 描述最新命令；done 表示终端已结束，session_alive 表示可用状态。快速匿名命令返回 `command_done=true`、`done=true`、`session_alive=false`、`persistent=false`、`promoted=false`。具名或已保留终端的命令完成后为 `done=false`、`session_alive=true`、`persistent=true`。命令边界和退出码由客户端 shell 集成报告，不依赖可见提示符猜测。
+execute_command 与 session_read 统一返回六个常规字段：session_id、command_id、status、output、next_cursor、has_more。status 为 running（终端忙碌，包括停止待确认）、idle（命令结束，终端可复用）、closed（已确认退出）。快速匿名命令结束后为 closed，具名或保留终端的命令完成后为 idle。命令完成时额外返回 exit_code，包括成功的 0；仅有错误时返回 error，仅旧输出被丢弃时返回 truncated=true。不再返回 session_created、command_done、done、session_alive、persistent、promoted、timed_out 或 canceled。
 
 Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道，支持基本输入交互，不模拟完整终端。为保持命令边界可靠，持续终端不加载用户 shell 启动配置；继承客户端环境，并保留提示符钩子、PS1 等供集成使用，请勿覆盖它们或修改终端回显。需要的环境可以在命令中显式初始化。服务端和客户端均需更新，旧客户端会收到升级提示。
 
@@ -94,7 +94,7 @@ Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道�
 <details>
 <summary>读取输出与查找会话</summary>
 
-`session_read.max_bytes` 默认 16384，范围 4–65536 字节；输出不会在 UTF-8 字符中间切断。每次用返回的 `next_cursor` 继续读取。`has_more=true` 表示当前仍有保留输出；即使 `done=true`，也应读到 `has_more=false`。`command_done` 和 `exit_code` 标识最新命令的结果，`done` 仅表示整个终端已结束。分页本身不会触发 `truncated`。
+`session_read.max_bytes` 默认 16384，范围 4–65536 字节，输出不会拆开 UTF-8 字符。每次使用 next_cursor 继续读取；即使 status 为 idle/closed，也应读到 has_more=false。没有输出或分页读完不代表命令结束；请检查 status。truncated 仅在旧输出丢失时出现，分页本身不会触发它。
 
 `session_list` 按创建时间返回本 token 的终端，包括离线设备的保留记录。可按 `client_id` 筛选，`session_id`、`persistent` 和 `promoted` 描述客户端回报的保留状态，移除旧 `default` 字段；`status` 为 `idle`、`running`、`stopping` 或 `finished`。`command`/`command_id` 是最近提交的命令，`command_done` 标识命令完成，`done` 标识终端结束。`output_start_cursor` 指向最早保留输出，`output_end_cursor` 指向末尾。已结束记录最多保留 30 分钟，也可能在新建终端时被替换。
 
@@ -116,7 +116,7 @@ Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道�
 
 | 状态 | 含义及下一步 |
 | --- | --- |
-| `stopping` | 请求已发出或正在等待处理，尚未确认停止，继续 `session_read` 直到 `done=true`。 |
+| `stopping` | 请求已发出或正在等待处理，尚未确认停止，继续 `session_read` 直到 `status=closed`。 |
 | `stopped` | 目标已返回 `canceled=true` 的终态，可继续读取剩余会话输出。 |
 | `finished` | 会话因其他原因结束，应检查 `exit_code`、`timed_out`、`canceled` 和 `error`；断线不代表远程取消已确认。 |
 

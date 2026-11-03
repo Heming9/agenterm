@@ -219,7 +219,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		read := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 4000}, false).(map[string]any)
 		output.WriteString(read["output"].(string))
 		cursor = read["next_cursor"]
-		if read["command_done"] == true {
+		if read["status"] != "running" {
 			if read["exit_code"] != float64(0) {
 				t.Fatal(read)
 			}

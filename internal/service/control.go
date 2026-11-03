@@ -19,7 +19,7 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-const controlVersion = "4"
+const controlVersion = "5"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {

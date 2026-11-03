@@ -108,6 +108,18 @@ func (p *session) logCommandCompletion(m protocol.Message) {
 	p.commandLog.Log(context.Background(), level, "command completed", "duration_ms", time.Since(p.commandStarted).Milliseconds(), "exit_code", m.ExitCode, "timed_out", m.TimedOut, "canceled", m.Canceled, "has_error", m.Error != "")
 }
 
+// A finished anonymous shell and a stopped terminal remain busy until their
+// actual exit acknowledgment; idle must mean that reuse is possible.
+func (p *session) readStatusLocked() string {
+	if p.done {
+		return "closed"
+	}
+	if p.commandDone && p.keepAlive && !p.stopRequested {
+		return "idle"
+	}
+	return "running"
+}
+
 func (p *session) readCommand(ctx context.Context, cursor int64, wait time.Duration, maxBytes int, commandID string) (map[string]any, error) {
 	if maxBytes < 4 || maxBytes > maxSessionReadBytes {
 		return nil, i18n.NewError("session.read.invalid.limit")
@@ -142,21 +154,17 @@ func (p *session) readCommand(ctx context.Context, cursor int64, wait time.Durat
 				next--
 			}
 			text := string(p.output[cursor-p.offset : next-p.offset])
-			result := map[string]any{"session_id": p.id, "output": text, "next_cursor": next, "has_more": next < end, "truncated": truncated, "done": p.done}
+			result := map[string]any{"session_id": p.id, "command_id": p.commandID, "status": p.readStatusLocked(), "output": text, "next_cursor": next, "has_more": next < end}
+			if truncated {
+				result["truncated"] = true
+			}
 			if p.done || p.commandDone {
 				result["exit_code"] = p.exitCode
-				result["timed_out"] = p.timedOut
-				result["canceled"] = p.canceled
 				if p.err != "" {
 					result["error"] = p.err
 				}
 			}
-			result["persistent"], result["promoted"] = p.keepAlive, p.promoted
-			result["session_alive"], result["command_done"], result["command_id"] = !p.done && !p.stopRequested, p.commandDone, p.commandID
-			result["status"] = "running"
-			if p.commandDone {
-				result["status"] = "completed"
-			}
+
 			p.mu.Unlock()
 			return result, nil
 		}

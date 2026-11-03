@@ -19,11 +19,11 @@ func TestPersistentForegroundInterruptKeepsNamedShell(t *testing.T) {
 	id := active["session_id"]
 	h.call(t, token, "session_control", map[string]any{"session_id": id, "action": "interrupt"}, false)
 	_, completed := readExecutionToCompletion(t, h, token, active)
-	if completed["session_alive"] != true || completed["exit_code"] == float64(0) {
+	if completed["status"] != "idle" || completed["exit_code"] == float64(0) {
 		t.Fatal(completed)
 	}
 	last := h.call(t, token, "execute_command", map[string]any{"session_id": "interrupt", "command": "printf '%s' \"$keep\""}, false).(map[string]any)
-	if last["session_id"] != id || last["session_created"] != false || !strings.Contains(last["output"].(string), "preserved") {
+	if last["session_id"] != id || last["status"] != "idle" || !strings.Contains(last["output"].(string), "preserved") {
 		t.Fatal(last)
 	}
 }
@@ -33,13 +33,13 @@ func TestNestedShellPromptDoesNotCompleteParentCommand(t *testing.T) {
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
 	active := h.call(t, token, "execute_command", map[string]any{"command": "/bin/sh -i", "wait_ms": 100}, false).(map[string]any)
-	if active["command_done"] != false {
+	if active["status"] != "running" {
 		t.Fatalf("nested prompt completed parent: %v", active)
 	}
 	id := active["session_id"]
 	h.call(t, token, "session_control", map[string]any{"session_id": id, "action": "input", "input": "printf nested; exit\n"}, false)
 	output, completed := readExecutionToCompletion(t, h, token, active)
-	if completed["session_alive"] != true || !strings.Contains(output, "nested") {
+	if completed["status"] != "idle" || !strings.Contains(output, "nested") {
 		t.Fatalf("nested completion: %v output=%q", completed, output)
 	}
 }

@@ -115,7 +115,7 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location; [Console]::Error.WriteLine('stderr only'); cmd /c exit 1`
 	}
 	out, isError := callExecution(t, session, map[string]any{"setup": map[string]any{"session_id": "options", "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "overridden"}}, "command": command})
-	if !isError || out.ExitCode == nil || *out.ExitCode != 1 || out.Status != "completed" || !strings.Contains(out.Output, "overridden") || !strings.Contains(out.Output, dir) || !strings.Contains(out.Output, "stderr only") {
+	if !isError || out.ExitCode == nil || *out.ExitCode != 1 || out.Status != "idle" || !strings.Contains(out.Output, "overridden") || !strings.Contains(out.Output, dir) || !strings.Contains(out.Output, "stderr only") {
 		t.Fatalf("result: %+v error=%v", out, isError)
 	}
 	command = `printf '%s\n' "$AGENTERM_EXEC_TEST"; pwd`
@@ -123,7 +123,7 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location`
 	}
 	reused, isError := callExecution(t, session, map[string]any{"session_id": "options", "command": command})
-	if isError || reused.SessionID != out.SessionID || reused.SessionCreated || !strings.Contains(reused.Output, "overridden") || !strings.Contains(reused.Output, dir) {
+	if isError || reused.SessionID != out.SessionID || reused.Status != "idle" || !strings.Contains(reused.Output, "overridden") || !strings.Contains(reused.Output, dir) {
 		t.Fatalf("state lost: %+v", reused)
 	}
 	bad, isError := callExecution(t, session, map[string]any{"command": "echo never", "setup": map[string]any{"cwd": filepath.Join(dir, "missing")}})
@@ -349,7 +349,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	}
 	started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random(), "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "session-env"}}, "wait_ms": 0, "command": command}, false).(map[string]any)
 	id := started["session_id"]
-	if started["status"] != "running" || started["command_done"] != false {
+	if started["status"] != "running" {
 		t.Fatal(started)
 	}
 	busy := h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo must-not-run"}, true).(map[string]any)
@@ -358,7 +358,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	}
 	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "early-input\n"}, false)
 	output, completed := readExecutionToCompletion(t, h, token, started)
-	if completed["exit_code"] != float64(0) || completed["timed_out"] != false || completed["done"] != false || completed["session_alive"] != true || !strings.Contains(output, "ready") || !strings.Contains(output, want) || !strings.Contains(output, dir) {
+	if completed["exit_code"] != float64(0) || completed["status"] != "idle" || !strings.Contains(output, "ready") || !strings.Contains(output, want) || !strings.Contains(output, dir) {
 		t.Fatalf("input/options: %v output=%q", completed, output)
 	}
 	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo next"}, false)
@@ -369,7 +369,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	}
 	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo never"}, true)
 	fresh := h.call(t, token, "execute_command", map[string]any{"command": "echo fresh"}, false).(map[string]any)
-	if fresh["session_created"] != true || fresh["session_id"] == id {
+	if fresh["status"] != "closed" || fresh["session_id"] == id {
 		t.Fatal(fresh)
 	}
 }

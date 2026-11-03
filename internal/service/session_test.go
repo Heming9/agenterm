@@ -17,7 +17,7 @@ func TestSessionEventsPrecedeNextAdmission(t *testing.T) {
 	c := &client{secret: "owner"}
 	request := &pendingSessionCommand{client: c, log: slog.Default()}
 	s := &runtimeState{sessionRequests: map[string]*pendingSessionCommand{"new": request}}
-	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "old", RequestID: "old", SessionID: "terminal"}); err != nil {
+	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "old", RequestID: "old", SessionID: "terminal", SessionPersistent: true}); err != nil {
 		t.Fatal(err)
 	}
 	for _, event := range []protocol.Message{
@@ -28,7 +28,7 @@ func TestSessionEventsPrecedeNextAdmission(t *testing.T) {
 			t.Fatalf("terminal event was not applied: %v", event)
 		}
 	}
-	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "new", RequestID: "new", SessionID: "terminal"}); err != nil {
+	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "new", RequestID: "new", SessionID: "terminal", SessionPersistent: true}); err != nil {
 		t.Fatal(err)
 	}
 	if request.cursor != 3 {
@@ -43,7 +43,7 @@ func TestSessionEventsPrecedeNextAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out["output"] != "NEW" || out["exit_code"] != 0 || out["command_done"] != true {
+	if out["output"] != "NEW" || out["exit_code"] != 0 || out["status"] != "idle" {
 		t.Fatalf("new command contains previous output or completion: %v", out)
 	}
 }
@@ -159,12 +159,12 @@ func TestFullClientRejectsAnonymousAndMissingNamedTerminals(t *testing.T) {
 		}
 	}
 	reused := h.call(t, token, "execute_command", map[string]any{"session_id": first["session_id"], "command": inspect}, false).(map[string]any)
-	if reused["session_created"] != false || strings.TrimSpace(reused["output"].(string)) != "initial" {
+	if reused["status"] != "idle" || strings.TrimSpace(reused["output"].(string)) != "initial" {
 		t.Fatalf("rejected request altered terminal: %v", reused)
 	}
 	h.call(t, token, "session_control", map[string]any{"session_id": first["session_id"], "action": "stop"}, false)
 	closed := h.call(t, token, "session_read", map[string]any{"session_id": first["session_id"]}, false).(map[string]any)
-	if closed["done"] != true {
+	if closed["status"] != "closed" {
 		t.Fatal(closed)
 	}
 	h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "command": "echo replacement"}, false)
@@ -220,7 +220,7 @@ func TestSessionIncrementalReadAndExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first["output"] != "prompt> " || first["done"] != false {
+	if first["output"] != "prompt> " || first["status"] == "closed" {
 		t.Fatalf("unexpected first read: %#v", first)
 	}
 	cursor := first["next_cursor"].(int64)
@@ -230,7 +230,7 @@ func TestSessionIncrementalReadAndExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if last["output"] != "answer" || last["done"] != true || last["exit_code"] != 7 {
+	if last["output"] != "answer" || last["status"] != "closed" || last["exit_code"] != 7 {
 		t.Fatalf("unexpected final read: %#v", last)
 	}
 }

@@ -21,13 +21,13 @@ func TestNamedSessionStateAndFastCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "stateful", "cwd": dir, "env": map[string]string{"INITIAL": "yes"}}, "command": "keep=state; export SAVED=value; printf first"}, false).(map[string]any)
-	if first["status"] != "completed" || first["command_done"] != true || first["done"] != false || first["session_alive"] != true || first["session_created"] != true || first["output"] != "first" {
+	if first["status"] != "idle" || first["output"] != "first" {
 		t.Fatalf("first: %v", first)
 	}
 	id := first["session_id"]
 	h.call(t, token, "session_control", map[string]any{"session_id": id, "action": "input", "input": "echo untracked\n"}, true)
 	second := h.call(t, token, "execute_command", map[string]any{"session_id": "stateful", "command": "printf '%s:%s:%s\\n' \"$keep\" \"$SAVED\" \"$INITIAL\"; pwd; cd /"}, false).(map[string]any)
-	if second["session_id"] != id || second["session_created"] != false || !strings.Contains(second["output"].(string), "state:value:yes") || !strings.Contains(second["output"].(string), dir) {
+	if second["session_id"] != id || second["status"] != "idle" || !strings.Contains(second["output"].(string), "state:value:yes") || !strings.Contains(second["output"].(string), dir) {
 		t.Fatalf("reuse: %v", second)
 	}
 	third := h.call(t, token, "execute_command", map[string]any{"session_id": "stateful", "command": "pwd"}, false).(map[string]any)
@@ -35,7 +35,7 @@ func TestNamedSessionStateAndFastCommands(t *testing.T) {
 		t.Fatalf("cd lost: %v", third)
 	}
 	failure := h.call(t, token, "execute_command", map[string]any{"session_id": "stateful", "command": "false"}, true).(map[string]any)
-	if failure["exit_code"] != float64(1) || failure["session_alive"] != true {
+	if failure["exit_code"] != float64(1) || failure["status"] != "idle" {
 		t.Fatal(failure)
 	}
 	h.call(t, token, "execute_command", map[string]any{"session_id": "stateful", "command": "echo no", "cwd": dir}, true)
@@ -55,7 +55,7 @@ func TestServerCacheCleanupDoesNotCloseClientTerminal(t *testing.T) {
 	connectExecutionClient(t, h, token)
 	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "kept"}, "command": "echo alive"}, false).(map[string]any)
 	closed := h.call(t, token, "execute_command", map[string]any{"command": "echo closed"}, false).(map[string]any)
-	if closed["done"] != true {
+	if closed["status"] != "closed" {
 		t.Fatalf("cleanup control was not closed: %v", closed)
 	}
 	h.s.mu.Lock()
@@ -67,7 +67,7 @@ func TestServerCacheCleanupDoesNotCloseClientTerminal(t *testing.T) {
 		t.Fatalf("cleanup retained live=%t closed=%t", keptPresent, closedPresent)
 	}
 	next := h.call(t, token, "execute_command", map[string]any{"session_id": "kept", "command": "echo still-alive"}, false).(map[string]any)
-	if next["session_id"] != first["session_id"] || next["session_created"] != false {
+	if next["session_id"] != first["session_id"] || next["status"] != "idle" {
 		t.Fatalf("server cleanup changed terminal lifecycle: %v", next)
 	}
 }
@@ -88,7 +88,7 @@ func TestClientReuseIgnoresStaleServerMirror(t *testing.T) {
 	b.keepAlive = true
 	b.mu.Unlock()
 	selected := h.call(t, token, "execute_command", map[string]any{"session_id": "kept", "command": "echo actual-default"}, false).(map[string]any)
-	if selected["session_id"] != first["session_id"] || selected["session_created"] != false {
+	if selected["session_id"] != first["session_id"] || selected["status"] != "idle" {
 		t.Fatalf("server mirror selected terminal: %v", selected)
 	}
 }

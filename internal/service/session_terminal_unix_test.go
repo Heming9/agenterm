@@ -32,12 +32,12 @@ func TestSessionInterruptAndEOFKeepShellState(t *testing.T) {
 			cursor = r["next_cursor"].(float64)
 			output.WriteString(r["output"].(string))
 			if strings.Contains(output.String(), marker) {
-				if r["done"] != false {
+				if r["status"] == "closed" {
 					t.Fatalf("shell ended while waiting for %s: %v", marker, r)
 				}
 				return
 			}
-			if r["done"] == true {
+			if r["status"] == "closed" {
 				t.Fatalf("shell ended: %v output=%q", r, output.String())
 			}
 		}
@@ -91,7 +91,7 @@ func TestSessionInterruptWhileStdinWriteIsBlocked(t *testing.T) {
 		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 1000}, false).(map[string]any)
 		cursor = r["next_cursor"].(float64)
 		output.WriteString(r["output"].(string))
-		if r["done"] == true {
+		if r["status"] == "closed" {
 			t.Fatalf("process ended before readiness: %v", r)
 		}
 	}
