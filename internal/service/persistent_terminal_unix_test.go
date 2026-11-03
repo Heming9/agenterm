@@ -11,7 +11,7 @@ func TestPersistentForegroundInterruptKeepsNamedShell(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"session_id": "interrupt", "command": "keep=preserved; printf saved"}, false).(map[string]any)
+	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "interrupt"}, "command": "keep=preserved; printf saved"}, false).(map[string]any)
 	active := h.call(t, token, "execute_command", map[string]any{"session_id": "interrupt", "command": "printf ready; sleep 30", "wait_ms": 100}, false).(map[string]any)
 	if active["status"] != "running" || active["session_id"] != first["session_id"] {
 		t.Fatal(active)

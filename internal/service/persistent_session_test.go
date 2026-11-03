@@ -20,7 +20,7 @@ func TestNamedSessionStateAndFastCommands(t *testing.T) {
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	first := h.call(t, token, "execute_command", map[string]any{"session_id": "stateful", "command": "keep=state; export SAVED=value; printf first", "cwd": dir, "env": map[string]string{"INITIAL": "yes"}}, false).(map[string]any)
+	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "stateful", "cwd": dir, "env": map[string]string{"INITIAL": "yes"}}, "command": "keep=state; export SAVED=value; printf first"}, false).(map[string]any)
 	if first["status"] != "completed" || first["command_done"] != true || first["done"] != false || first["session_alive"] != true || first["session_created"] != true || first["output"] != "first" {
 		t.Fatalf("first: %v", first)
 	}
@@ -53,7 +53,7 @@ func TestServerCacheCleanupDoesNotCloseClientTerminal(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"session_id": "kept", "command": "echo alive"}, false).(map[string]any)
+	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "kept"}, "command": "echo alive"}, false).(map[string]any)
 	closed := h.call(t, token, "execute_command", map[string]any{"command": "echo closed"}, false).(map[string]any)
 	if closed["done"] != true {
 		t.Fatalf("cleanup control was not closed: %v", closed)
@@ -76,8 +76,8 @@ func TestClientReuseIgnoresStaleServerMirror(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"session_id": "kept", "command": "echo default"}, false).(map[string]any)
-	other := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "command": "echo other"}, false).(map[string]any)
+	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "kept"}, "command": "echo default"}, false).(map[string]any)
+	other := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "command": "echo other"}, false).(map[string]any)
 	secret := h.s.tokens[token]
 	a, _ := h.s.getSession(secret, first["session_id"].(string))
 	b, _ := h.s.getSession(secret, other["session_id"].(string))

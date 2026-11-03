@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -113,7 +114,7 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location; [Console]::Error.WriteLine('stderr only'); cmd /c exit 1`
 	}
-	out, isError := callExecution(t, session, map[string]any{"session_id": "options", "command": command, "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "overridden"}})
+	out, isError := callExecution(t, session, map[string]any{"setup": map[string]any{"session_id": "options", "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "overridden"}}, "command": command})
 	if !isError || out.ExitCode == nil || *out.ExitCode != 1 || out.Status != "completed" || !strings.Contains(out.Output, "overridden") || !strings.Contains(out.Output, dir) || !strings.Contains(out.Output, "stderr only") {
 		t.Fatalf("result: %+v error=%v", out, isError)
 	}
@@ -125,7 +126,7 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 	if isError || reused.SessionID != out.SessionID || reused.SessionCreated || !strings.Contains(reused.Output, "overridden") || !strings.Contains(reused.Output, dir) {
 		t.Fatalf("state lost: %+v", reused)
 	}
-	bad, isError := callExecution(t, session, map[string]any{"command": "echo never", "session_id": random(), "cwd": filepath.Join(dir, "missing")})
+	bad, isError := callExecution(t, session, map[string]any{"command": "echo never", "setup": map[string]any{"cwd": filepath.Join(dir, "missing")}})
 	if !isError || bad.ExitCode == nil || *bad.ExitCode != -1 || bad.Error == "" || strings.Contains(bad.Output, "never") {
 		t.Fatalf("missing cwd: %+v", bad)
 	}
@@ -266,6 +267,30 @@ func TestMCPExecutionValidationAndSchemas(t *testing.T) {
 		if _, exists := schema.Properties["timeout_ms"]; exists {
 			t.Fatal("retired timeout_ms still published")
 		}
+		for _, field := range []string{"cwd", "env"} {
+			if _, exists := schema.Properties[field]; exists {
+				t.Fatalf("%s still top level", field)
+			}
+		}
+		var input jsonschema.Schema
+		if err := json.Unmarshal(data, &input); err != nil {
+			t.Fatal(err)
+		}
+		setup := input.Properties["setup"]
+		if setup == nil {
+			t.Fatal("missing setup")
+		}
+		if setup.Ref != "" {
+			setup = input.Defs[strings.TrimPrefix(setup.Ref, "#/$defs/")]
+		}
+		if setup == nil {
+			t.Fatal("missing setup definition")
+		}
+		for _, field := range []string{"cwd", "env", "session_id"} {
+			if property := setup.Properties[field]; property == nil || property.Description == "" || strings.HasPrefix(property.Description, "mcp.") {
+				t.Fatalf("missing setup.%s schema/description: %s", field, data)
+			}
+		}
 		if schema.Properties["wait_ms"].Default != 10000 {
 			t.Fatal(string(data))
 		}
@@ -287,6 +312,18 @@ func TestMCPExecutionValidationAndSchemas(t *testing.T) {
 		{"command": "echo never", "session_id": "  "},
 		{"command": "echo never", "session_id": "bad\nvalue"},
 		{"command": "echo never", "session_id": strings.Repeat("x", 65)},
+		{"command": "echo never", "cwd": "/tmp"},
+		{"command": "echo never", "env": map[string]string{"X": "valid"}},
+		{"command": "echo never", "setup": map[string]any{"cwd": 1}},
+		{"command": "echo never", "setup": map[string]any{"cwd": "bad\x00dir"}},
+		{"command": "echo never", "setup": map[string]any{"env": map[string]any{"X": 1}}},
+		{"command": "echo never", "setup": map[string]any{"env": map[string]string{"A=B": "bad"}}},
+		{"command": "echo never", "setup": map[string]any{"session_id": "  "}},
+		{"command": "echo never", "setup": map[string]any{"session_id": "bad\nvalue"}},
+		{"command": "echo never", "setup": map[string]any{"session_id": strings.Repeat("x", 65)}},
+		{"command": "echo never", "setup": map[string]any{"unknown": true}},
+		{"command": "echo never", "setup": true},
+		{"command": "echo never", "session_id": "existing", "setup": map[string]any{}},
 		{"command": "echo never", "wait_ms": -1},
 		{"command": "echo never", "wait_ms": 20001},
 	} {
@@ -310,7 +347,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		command = `Write-Output ready; $reply=Read-Host; Write-Output "received:${reply}:$env:AGENTERM_EXEC_TEST"; Get-Location`
 	}
-	started := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": command, "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "session-env"}}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random(), "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "session-env"}}, "wait_ms": 0, "command": command}, false).(map[string]any)
 	id := started["session_id"]
 	if started["status"] != "running" || started["command_done"] != false {
 		t.Fatal(started)
@@ -330,10 +367,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	if stopped["done"] != true || stopped["canceled"] != true {
 		t.Fatal(stopped)
 	}
-	recreated := h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo recreated"}, false).(map[string]any)
-	if recreated["session_created"] != true || recreated["session_id"] != id {
-		t.Fatal(recreated)
-	}
+	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo never"}, true)
 	fresh := h.call(t, token, "execute_command", map[string]any{"command": "echo fresh"}, false).(map[string]any)
 	if fresh["session_created"] != true || fresh["session_id"] == id {
 		t.Fatal(fresh)

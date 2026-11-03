@@ -116,17 +116,19 @@ func TestZeroWaitAnonymousIsPersistentEvenWhenCommandFinishesQuickly(t *testing.
 	h.call(t, token, "session_control", map[string]any{"session_id": result["session_id"], "action": "stop"}, false)
 }
 
-func TestSuppliedSessionIDRecreatesClosedShell(t *testing.T) {
+func TestSetupCreatesAndRecreatesClosedSession(t *testing.T) {
 	requirePOSIXFlow(t)
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "keep=old"}, false).(map[string]any)
+	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": "keep=old"}, false).(map[string]any)
 	if first["session_id"] != "workspace" || first["persistent"] != true || first["promoted"] != false {
 		t.Fatal(first)
 	}
+	h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": "echo never"}, true)
 	h.call(t, token, "session_control", map[string]any{"session_id": first["session_id"], "action": "stop"}, false)
-	next := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
+	h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "echo never"}, true)
+	next := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
 	if next["session_created"] != true || next["session_id"] != first["session_id"] || next["session_id"] != "workspace" || next["output"] != "new" {
 		t.Fatal(next)
 	}
@@ -143,7 +145,7 @@ func TestSuppliedSessionIDIsIsolatedBetweenTokens(t *testing.T) {
 		label := []string{"first", "second"}[i]
 		ws, _ := h.connect(t, token, label)
 		go serveTestDevice(ws, label, nil, nil)
-		result := h.call(t, token, "execute_command", map[string]any{"session_id": "shared", "command": "quick"}, false).(map[string]any)
+		result := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "shared"}, "command": "quick"}, false).(map[string]any)
 		if result["session_id"] != "shared" || result["session_created"] != true || result["output"] != label+":quick" {
 			t.Fatal(result)
 		}
@@ -153,5 +155,46 @@ func TestSuppliedSessionIDIsIsolatedBetweenTokens(t *testing.T) {
 		if result["output"] != []string{"first:quick", "second:quick"}[i] {
 			t.Fatal(result)
 		}
+	}
+}
+
+func TestReuseUnknownSessionDoesNotCreateTerminal(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	token := h.create(t, false)
+	connectExecutionClient(t, h, token)
+	h.call(t, token, "execute_command", map[string]any{"session_id": "missing", "command": "echo never", "wait_ms": 0}, true)
+	items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
+	if len(items) != 0 {
+		t.Fatalf("reuse created a terminal: %v", items)
+	}
+}
+
+func TestSetupWithoutIDUsesAnonymousLifetimeAndInitialOptions(t *testing.T) {
+	for _, wait := range []int{10000, 0} {
+		t.Run(map[bool]string{true: "immediate-retention", false: "one-shot"}[wait == 0], func(t *testing.T) {
+			h := newMultiHarness(t, 0)
+			token := h.create(t, false)
+			connectExecutionClient(t, h, token)
+			dir := t.TempDir()
+			command := `printf '%s\n' "$SETUP_TEST_VALUE"; pwd`
+			if runtime.GOOS == "windows" {
+				command = "Write-Output $env:SETUP_TEST_VALUE; Get-Location"
+			}
+			started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"cwd": dir, "env": map[string]string{"SETUP_TEST_VALUE": "initialized"}}, "command": command, "wait_ms": wait}, false).(map[string]any)
+			if started["session_id"] == "" || started["session_created"] != true {
+				t.Fatal(started)
+			}
+			output, completed := readExecutionToCompletion(t, h, token, started)
+			if !strings.Contains(output, "initialized") || !strings.Contains(output, dir) {
+				t.Fatalf("setup lost: %v output=%q", completed, output)
+			}
+			retained := wait == 0
+			if completed["persistent"] != retained || completed["promoted"] != retained || completed["session_alive"] != retained || completed["done"] == retained {
+				t.Fatal(completed)
+			}
+			if retained {
+				h.call(t, token, "session_control", map[string]any{"session_id": started["session_id"], "action": "stop"}, false)
+			}
+		})
 	}
 }

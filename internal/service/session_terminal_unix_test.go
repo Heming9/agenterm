@@ -14,8 +14,8 @@ func TestSessionInterruptAndEOFKeepShellState(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	start := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0,
-		"command": "/bin/sh -i", "env": map[string]string{"PS1": "", "PS2": ""},
+	start := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random(), "env": map[string]string{"PS1": "", "PS2": ""}}, "wait_ms": 0,
+		"command": "/bin/sh -i",
 	}, false).(map[string]any)
 	id := start["session_id"].(string)
 	var cursor float64
@@ -82,7 +82,7 @@ func TestSessionInterruptWhileStdinWriteIsBlocked(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	id := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0,
+	id := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0,
 		"command": "stty raw -echo; printf '__%s__\\n' BLOCKED; sleep 30",
 	}, false).(map[string]any)["session_id"].(string)
 	var output strings.Builder

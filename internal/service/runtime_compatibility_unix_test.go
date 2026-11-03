@@ -45,7 +45,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/config" {
 			t.Errorf("incompatible command attempted more than discovery: %s %s", r.Method, r.URL.Path)
 		}
-		w.Header().Set(controlVersionHeader, "4")
+		w.Header().Set(controlVersionHeader, "5")
 		w.Header().Set(runtimeVersionHeader, "0.4.0")
 		w.Header().Set(runtimePIDHeader, strconv.Itoa(os.Getpid()))
 		w.WriteHeader(http.StatusUpgradeRequired)
@@ -57,7 +57,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 	token := h.create(t, false)
 	ws, clientID := h.connect(t, token, "retained")
 	go serveTestDevice(ws, "retained", nil, nil)
-	sessionID := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
+	sessionID := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 	before := h.call(t, token, "session_read", map[string]any{"session_id": sessionID, "wait_ms": 1000}, false).(map[string]any)
 	cursor := before["next_cursor"]
 
@@ -74,7 +74,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s unexpectedly succeeded: %s", action, output)
 		}
-		for _, part := range []string{version.Current, "API " + controlVersion, "0.4.0", "API 4", "runtime PID " + strconv.Itoa(os.Getpid()), "stop -instance staging", "kill -TERM " + strconv.Itoa(os.Getpid())} {
+		for _, part := range []string{version.Current, "API " + controlVersion, "0.4.0", "API 5", "runtime PID " + strconv.Itoa(os.Getpid()), "stop -instance staging", "kill -TERM " + strconv.Itoa(os.Getpid())} {
 			if !strings.Contains(string(output), part) {
 				t.Fatalf("%s missing %q: %s", action, part, output)
 			}

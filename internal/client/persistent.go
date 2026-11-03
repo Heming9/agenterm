@@ -47,11 +47,11 @@ func (c *connection) runPersistent(m protocol.Message) {
 	reject := func(err error) {
 		_ = c.send(protocol.Message{Type: "command_rejected", ID: m.ID, RequestID: m.RequestID, Error: err.Error()})
 	}
-	if err := m.ExecOptions.Validate(); err != nil {
-		reject(err)
+	if m.Cwd != "" || len(m.Env) > 0 {
+		reject(i18n.NewError("session.options.require.setup"))
 		return
 	}
-	if err := protocol.ValidateSessionID(m.SessionID); err != nil {
+	if err := protocol.ValidateSessionRequest(m.SessionID, m.Setup); err != nil {
 		reject(err)
 		return
 	}
@@ -61,7 +61,20 @@ func (c *connection) runPersistent(m protocol.Message) {
 	}
 	c.mu.Lock()
 	id := m.SessionID
+	if m.Setup != nil {
+		id = m.Setup.SessionID
+	}
 	p := c.running[id]
+	if m.Setup != nil && p != nil {
+		c.mu.Unlock()
+		reject(i18n.NewError("session.already.exists", id))
+		return
+	}
+	if m.SessionID != "" && p == nil {
+		c.mu.Unlock()
+		reject(i18n.NewError("unknown.session"))
+		return
+	}
 	var startCtx context.Context
 	created := false
 	if p == nil {
@@ -84,7 +97,7 @@ func (c *connection) runPersistent(m protocol.Message) {
 		if id == "" {
 			id = markerID
 		}
-		t := &persistentTerminal{c: c, p: p, id: id, ready: make(chan struct{}), marker: "\x1eagenterm:" + markerID + ":", submitted: make(chan struct{}), reserved: true, persistent: m.SessionID != "" || m.WaitMS == 0, promoted: m.SessionID == "" && m.WaitMS == 0}
+		t := &persistentTerminal{c: c, p: p, id: id, ready: make(chan struct{}), marker: "\x1eagenterm:" + markerID + ":", submitted: make(chan struct{}), reserved: true, persistent: (m.Setup != nil && m.Setup.SessionID != "") || m.WaitMS == 0, promoted: (m.Setup == nil || m.Setup.SessionID == "") && m.WaitMS == 0}
 		p.terminal = t
 		c.running[id] = p
 		created, startCtx = true, ctx
@@ -102,8 +115,6 @@ func (c *connection) runPersistent(m protocol.Message) {
 			err = i18n.NewError("session.already.ended")
 		case !t.persistent || t.reserved || t.active != nil:
 			err = i18n.NewError("session.busy", id)
-		case m.Cwd != "" || len(m.Env) > 0:
-			err = i18n.NewError("session.initial.options.only")
 		}
 		if err != nil {
 			t.mu.Unlock()
@@ -163,7 +174,11 @@ func (t *persistentTerminal) serve(ctx context.Context, first protocol.Message) 
 	var err error
 	t.dir, err = os.MkdirTemp("", "agenterm-shell-")
 	if err == nil {
-		cmd = persistentShellCommand(ctx, t.marker, first.ExecOptions)
+		options := protocol.ExecOptions{}
+		if first.Setup != nil {
+			options = first.Setup.ExecOptions
+		}
+		cmd = persistentShellCommand(ctx, t.marker, options)
 		configureCommand(cmd, true)
 		var input io.WriteCloser
 		var output io.ReadCloser

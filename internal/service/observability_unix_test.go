@@ -89,7 +89,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	h.call(t, token, "list_clients", map[string]any{"wait_ms": 4000}, false)
 	command := "printf 'private-command-output'"
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{
-		"name": "execute_command", "arguments": map[string]any{"command": command, "env": map[string]string{"PRIVATE_VAR": "private-env"}},
+		"name": "execute_command", "arguments": map[string]any{"command": command, "setup": map[string]any{"env": map[string]string{"PRIVATE_VAR": "private-env"}}},
 	}})
 	r, _ := http.NewRequest("POST", origin+"/agenterm/mcp", bytes.NewReader(body))
 	setMCPHeaders(r)
@@ -114,7 +114,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	readLogRecords(t, serverLog, func(entry map[string]any) bool {
 		return entry["msg"] == "mcp tool completed" && entry["request_id"] == id && entry["tool"] == "execute_command"
 	})
-	session := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": `read value; printf '%s' "$value"`}, false).(map[string]any)
+	session := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "command": `read value; printf '%s' "$value"`}, false).(map[string]any)
 	sessionID := session["session_id"].(string)
 	h.call(t, token, "session_control", map[string]any{"session_id": sessionID, "action": "input", "input": "private-session-input\n"}, false)
 	sessionLogs := readLogRecords(t, runtimeLog, func(entry map[string]any) bool {

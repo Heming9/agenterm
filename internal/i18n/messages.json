@@ -688,16 +688,16 @@
     "zh-CN": "命令已取消"
   },
   "mcp.execution.cwd": {
-    "en": "Initial working directory of a new persistent session. Omit when reusing a session; use cd to change its directory.",
-    "zh-CN": "新持续会话的初始目录；复用会话时省略，通过 cd 修改目录。"
+    "en": "Initial working directory for the terminal created by setup. Change a reused shell with cd.",
+    "zh-CN": "setup 所创建终端的初始工作目录；复用后通过 cd 修改目录。"
   },
   "mcp.execution.env": {
-    "en": "Initial environment overrides of a new persistent session, merged with client environment. Omit when reusing; change variables through the shell.",
-    "zh-CN": "新持续会话的初始环境变量，与客户端环境合并；复用时省略，通过 shell 命令修改变量。"
+    "en": "Initial environment overrides for setup, merged with client environment. Change a reused shell through shell commands.",
+    "zh-CN": "setup 所创建终端的初始环境变量，与客户端环境合并；复用后通过 shell 命令修改。"
   },
   "mcp.execution.workflow": {
-    "en": "Execute commands in client-managed terminals. Supply session_id to reuse it if present or create a persistent terminal with that ID if absent. Omit session_id for a new anonymous terminal: close on fast completion, or retain the same shell and return its random session_id when wait_ms expires. No default terminal reuse. session_created reports creation/reuse; persistent and promoted describe retention. wait_ms defaults to 10000 ms, range 0–20000; 0 retains anonymous terminals immediately. Waiting never kills execution. cwd/env initialize only new shells and are rejected on reuse. Busy sessions return session_busy, without queueing or duplication. The client alone manages terminals and its ten-live-terminal limit; creation fails at capacity while explicit existing-ID reuse remains permitted. The server authorizes, routes and caches client events. Persistent terminals have no idle expiry: close with session_control(action=stop). Read output with session_read and next_cursor, draining has_more. command_done/exit_code describe the latest command; done means terminal termination. Closed IDs may be recreated with fresh shell state. Disconnect loses shell state. Do not override reserved prompt hooks/PS1 or terminal echo settings. Commands run with target user permissions.",
-    "zh-CN": "在客户端管理的终端中执行命令。指定 session_id 时，存在则复用，不存在则按此 ID 创建持久终端；省略时新建匿名终端，快速完成自动关闭，wait_ms 到期则保留同一 shell 并返回随机 session_id。不默认复用终端。session_created 标识创建或复用，persistent 和 promoted 描述保留状态。wait_ms 默认 10000 毫秒，范围 0–20000；0 立即保留匿名终端，等待不会终止命令。cwd/env 仅初始化新 shell，复用时携带会报错。忙碌时返回 session_busy，不排队、不另建。终端管理和每个进程十个存活终端上限仅由客户端裁决，满额新建报错，明确指定已有 ID 仍可复用。服务端仅鉴权、路由和缓存客户端事件。持久终端不按空闲时间回收，需 session_control(action=stop) 主动关闭。通过 session_read 按 next_cursor 读完 has_more；command_done/exit_code 描述最新命令，done 表示终端结束。已关闭 ID 可重新创建，新 shell 没有之前的状态。断线丢失 shell 状态。不要覆盖提示符钩子、PS1 或终端回显设置。命令以目标用户权限执行。"
+    "en": "Execute commands in client-managed terminals. Top-level session_id only reuses an existing terminal and rejects unknown/closed IDs. setup always creates a terminal and contains optional cwd, env and session_id; its ID must be unused. setup with an ID creates a persistent terminal; omit its ID to generate a random anonymous terminal. setup and top-level session_id are mutually exclusive. cwd/env are not top-level arguments. Omit both to create an anonymous terminal. Anonymous terminals close on fast completion or retain the same shell after wait_ms expires. wait_ms defaults to 10000 ms, range 0–20000; 0 retains anonymous terminals immediately. Waiting never kills execution. session_created reports creation/reuse; persistent and promoted describe retention. Busy reuse returns session_busy without queueing. The client alone manages terminals and a ten-live-terminal limit; creation fails at capacity, existing-ID reuse remains allowed. Persistent terminals require session_control(action=stop), with no idle expiry. Read output with session_read using next_cursor and drain has_more. command_done/exit_code describe the latest command; done means shell termination. The server authorizes, routes and caches facts. Commands run with target user permissions; do not override reserved prompt hooks/PS1 or terminal echo settings.",
+    "zh-CN": "在客户端管理的终端中执行命令。顶级 session_id 仅复用已有终端，未知或已关闭 ID 报错。setup 始终创建终端，包含可选 cwd、env 和 session_id；其中的 ID 必须尚未存在。setup 指定 ID 时创建持久终端，省略 ID 时生成随机 ID 并按匿名终端规则执行。setup 和顶级 session_id 互斥。cwd/env 不再是顶级参数。两者均省略也创建匿名终端。匿名终端快速完成自动关闭，wait_ms 到期则保留同一 shell。wait_ms 默认 10000 毫秒，范围 0–20000；0 立即保留匿名终端，等待不会终止命令。session_created 标识创建或复用，persistent 和 promoted 描述保留状态。复用忙碌终端返回 session_busy，不排队。终端管理及每个进程十个存活终端上限仅由客户端裁决；满额新建报错，已有 ID 仍可复用。持久终端需 session_control(action=stop) 主动关闭，不按空闲时间回收。通过 session_read 按 next_cursor 读完 has_more；command_done/exit_code 描述最新命令，done 表示终端结束。服务端仅鉴权、路由和缓存事实。命令以目标用户权限执行，不要覆盖保留的提示符钩子、PS1 或终端回显设置。"
   },
   "mcp.connection.wait.failed": {
     "en": "Connection wait failed: %v",
@@ -1040,8 +1040,8 @@
     "zh-CN": "running：最新命令尚在执行；completed：最新命令已结束。终端是否可复用请检查 session_alive。"
   },
   "mcp.execution.session.id": {
-    "en": "Optional session ID (1–64 printable characters). Reuse an existing ID or create a persistent terminal with this ID if absent. Closed IDs can be created again with fresh state. Omit to create an anonymous terminal. IDs are unique within a client token.",
-    "zh-CN": "可选会话 ID（1–64 个可打印字符）。存在则复用，不存在则按此 ID 创建持久终端；已关闭 ID 可重新创建，新 shell 没有之前的状态。省略时创建匿名终端。同一客户端 token 内 ID 唯一。"
+    "en": "Reuse an existing session only. Unknown or closed IDs are rejected. To create a terminal, use setup instead.",
+    "zh-CN": "仅复用已有会话；未知或已关闭 ID 报错。需要创建终端时使用 setup。"
   },
   "session.input.requires.command": {
     "en": "No command is waiting for input. Submit new commands with execute_command.",
@@ -1054,5 +1054,25 @@
   "mcp.result.promoted": {
     "en": "Whether this terminal began anonymously and was retained when its initial wait elapsed (including wait_ms=0).",
     "zh-CN": "终端是否从匿名终端在首次等待到期后保留而来，包括 wait_ms=0。"
+  },
+  "session.setup.conflict": {
+    "en": "setup cannot be combined with top-level session_id.",
+    "zh-CN": "setup 不能与顶级 session_id 同时使用。"
+  },
+  "session.options.require.setup": {
+    "en": "cwd and env must be provided inside setup.",
+    "zh-CN": "cwd 和 env 必须放在 setup 中。"
+  },
+  "session.already.exists": {
+    "en": "Session %s already exists. Use top-level session_id to reuse it.",
+    "zh-CN": "会话 %s 已存在，请通过顶级 session_id 复用。"
+  },
+  "mcp.execution.setup": {
+    "en": "Create a new terminal using optional cwd, env and session_id. Cannot be combined with top-level session_id. An existing setup.session_id is rejected. Omit its ID for a generated anonymous terminal with the usual wait-based lifetime.",
+    "zh-CN": "新建终端，可包含 cwd、env 和 session_id。不能与顶级 session_id 同时使用；setup.session_id 已存在时会报错。省略其中的 ID 时生成随机 ID，仍按匿名终端等待规则执行。"
+  },
+  "mcp.execution.setup.session.id": {
+    "en": "Optional ID for a new persistent terminal; fails if already present. Omit to generate a random ID and follow anonymous terminal lifetime.",
+    "zh-CN": "新建持久终端的可选 ID；已存在则报错。省略时生成随机 ID，并按匿名终端生命周期执行。"
   }
 }

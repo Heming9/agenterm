@@ -123,18 +123,37 @@ func (h *multiHarness) connect(t *testing.T, token, hostname string) (*websocket
 	}
 }
 
-// Simulate client-owned create-or-reuse using only session_id.
+// Simulate creation through setup and reuse through session_id.
 func acceptTestSession(ws *websocket.Conn, m protocol.Message, registries ...map[string]string) protocol.Message {
 	id := m.SessionID
-	created := id == "" || len(registries) == 0 || registries[0][id] == ""
+	created := id == ""
+	explicit := !created
+	if m.Setup != nil {
+		id = m.Setup.SessionID
+		explicit = id != ""
+	}
+	var detail string
+	if len(registries) > 0 {
+		exists := registries[0][id] != ""
+		if created && explicit && exists {
+			detail = "session already exists"
+		}
+		if !created && !exists {
+			detail = "unknown session"
+		}
+	}
+	if detail != "" {
+		_ = ws.WriteJSON(protocol.Message{Type: "command_rejected", ID: m.ID, RequestID: m.RequestID, Error: detail})
+		return protocol.Message{}
+	}
 	if id == "" {
 		id = "client-" + m.ID
 	}
 	if len(registries) > 0 {
 		registries[0][id] = id
 	}
-	persistent := m.SessionID != "" || m.WaitMS == 0
-	_ = ws.WriteJSON(protocol.Message{Type: "command_accepted", ID: m.ID, RequestID: m.RequestID, SessionID: id, SessionCreate: created, SessionPersistent: persistent, SessionPromoted: persistent && m.SessionID == "", Command: m.Command})
+	persistent := explicit || m.WaitMS == 0
+	_ = ws.WriteJSON(protocol.Message{Type: "command_accepted", ID: m.ID, RequestID: m.RequestID, SessionID: id, SessionCreate: created, SessionPersistent: persistent, SessionPromoted: created && !explicit && m.WaitMS == 0, Command: m.Command})
 	m.ID, m.SessionPersistent = id, persistent
 	return m
 }
@@ -153,6 +172,9 @@ func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, re
 			}
 		case "session_exec":
 			m = acceptTestSession(ws, m, names)
+			if m.ID == "" {
+				continue
+			}
 			if m.Command == "parallel" {
 				arrived <- label
 				<-release
@@ -251,7 +273,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 
 	sessions := map[string]string{}
 	for _, target := range []struct{ id, label string }{{a, "A"}, {b, "B"}} {
-		sid := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
+		sid := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 		sessions[target.label] = sid
 		out := h.call(t, token, "session_read", map[string]any{"session_id": sid, "wait_ms": 1000}, false).(map[string]any)
 		if out["output"] != target.label+":interactive" {

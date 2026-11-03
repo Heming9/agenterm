@@ -7,7 +7,7 @@ Current source builds publish explicit output schemas and behavior annotations f
 | `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
 | `list_clients` | Inspect devices or wait for a connection. | `clients`; waiting calls also return `status`. |
 | `p2p_transfer_start` | Bootstrap p2p-cli remotely and return Agent-side scripts after remote signaling registration. | `connection_id`, endpoint IDs, `state`, `shell_script`, `powershell_script`. |
-| `execute_command` | Create an anonymous one-shot terminal, retaining it on wait expiry; create/reuse persistent terminals by name. | `session_id`, `command_id`, `session_created`, `status`, `output`, `next_cursor`, `command_done`, `session_alive`, and completion fields. |
+| `execute_command` | Create through setup or reuse through session_id; anonymous terminals close on fast completion or are retained on wait expiry. | `session_id`, `command_id`, `session_created`, `status`, `output`, `next_cursor`, `command_done`, `session_alive`, and completion fields. |
 | `session_read` | Read paginated output and inspect command completion separately from terminal lifetime. | `output`, `next_cursor`, `has_more`, `truncated`, `command_done`, `session_alive`, `done`, and completion fields. |
 | `session_control` | Send input, interrupt, EOF or stop using `action`. | `action`; input returns `accepted`, interrupt/EOF return `delivered`, stop returns confirmation and terminal fields. |
 | `session_list` | Rediscover this token's retained sessions, optionally filtered by `client_id`, even for offline devices. | `sessions`: session, device, latest command, timestamps, lifecycle status and retained output cursor range. |
@@ -32,7 +32,7 @@ Fast anonymous command (automatically closed on completion):
 Independent terminal for a long task:
 
 ```json
-{"command":"npm run build","cwd":"/project","session_id":"build","wait_ms":1000}
+{"command":"npm run build","setup":{"cwd":"/project","session_id":"build"},"wait_ms":1000}
 ```
 
 Reuse the terminal:
@@ -77,9 +77,9 @@ The client reports its terminal ID, creation/reuse decision and retention policy
 <details>
 <summary>Commands and interactive sessions</summary>
 
-`execute_command` handles short commands, long jobs and interactive tasks. Supply `session_id` to reuse it if present or create a persistent terminal with that ID if absent. Closed IDs can be created again; `session_created=true` signals fresh shell state. Omit session_id to always create a new anonymous terminal: fast completion closes it and releases its slot, while wait expiry retains the same shell and returns its random session_id without restarting execution. IDs are unique within a token. Multi-device creation requires client_id; an existing ID identifies its device. There is no default terminal or implicit reuse.
+Top-level `execute_command.session_id` only reuses an existing terminal and rejects unknown/closed IDs. `setup` always creates a terminal and contains optional `cwd`, `env` and `session_id`; an existing setup ID is rejected, never overwritten or reused. setup and top-level session_id cannot be combined. An explicit setup ID creates a persistent terminal; omit that ID for a generated anonymous terminal. Omitting both also creates an anonymous terminal: fast completion closes it; wait expiry retains the same shell. IDs are unique within a token; multi-device creation requires client_id, while existing IDs identify their devices. session_created=true means creation; false means reuse.
 
-Directory, variables, functions and environment activation persist within the shell. `cwd`/`env` initialize new sessions only and are rejected on reuse; use `cd`, `export` or the target shell equivalents afterward. A terminal accepts one command at a time. Busy terminals return `session_busy` with the session ID, without opening another terminal or queueing work.
+Directory, variables, functions and environment activation persist within the shell. `cwd`/`env` are available only inside setup to initialize new terminals. Reuse without setup; change state with cd/export or shell equivalents. Each terminal accepts one command at a time and returns session_busy when occupied, without queueing or opening a replacement.
 
 `wait_ms` defaults to 10000 (10 seconds), range 0–20000. It begins at client admission and includes shell startup for a new anonymous terminal. Setting 0 retains an anonymous terminal immediately; the call still waits for client admission. Waiting expiry never kills execution. Fast results report `status=completed`; running results include available output and `next_cursor`. Read with `session_read` and interact with `session_control`. `persistent=true` means command completion will leave the shell alive; `promoted=true` identifies an anonymous terminal retained after its initial wait (including 0). Named and promoted terminals do not expire when idle; close them with `session_control(action=stop)`. Canceling an MCP waiter does not cancel accepted work or its client-owned retention timer. `timeout_ms` is no longer supported.
 

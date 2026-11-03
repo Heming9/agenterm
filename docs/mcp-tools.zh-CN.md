@@ -7,7 +7,7 @@
 | `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
 | `list_clients` | 查看设备或等待连接。 | `clients`；等待时还返回 `status`。 |
 | `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
-| `execute_command` | 匿名终端默认一次性，等待到期则保留；具名终端按名称创建或复用。 | `session_id`、`command_id`、`session_created`、`status`、`output`、`next_cursor`、`command_done`、`session_alive`，以及完成后的退出信息。 |
+| `execute_command` | 通过 setup 创建、session_id 复用；匿名终端快速完成关闭，等待到期则保留。 | `session_id`、`command_id`、`session_created`、`status`、`output`、`next_cursor`、`command_done`、`session_alive`，以及完成后的退出信息。 |
 | `session_read` | 分页读取输出，分别检查命令完成与终端存活。 | `output`、`next_cursor`、`has_more`、`truncated`、`command_done`、`session_alive`、`done`；完成后提供退出信息。 |
 | `session_control` | 用 `action` 选择输入、中断、EOF 或停止。 | `action`；输入返回 `accepted`，中断/EOF 返回 `delivered`，停止返回确认状态及终态字段。 |
 | `session_list` | 找回所选 token 的保留会话，可按 `client_id` 筛选，无需设备在线。 | `sessions`：会话、设备、最新命令、时间、状态及保留输出游标范围。 |
@@ -32,7 +32,7 @@
 初始化独立终端并启动长任务：
 
 ```json
-{"command":"npm run build","cwd":"/project","session_id":"build","wait_ms":1000}
+{"command":"npm run build","setup":{"cwd":"/project","session_id":"build"},"wait_ms":1000}
 ```
 
 复用返回的终端并保留目录和环境：
@@ -77,9 +77,9 @@
 <details>
 <summary>命令与交互式会话</summary>
 
-`execute_command` 统一短命令、长任务和交互任务。指定 `session_id` 时，存在则复用，不存在则按此 ID 创建持久终端；已关闭 ID 可以重新创建，`session_created=true` 表示新 shell。省略时每次新建匿名终端：命令在 wait_ms 内完成则自动关闭并释放名额，等待先到期则保留同一 shell 并返回随机 session_id，进程不中断、不重启。同一 token 内 session_id 唯一；多设备创建需要 client_id，已有 ID 可定位所属设备。没有默认终端或隐式复用。
+`execute_command` 的顶级 `session_id` 只复用已有终端，未知或已关闭 ID 报错。传 `setup` 始终新建终端，其中可包含 `cwd`、`env` 和 `session_id`；指定 ID 已存在时会报错，不覆盖或复用。setup 与顶级 session_id 不能同时使用。setup.session_id 指定时创建持久终端；省略时生成随机 ID，仍走匿名终端流程。两者均省略也新建匿名终端：快速完成自动关闭，等待先到期则保留同一 shell。同一 token 内 ID 唯一，多设备创建需 client_id，已有 ID 可定位设备。session_created=true 表示新建，false 表示复用。
 
-目录、变量、函数和虚拟环境状态在同一 shell 中保留。`cwd` 和 `env` 仅初始化新会话，复用时携带会报错；后续通过 `cd`、`export` 或目标 shell 对应命令修改。每个会话同一时间只执行一条命令，忙碌时返回 `session_busy` 和会话 ID，不自动另开终端、不排队。
+目录、变量、函数和虚拟环境状态在同一 shell 中保留。`cwd` 和 `env` 只存在于 setup 中，用于初始化新终端；复用时不传 setup，通过 cd、export 或目标 shell 对应命令修改状态。每个终端同一时间执行一条命令，忙碌时返回 session_busy，不另开终端、不排队。
 
 `wait_ms` 默认 10000（10 秒），范围 0–20000，从客户端接受开始计时，新匿名终端的 shell 启动时间也计算在内。0 表示立即保留匿名终端，仍需先等待客户端接受回执。等待到期不会终止命令。快速完成返回 `status=completed`，未完成返回 `status=running`、已有输出和 next_cursor，之后通过 session_read 读取、session_control 交互。`persistent=true` 表示命令完成后仍保留 shell；`promoted=true` 表示该终端由匿名终端在首次等待到期后保留而来（包括 0）。具名和保留后的终端没有空闲回收，需要 `session_control(action=stop)` 主动关闭。MCP 等待取消不会取消已接受任务，也不会停止客户端保留计时。已移除 timeout_ms。
 

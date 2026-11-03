@@ -43,7 +43,11 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 	s.mu.Lock()
 	var c *client
 	var err error
-	if p := s.sessions[sessionKey(in.Secret, a.SessionID)]; a.SessionID != "" && p != nil && s.clients[p.client.info.ID] == p.client {
+	targetID := a.SessionID
+	if a.Setup != nil {
+		targetID = a.Setup.SessionID
+	}
+	if p := s.sessions[sessionKey(in.Secret, targetID)]; targetID != "" && p != nil && s.clients[p.client.info.ID] == p.client {
 		c = p.client
 		if a.ClientID != "" && a.ClientID != c.info.ID {
 			s.mu.Unlock()
@@ -90,7 +94,7 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 	if a.WaitMS != nil {
 		wait = *a.WaitMS
 	}
-	if err := c.send(protocol.Message{Type: "session_exec", ID: id, RequestID: id, SessionID: a.SessionID, WaitMS: wait, Command: a.Command, ExecOptions: a.ExecOptions}); err != nil {
+	if err := c.send(protocol.Message{Type: "session_exec", ID: id, RequestID: id, SessionID: a.SessionID, WaitMS: wait, Command: a.Command, Setup: a.Setup}); err != nil {
 		return sessionExecution{}, err
 	}
 	select {

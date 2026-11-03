@@ -58,11 +58,11 @@ type listClientsArgs struct {
 }
 type executeArgs struct {
 	targetArgs
-	ClientID  string `json:"client_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
-	WaitMS    *int   `json:"wait_ms,omitempty"`
-	Command   string `json:"command"`
-	protocol.ExecOptions
+	ClientID  string                 `json:"client_id,omitempty"`
+	SessionID string                 `json:"session_id,omitempty"`
+	WaitMS    *int                   `json:"wait_ms,omitempty"`
+	Command   string                 `json:"command"`
+	Setup     *protocol.SessionSetup `json:"setup,omitempty"`
 }
 type readSessionArgs struct {
 	targetArgs
@@ -104,7 +104,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 	descriptions := map[string]string{
 		"client_token": "mcp.target.client.connection.token.required.when.authenticated.with",
 		"client_id":    "mcp.client.id", "command": "mcp.shell.command",
-		"cwd": "mcp.execution.cwd", "env": "mcp.execution.env",
+		"setup":      "mcp.execution.setup",
 		"session_id": "mcp.session.identifier", "cursor": "mcp.byte.cursor.initially.0",
 		"wait_ms": "mcp.wait.up.to.this.many.milliseconds.for.output", "input": "mcp.input.bytes.as.text.e.g.yes.n",
 		"max_bytes":  "mcp.session.max.bytes",
@@ -155,6 +155,20 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 	}
 	if name == "execute_command" {
 		schema.Properties["session_id"].Description = serverText("mcp.execution.session.id")
+		schema.Not = &jsonschema.Schema{Required: []string{"session_id", "setup"}}
+		setup := schema.Properties["setup"]
+		// Resolve pointer schemas by their generated definition when necessary.
+		if setup.Ref != "" {
+			setup = schema.Defs[strings.TrimPrefix(setup.Ref, "#/$defs/")]
+		}
+		for field, property := range setup.Properties {
+			key := "mcp.execution." + field
+			if field == "session_id" {
+				key = "mcp.execution.setup.session.id"
+				property.MinLength, property.MaxLength = new(1), new(64)
+			}
+			property.Description = serverText(key)
+		}
 	}
 	mcp.AddTool(ms, toolDefinition(name, description, schema), func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
@@ -180,10 +194,7 @@ func validateExecution(a executeArgs) error {
 	if strings.TrimSpace(a.Command) == "" {
 		return i18n.NewError("command.is.required")
 	}
-	if err := protocol.ValidateSessionID(a.SessionID); err != nil {
-		return err
-	}
-	return a.ExecOptions.Validate()
+	return protocol.ValidateSessionRequest(a.SessionID, a.Setup)
 }
 
 func (a sessionActionArgs) validate() error {

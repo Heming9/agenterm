@@ -46,3 +46,26 @@ func ValidateSessionID(name string) error {
 	}
 	return nil
 }
+
+// SessionSetup always requests creation. An omitted ID follows the anonymous
+// terminal lifetime; an explicit ID creates a persistent terminal.
+type SessionSetup struct {
+	SessionID string `json:"session_id,omitempty"`
+	ExecOptions
+}
+
+func ValidateSessionRequest(id string, setup *SessionSetup) error {
+	if err := ValidateSessionID(id); err != nil {
+		return err
+	}
+	if setup == nil {
+		return nil
+	}
+	if id != "" {
+		return i18n.NewError("session.setup.conflict")
+	}
+	if err := ValidateSessionID(setup.SessionID); err != nil {
+		return err
+	}
+	return setup.ExecOptions.Validate()
+}

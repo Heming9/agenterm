@@ -79,10 +79,14 @@ func TestTerminalLimitEnforcedByClientProcess(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	send(first, protocol.Message{Type: "session_exec", ID: "missing", RequestID: "missing", SessionID: "unknown", Command: "echo must-not-run"})
+	if r := readTerminalLimitMessage(t, first, "missing", "command_rejected"); r.Error == "" {
+		t.Fatal(r)
+	}
 	var terminals []string
 	for i := 0; i < 10; i++ {
 		request := fmt.Sprintf("request-%d", i)
-		send(first, protocol.Message{Type: "session_exec", ID: request, RequestID: request, SessionID: request, Command: "echo slot-ready"})
+		send(first, protocol.Message{Type: "session_exec", ID: request, RequestID: request, Setup: &protocol.SessionSetup{SessionID: request}, Command: "echo slot-ready"})
 		ack := readTerminalLimitMessage(t, first, request, "command_accepted")
 		if ack.SessionID == "" || !ack.SessionCreate {
 			t.Fatal(ack)
@@ -92,13 +96,21 @@ func TestTerminalLimitEnforcedByClientProcess(t *testing.T) {
 			t.Fatal(r)
 		}
 	}
-	send(second, protocol.Message{Type: "session_exec", ID: "over-limit", RequestID: "over-limit", SessionID: "extra", Command: "echo must-not-run"})
+	send(second, protocol.Message{Type: "session_exec", ID: "over-limit", RequestID: "over-limit", Setup: &protocol.SessionSetup{SessionID: "extra"}, Command: "echo must-not-run"})
 	rejected := readTerminalLimitMessage(t, second, "over-limit", "command_rejected")
 	if !strings.Contains(rejected.Error, "10") {
 		t.Fatal(rejected)
 	}
 	send(first, protocol.Message{Type: "session_exec", ID: "implicit", RequestID: "implicit", Command: "exit 7"})
 	if r := readTerminalLimitMessage(t, first, "implicit", "command_rejected"); !strings.Contains(r.Error, "10") {
+		t.Fatal(r)
+	}
+	send(first, protocol.Message{Type: "session_exec", ID: "duplicate", RequestID: "duplicate", Setup: &protocol.SessionSetup{SessionID: terminals[0]}, Command: "echo must-not-run"})
+	if r := readTerminalLimitMessage(t, first, "duplicate", "command_rejected"); r.Error == "" {
+		t.Fatal(r)
+	}
+	send(first, protocol.Message{Type: "session_exec", ID: "conflict", RequestID: "conflict", SessionID: terminals[0], Setup: &protocol.SessionSetup{}, Command: "echo must-not-run"})
+	if r := readTerminalLimitMessage(t, first, "conflict", "command_rejected"); r.Error == "" {
 		t.Fatal(r)
 	}
 	send(first, protocol.Message{Type: "session_exec", ID: "explicit", RequestID: "explicit", SessionID: terminals[0], Command: "echo reused"})
@@ -121,12 +133,12 @@ func TestTerminalLimitEnforcedByClientProcess(t *testing.T) {
 	if r := readTerminalLimitMessage(t, first, terminals[0], "done"); !r.Canceled {
 		t.Fatal(r)
 	}
-	send(second, protocol.Message{Type: "session_exec", ID: "failed-start", RequestID: "failed-start", SessionID: "extra", Command: "echo must-not-run", ExecOptions: protocol.ExecOptions{Cwd: filepath.Join(t.TempDir(), "missing")}})
+	send(second, protocol.Message{Type: "session_exec", ID: "failed-start", RequestID: "failed-start", Setup: &protocol.SessionSetup{SessionID: "extra", ExecOptions: protocol.ExecOptions{Cwd: filepath.Join(t.TempDir(), "missing")}}, Command: "echo must-not-run"})
 	failed := readTerminalLimitMessage(t, second, "failed-start", "command_accepted")
 	if r := readTerminalLimitMessage(t, second, failed.SessionID, "done"); r.Error == "" {
 		t.Fatal(r)
 	}
-	send(second, protocol.Message{Type: "session_exec", ID: "replacement", RequestID: "replacement", SessionID: "extra", Command: "echo replacement"})
+	send(second, protocol.Message{Type: "session_exec", ID: "replacement", RequestID: "replacement", Setup: &protocol.SessionSetup{SessionID: "extra"}, Command: "echo replacement"})
 	replacement := readTerminalLimitMessage(t, second, "replacement", "command_accepted")
 	if r := readTerminalLimitMessage(t, second, replacement.SessionID, "command_done"); r.Error != "" || r.ExitCode != 0 {
 		t.Fatal(r)

@@ -43,8 +43,8 @@ const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 const SessionControlsHeader = "X-Agenterm-Session-Controls"
 const PersistentSessionsHeader = "X-Agenterm-Persistent-Sessions"
 
-// Version 5 uses session_id alone for client-owned create-or-reuse.
-const PersistentSessionsVersion = "5"
+// Version 6 separates existing-session reuse from explicit setup.
+const PersistentSessionsVersion = "6"
 const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.
@@ -392,21 +392,22 @@ type Message struct {
 	RequestID string `json:"request_id,omitempty"`
 	Command   string `json:"command,omitempty"`
 	ExecOptions
-	SessionCreate     bool       `json:"session_create,omitempty"`
-	SessionID         string     `json:"session_id,omitempty"`
-	WaitMS            int        `json:"wait_ms"`
-	SessionPersistent bool       `json:"session_persistent,omitempty"`
-	SessionPromoted   bool       `json:"session_promoted,omitempty"`
-	Interactive       bool       `json:"interactive,omitempty"`
-	Input             string     `json:"input,omitempty"`
-	Output            string     `json:"output,omitempty"`
-	Stream            string     `json:"stream,omitempty"`
-	ExitCode          int        `json:"exit_code,omitempty"`
-	TimedOut          bool       `json:"timed_out,omitempty"`
-	Canceled          bool       `json:"canceled,omitempty"`
-	Error             string     `json:"error,omitempty"`
-	LatencyMS         int64      `json:"latency_ms,omitempty"`
-	P2P               *P2PLaunch `json:"p2p,omitempty"`
+	SessionCreate     bool          `json:"session_create,omitempty"`
+	SessionID         string        `json:"session_id,omitempty"`
+	Setup             *SessionSetup `json:"setup,omitempty"`
+	WaitMS            int           `json:"wait_ms"`
+	SessionPersistent bool          `json:"session_persistent,omitempty"`
+	SessionPromoted   bool          `json:"session_promoted,omitempty"`
+	Interactive       bool          `json:"interactive,omitempty"`
+	Input             string        `json:"input,omitempty"`
+	Output            string        `json:"output,omitempty"`
+	Stream            string        `json:"stream,omitempty"`
+	ExitCode          int           `json:"exit_code,omitempty"`
+	TimedOut          bool          `json:"timed_out,omitempty"`
+	Canceled          bool          `json:"canceled,omitempty"`
+	Error             string        `json:"error,omitempty"`
+	LatencyMS         int64         `json:"latency_ms,omitempty"`
+	P2P               *P2PLaunch    `json:"p2p,omitempty"`
 }
 
 // P2PLaunch runs a built-in bootstrap without putting its short-lived credential
