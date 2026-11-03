@@ -103,12 +103,11 @@ python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli --delay
 真实 MCP、脚本下载、双向复制与 Client 退出清理测试：
 
 ```sh
-P2P_CLI_TEST_BINARY="$PWD/tools/p2p-cli/target/release/p2p-cli" \
 P2P_CLI_TEST_ASSETS="$PWD/dist/p2p-assets" \
 go test ./internal/service -run TestP2PBootstrapEndToEnd -count=1
 ```
 
-Windows 使用相应 `.exe` 路径。单元测试覆盖 SDP 兼容、拒绝中转、STUN、Windows 路径、校验失败、目标写入竞争和覆盖提交；持久连接测试覆盖连续双向复制、空文件、块边界、32 MiB 与 256 MiB 文件、大小限制、拒绝目录、未经授权的本地命令，以及 stop、取消文件和复制调用方退出时的清理。大文件测试在 macOS/Linux 采样后台进程 RSS，延迟启动回归让另一端等待 45 秒后再加入连接。所有端到端用例均通过 `start/status/cp/stop` 执行。
+Windows 的直接命令测试使用相应 `.exe` 路径，初始化链路测试从分发目录选择本机程序。单元测试覆盖 SDP 兼容、拒绝中转、STUN、Windows 路径、校验失败、目标写入竞争和覆盖提交；持久连接测试覆盖连续双向复制、空文件、块边界、32 MiB 与 256 MiB 文件、大小限制、拒绝目录、未经授权的本地命令，以及 stop、取消文件和复制调用方退出时的清理。大文件测试在 macOS/Linux 采样后台进程 RSS，延迟启动回归让另一端等待 45 秒后再加入连接。所有端到端用例均通过 `start/status/cp/stop` 执行。
 
 此前原型已在 macOS 与 Windows 的不同网络之间双向传过 64 MiB 并核对落盘哈希，成功测试由 macOS 发起连接；Windows 发起的跨网 ICE 失败原因仍未定位。这些历史测量不能替代新版本的完整跨网络验证，也不能保证所有 NAT/防火墙环境都能直连。
 

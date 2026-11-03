@@ -136,7 +136,7 @@ jobs:
           import os, pathlib, subprocess
           binary = pathlib.Path(os.environ['P2P_CLI_BINARY'])
           subprocess.run(['python', 'tools/p2p-cli/daemon_e2e.py', str(binary)], check=True)
-          env = dict(os.environ, P2P_CLI_TEST_BINARY=str(binary.resolve()), P2P_CLI_TEST_ASSETS=str(pathlib.Path('dist/p2p-assets').resolve()))
+          env = dict(os.environ, P2P_CLI_TEST_ASSETS=str(pathlib.Path('dist/p2p-assets').resolve()))
           subprocess.run(['go', 'test', './internal/client', './internal/p2p', './internal/service', '-run', 'TestP2P|TestManifest', '-count=1'], env=env, check=True)
           PY
       - uses: actions/upload-artifact@v4

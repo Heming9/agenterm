@@ -49,3 +49,9 @@ __pycache__/
 
 # Local user research and outreach records
 /docs/research/
+
+# Auxiliary outputs from documentation renderers (GIFs are tracked)
+/docs/design/architecture-blue.png
+/docs/design/architecture-blue.mp4
+/docs/design/connection-flow-en.png
+/docs/design/connection-flow-zh.png

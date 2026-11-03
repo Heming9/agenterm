@@ -33,7 +33,7 @@ Client CLI and P2P platform downloads are merged into `internal/components/asset
 python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
 ```
 
-Deploy only the Server executable. Startup verifies ZIP paths, sizes and SHA-256, then atomically extracts into `components/<bundle-hash>/` under the instance runtime directory. CLI and P2P downloads both come from there; no external `p2p-assets` directory is required. Valid caches are verified and reused, and different bundle hashes preserve old frontends’ assets. This writable runtime directory supports systemd PrivateTmp and read-only Docker root filesystems. Startup never recompresses downloads and needs no Python, Rust or system unzip utility.
+Deploy only the Server executable. Startup verifies tar.xz paths, sizes and SHA-256, then atomically extracts into `components/<bundle-hash>/` under the instance runtime directory. CLI and P2P downloads both come from there; no external `p2p-assets` directory is required. Valid caches are verified and reused, and different bundle hashes preserve old frontends’ assets. This writable runtime directory supports systemd PrivateTmp and read-only Docker root filesystems. Startup never recompresses downloads and needs no Python, Rust or system decompression utility.
 
 ## Commands and options
 

@@ -50,7 +50,7 @@ func describe(files map[string][]byte) map[string]fileInfo {
 	}
 	return result
 }
-func validateRaw(m manifest) error {
+func validateManifest(m manifest) error {
 	if m.Schema != 2 || !versionPattern.MatchString(m.P2PVersion) || len(m.Files) != 12 {
 		return errors.New("invalid components manifest")
 	}
@@ -68,7 +68,6 @@ func validateRaw(m manifest) error {
 	// The name pattern admits exactly twelve OS/architecture/component combinations.
 	return nil
 }
-func validateManifest(m manifest) error { return validateRaw(m) }
 
 func sourceMetadata(m manifest) (map[string][]byte, error) {
 	files := map[string][]byte{}

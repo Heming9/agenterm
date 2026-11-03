@@ -34,7 +34,7 @@ Client CLI 和 P2P 的平台下载包统一合并为 `internal/components/assets
 python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
 ```
 
-只需部署这一个 Server 文件。启动时校验 ZIP 清单、大小和 SHA-256，再原子解压到实例运行目录下的 `components/<包哈希>/`；CLI 与 P2P 都从这里提供下载，不需要旁置 `p2p-assets`。已有缓存会重新校验后复用，不同包分目录保存以保留旧 frontend 的资源。systemd PrivateTmp 和 Docker 的只读根文件系统均可继续使用，因为组件目录位于可写的运行目录中。启动过程不重新压缩下载包，不需要 Python、Rust 或系统解压工具。
+只需部署这一个 Server 文件。启动时校验 tar.xz 清单、大小和 SHA-256，再原子解压到实例运行目录下的 `components/<包哈希>/`；CLI 与 P2P 都从这里提供下载，不需要旁置 `p2p-assets`。已有缓存会重新校验后复用，不同包分目录保存以保留旧 frontend 的资源。systemd PrivateTmp 和 Docker 的只读根文件系统均可继续使用，因为组件目录位于可写的运行目录中。启动过程不重新压缩下载包，不需要 Python、Rust 或系统解压工具。
 
 ## 命令和参数
 

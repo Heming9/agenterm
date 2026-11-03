@@ -150,6 +150,6 @@ Token 成功连接过后，只要仍有设备在线就保持有效。最后一�
 
 调用 `p2p_transfer_start` 后，按 Agent 实际执行环境选择返回的 shell 或 PowerShell 脚本。脚本自动下载、校验并启动本机组件；返回时远端只保证已注册协商，请用组件的 `status` 确认连接成功。脚本输出包含 `executable`，后续用该绝对路径执行 `status`、`cp` 和 `stop`，无需修改系统 PATH。
 
-`cp` 使用 `客户端ID:路径`，交换源和目标即可反向复制。首版只支持单文件、单连接，默认拒绝覆盖，显式 `--overwrite` 才覆盖；`stop` 取消当前复制并通知双方断开。Client 退出会停止其管理的连接。Server 和 Client 都需要新版，且 Server 内嵌的 `components.zip` 必须包含匹配平台的组件包。文件内容仅走加密 P2P 直连，连接失败不回退中转。
+`cp` 使用 `客户端ID:路径`，交换源和目标即可反向复制。首版只支持单文件、单连接，默认拒绝覆盖，显式 `--overwrite` 才覆盖；`stop` 取消当前复制并通知双方断开。Client 退出会停止其管理的连接。Server 和 Client 都需要新版，且 Server 内嵌的 `components.tar.xz` 必须包含匹配平台的组件包。文件内容仅走加密 P2P 直连，连接失败不回退中转。
 
 [组件用法、服务端组件分发和测试](../tools/p2p-cli/README.md)。

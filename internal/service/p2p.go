@@ -274,7 +274,7 @@ func (s *frontend) p2pHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		manifest, err := s.p2pManifest()
 		if err != nil {
-			http.Error(w, "P2P assets unavailable", 503)
+			http.Error(w, "P2P assets unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		file := strings.TrimPrefix(path, "downloads/")
@@ -302,12 +302,12 @@ func (s *frontend) p2pHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if r.Header.Get("Authorization") != "Bearer "+token {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 128<<10))
 	if err != nil {
-		http.Error(w, "signaling body too large", 413)
+		http.Error(w, "signaling body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 	if len(body) == 0 {

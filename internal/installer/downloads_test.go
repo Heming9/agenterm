@@ -31,7 +31,7 @@ func sampleClients() fstest.MapFS {
 
 func TestDownloadsRoundTrip(t *testing.T) {
 	source := sampleClients()
-	files, err := BuildDownloads(source)
+	files, err := components.BuildClientDownloads(source)
 	if err != nil {
 		t.Fatal(err)
 	}

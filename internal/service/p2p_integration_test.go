@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Supply the native binary and assets made by scripts/build_p2p_cli.py. This
+// Supply the native assets made by scripts/build_p2p_cli.py. This
 // exercises actual downloads, the builtin scripts, Client and real DataChannels.
 func TestP2PBootstrapEndToEnd(t *testing.T) {
 	for _, format := range []string{"xz", "gzip", "raw"} {
@@ -34,11 +34,10 @@ func TestP2PBootstrapEndToEnd(t *testing.T) {
 	}
 }
 func runP2PBootstrapEndToEnd(t *testing.T) {
-	binary, assets := os.Getenv("P2P_CLI_TEST_BINARY"), os.Getenv("P2P_CLI_TEST_ASSETS")
-	if binary == "" || assets == "" {
-		t.Skip("set P2P_CLI_TEST_BINARY and P2P_CLI_TEST_ASSETS for real component integration")
+	assets := os.Getenv("P2P_CLI_TEST_ASSETS")
+	if assets == "" {
+		t.Skip("set P2P_CLI_TEST_ASSETS for real component integration")
 	}
-	binary, _ = filepath.Abs(binary)
 	assets, _ = filepath.Abs(assets)
 	root := t.TempDir()
 	remoteHome := filepath.Join(root, "remote-home")

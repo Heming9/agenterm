@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-//go:generate python3 ../../scripts/build_components.py
-
 //go:embed install.sh install.ps1
 var content embed.FS
 

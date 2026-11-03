@@ -1,7 +1,7 @@
 package service
 
 import (
-	"agenterm/internal/installer"
+	"agenterm/internal/components"
 	"bytes"
 	"fmt"
 	"net/http"
@@ -23,7 +23,7 @@ func installerFixture(t *testing.T, client []byte) map[string][]byte {
 			source[name] = &fstest.MapFile{Data: client}
 		}
 	}
-	assets, err := installer.BuildDownloads(source)
+	assets, err := components.BuildClientDownloads(source)
 	if err != nil {
 		t.Fatal(err)
 	}

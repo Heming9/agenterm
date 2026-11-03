@@ -3,7 +3,6 @@ package main
 
 import (
 	"agenterm/internal/components"
-	"agenterm/internal/installer"
 	"agenterm/internal/p2p"
 	"encoding/json"
 	"flag"
@@ -62,7 +61,7 @@ func main() {
 	if err := writeBundle(*bundle, raw, manifest.Version); err != nil {
 		log.Fatal(err)
 	}
-	files, err := installer.BuildDownloads(os.DirFS(*input))
+	files, err := components.BuildClientDownloads(os.DirFS(*input))
 	if err != nil {
 		log.Fatal(err)
 	}
