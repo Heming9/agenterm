@@ -2,11 +2,11 @@
   <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>Let an AI agent assist with a remote computer through one authorized connection command.</strong></p>
-  <p>macOS / Linux / Windows · CLI / GUI · Multiple devices · No SSH service required</p>
+  <p>💻 macOS/Linux/Windows · 🖥️ CLI/GUI · 🔗 Multiple devices · ⚡ One-click connection · 🪶 Lightweight · 🔓 No SSH required · 🤖 Agent-first</p>
   <p>
-    <a href="#quick-start">Quick start</a> ·
-    <a href="https://github.com/Heming9/agenterm/releases">Download client</a> ·
-    <a href="docs/deployment.md">Self-host</a> ·
+    <a href="#-quick-start">🚀 Quick start</a> ·
+    <a href="https://github.com/Heming9/agenterm/releases">📥 Download client</a> ·
+    <a href="docs/deployment.md">🏠 Self-host</a> ·
     <a href="README.zh-CN.md">简体中文</a>
   </p>
 </div>
@@ -17,7 +17,7 @@
 <p align="center">Create invitation → Authorize access → Connect device → Run task</p>
 <p align="center"><a href="docs/demo/agenterm-cleanup.mp4">Full demo · 1 min 42 sec</a> · <a href="docs/demo/subtitles.zh-en.srt">Chinese / English subtitles</a></p>
 
-## Quick start
+## 🚀 Quick start
 
 <p align="center">
   <img src="docs/design/connection-flow-en.gif" alt="Connection workflow: connect Agent to MCP, ask Agent to generate a connection command, share the command, the recipient runs it and grants access, then Agent provides remote assistance" width="1000">
@@ -43,7 +43,7 @@ Keep the agent conversation active while the device connects, then start the tas
 
 Connections grant terminal access with the current user's permissions. Only authorize people you trust.
 
-## When to use it
+## 💡 When to use it
 
 - **Help a colleague or customer troubleshoot:** Let your agent inspect the remote environment and logs without passing commands and output back and forth.
 - **Help family with computer problems:** Once they run the client and authorize access, use your familiar agent to assist through the terminal.
@@ -52,22 +52,22 @@ Connections grant terminal access with the current user's permissions. Only auth
 
 Interactive terminal tasks are supported. Use the CLI or GUI on the target computer to follow progress; the client automatically attempts to reconnect after temporary network failures.
 
-## How it works
+## 🔗 How it works
 
 <p align="center">
   <img src="docs/design/architecture-blue.gif" alt="Agenterm architecture: AI Agent connects over MCP to the Server, which relays commands and results over WebSocket to the Client and local shell" width="1000">
 </p>
 
-The server forwards commands and results. The client runs on the target computer, initiates its server connection, and executes tasks through the local shell. Both the agent and target need access to the server; the target needs no inbound port.
+The agent and target computer connect through the server. After running the client, the person at the target computer can authorize terminal assistance without opening an inbound port.
 
 Use the hosted service or [deploy your own server](docs/deployment.md).
 
-## FAQ
+## ❓ FAQ
 
 <details>
 <summary>What if a connection fails or an invitation expires?</summary>
 
-Check that both sides can reach the server. Ask the agent for a new invitation if one has expired, been used, or Runtime has restarted. For version mismatches, use server and client binaries from the same release. [Connection troubleshooting](docs/usage.md#connection-failures-or-expired-invitations).
+Check that both sides can reach the service. If an invitation no longer works, ask the agent to create a new one. For version mismatches, use the server and client from the same release. [Connection troubleshooting](docs/usage.md#connection-failures-or-expired-invitations).
 
 </details>
 
@@ -88,7 +88,7 @@ Agenterm provides terminal assistance, not a remote desktop. Ask the agent for a
 <details>
 <summary>What are the hosted service limits?</summary>
 
-Management access currently requires no authentication. Up to four devices can be online per invitation creator's public IP; people on the same network share that allowance. The agent, server, and target client can see commands and output, so keep invitations and tokens private. Use HTTPS when self-hosting publicly.
+Management access currently requires no authentication. The number of online devices is limited per invitation creator's IP address. The agent, server, and target client can see commands and output, so keep invitations and tokens private. Use HTTPS when self-hosting publicly.
 
 </details>
 

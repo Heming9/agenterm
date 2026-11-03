@@ -2,11 +2,11 @@
   <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>通过一条授权命令，让 AI Agent 协助操作远程电脑。</strong></p>
-  <p>macOS / Linux / Windows · CLI / GUI · 多设备 · 无需 SSH 服务</p>
+  <p>💻 macOS/Linux/Windows · 🖥️ CLI/GUI · 🔗 多设备 · ⚡ 一键连接 · 🪶 轻量 · 🔓 无需 SSH · 🤖 Agent优先</p>
   <p>
-    <a href="#快速开始">快速开始</a> ·
-    <a href="https://github.com/Heming9/agenterm/releases">下载客户端</a> ·
-    <a href="docs/deployment.zh-CN.md">自托管</a> ·
+    <a href="#-快速开始">🚀 快速开始</a> ·
+    <a href="https://github.com/Heming9/agenterm/releases">📥 下载客户端</a> ·
+    <a href="docs/deployment.zh-CN.md">🏠 自托管</a> ·
     <a href="README.md">English</a>
   </p>
 </div>
@@ -17,7 +17,7 @@
 <p align="center">生成邀请 → 确认授权 → 设备上线 → 执行任务</p>
 <p align="center"><a href="docs/demo/agenterm-cleanup.mp4">完整演示 · 1 分 42 秒</a></p>
 
-## 快速开始
+## 🚀 快速开始
 
 <p align="center">
   <img src="docs/design/connection-flow-zh.gif" alt="使用流程：让 Agent 接入 MCP，生成连接命令，分享连接命令，对方执行并授权连接，Agent 开始远程协助" width="1000">
@@ -29,7 +29,7 @@
 
 连接授予目标电脑当前用户的终端权限，请只向信任的人授权。
 
-## 适合什么场景
+## 💡 适合什么场景
 
 - **帮助同事或客户排障：** 不用反复传递命令和输出，让 Agent 直接协助检查远程环境和日志。
 - **帮助家人解决电脑问题：** 对方运行客户端并授权后，借助你熟悉的 Agent 进行终端协助。
@@ -38,22 +38,22 @@
 
 支持交互式终端任务。目标电脑可以选择 CLI 或 GUI 查看执行过程，临时网络故障后客户端会自动尝试重连。
 
-## 工作原理
+## 🔗 工作原理
 
 <p align="center">
   <img src="docs/design/architecture-blue.gif" alt="Agenterm 架构：AI Agent 通过 MCP 接入 Server，经 WebSocket 向 Client 和本地 shell 下发命令并接收结果" width="1000">
 </p>
 
-只需启动 Server，它会自动管理内部 Runtime：Runtime 保留连接与内存会话，Server 提供 MCP 和下载接口并负责 Runtime 的启动、接管和停止。Client 在目标电脑运行并主动连接 Server，再由本地 shell 执行任务。Agent 和目标电脑都需要能访问 Server，目标电脑无需开放入站端口。
+Agent 和目标电脑通过 Server 连接。目标电脑运行客户端后，即可授权 Agent 通过终端协助操作，无需开放入站端口。
 
 可以使用托管服务，也可以[部署自己的 Server](docs/deployment.zh-CN.md)。
 
-## 常见问题
+## ❓ 常见问题
 
 <details>
 <summary>连接失败或邀请过期怎么办？</summary>
 
-确认双方都能访问 Server；邀请过期、已使用或 Runtime 重启后，让 Agent 重新创建邀请。出现版本不兼容提示时，使用同一 Release 的 Server 和客户端。[连接排查](docs/usage.zh-CN.md#连接失败或邀请过期)。
+确认双方都能访问服务；如果邀请无法使用，让 Agent 重新创建。出现版本不兼容提示时，使用同一版本的服务端和客户端。[连接排查](docs/usage.zh-CN.md#连接失败或邀请过期)。
 
 </details>
 
@@ -74,7 +74,7 @@ Agenterm 提供终端协助，不提供远程桌面。多设备任务可让 Agen
 <details>
 <summary>托管服务有什么限制？</summary>
 
-目前无需管理认证，每个邀请创建者的公网 IP 最多允许 4 台在线设备，同一网络共享额度。Agent、Server 和目标客户端都能看到命令与输出，请妥善保管邀请和 token。自行部署到公网时使用 HTTPS。
+目前无需管理认证，每个邀请创建者的 IP 仅允许有限的在线设备数量，Agent、Server 和目标客户端都能看到命令与输出，请妥善保管邀请和 token。自行部署到公网时使用 HTTPS。
 
 </details>
 
