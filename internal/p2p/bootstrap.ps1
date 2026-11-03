@@ -60,12 +60,16 @@ $process.StartInfo.Arguments = 'start --config -'
 if ('@MODE@' -eq 'foreground') { $process.StartInfo.Arguments += ' --foreground' }
 $process.StartInfo.UseShellExecute = $false
 $process.StartInfo.RedirectStandardInput = $true
+$process.StartInfo.RedirectStandardOutput = $true
+$process.StartInfo.RedirectStandardError = $true
+$process.StartInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+$process.StartInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
 # .NET Framework uses Console.InputEncoding for the redirected writer;
 # ProcessStartInfo.StandardInputEncoding requires newer .NET versions.
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-# .NET Framework duplicates standard handles for its child. Keep the original
-# capture pipes out of that child's inherited handle table, so a later detached
-# daemon cannot keep the Agent's stdout/stderr open after bootstrap returns.
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+# Only the explicitly redirected child streams should be inherited. A later
+# detached daemon must not keep the Agent's original capture pipes open.
 if (-not ('AgentermP2PNativeHandles' -as [type])) {
   Add-Type -TypeDefinition '
 using System;
@@ -85,9 +89,13 @@ public static class AgentermP2PNativeHandles {
 [AgentermP2PNativeHandles]::ProtectCapturePipes()
 try {
   $null = $process.Start()
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEndAsync()
   $process.StandardInput.Write($json)
   $process.StandardInput.Close()
   $process.WaitForExit()
+  [Console]::Out.Write($stdout.GetAwaiter().GetResult())
+  [Console]::Error.Write($stderr.GetAwaiter().GetResult())
   if ($process.ExitCode -ne 0) { throw "p2p-cli exited with code $($process.ExitCode)" }
 } finally {
   $process.Dispose()

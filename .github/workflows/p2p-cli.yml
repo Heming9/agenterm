@@ -99,6 +99,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Check Windows bootstrap before native compilation
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, pathlib, subprocess, sys, tempfile
+          bundle = pathlib.Path('internal/components/assets/components.tar.xz')
+          if bundle.exists():
+              sys.path.insert(0, str(pathlib.Path('scripts').resolve()))
+              from build_components import reuse_p2p
+              with tempfile.TemporaryDirectory(prefix='agenterm-bootstrap-') as temporary:
+                  reuse_p2p(bundle, pathlib.Path(temporary))
+                  env = dict(os.environ, P2P_CLI_TEST_ASSETS=temporary)
+                  subprocess.run(['go', 'test', './internal/p2p', './internal/service', '-run', '^TestP2PBootstrap', '-count=1', '-timeout=3m'], env=env, check=True)
+          PY
       - name: Install Linux static-link tools
         if: matrix.platform == 'linux'
         run: |
