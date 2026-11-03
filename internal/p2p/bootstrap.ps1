@@ -63,6 +63,26 @@ $process.StartInfo.RedirectStandardInput = $true
 # .NET Framework uses Console.InputEncoding for the redirected writer;
 # ProcessStartInfo.StandardInputEncoding requires newer .NET versions.
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+# .NET Framework duplicates standard handles for its child. Keep the original
+# capture pipes out of that child's inherited handle table, so a later detached
+# daemon cannot keep the Agent's stdout/stderr open after bootstrap returns.
+if (-not ('AgentermP2PNativeHandles' -as [type])) {
+  Add-Type -TypeDefinition '
+using System;
+using System.Runtime.InteropServices;
+public static class AgentermP2PNativeHandles {
+  [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int kind);
+  [DllImport("kernel32.dll")] private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+  public static void ProtectCapturePipes() {
+    foreach (int kind in new int[] { -10, -11, -12 }) {
+      IntPtr handle = GetStdHandle(kind);
+      if (handle != IntPtr.Zero && handle != new IntPtr(-1)) { SetHandleInformation(handle, 1, 0); }
+    }
+  }
+}
+'
+}
+[AgentermP2PNativeHandles]::ProtectCapturePipes()
 try {
   $null = $process.Start()
   $process.StandardInput.Write($json)

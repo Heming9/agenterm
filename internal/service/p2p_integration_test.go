@@ -98,12 +98,15 @@ func runP2PBootstrapEndToEnd(t *testing.T) {
 	}
 	result := data.(map[string]any)
 	agentEnv := append(os.Environ(), "HOME="+agentHome, "USERPROFILE="+agentHome, "LOCALAPPDATA="+agentHome, "XDG_CACHE_HOME="+filepath.Join(agentHome, "cache"), "P2P_CLI_STATE_DIR="+agentState)
+	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), time.Minute)
+	defer cancelBootstrap()
 	var bootstrap *exec.Cmd
 	if runtime.GOOS == "windows" {
-		bootstrap = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", result["powershell_script"].(string))
+		bootstrap = exec.CommandContext(bootstrapCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", result["powershell_script"].(string))
 	} else {
-		bootstrap = exec.Command("/bin/sh", "-c", result["shell_script"].(string))
+		bootstrap = exec.CommandContext(bootstrapCtx, "/bin/sh", "-c", result["shell_script"].(string))
 	}
+	bootstrap.WaitDelay = 2 * time.Second
 	bootstrap.Env = agentEnv
 	output, err := bootstrap.CombinedOutput()
 	if err != nil {

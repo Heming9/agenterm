@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestManifestRejectsTamperingAndScriptsKeepCredentialsScoped(t *testing.T) {
@@ -118,7 +120,9 @@ func main() {
 				t.Setenv("AGENTERM_P2P_CONFIG_B64", base64.StdEncoding.EncodeToString(config))
 			}
 			_, script := Scripts(manifest, "https://example.test", embedded, foreground, false)
-			command := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 			output, err := command.CombinedOutput()
 			if err != nil {
 				t.Fatalf("bootstrap: %v %s", err, output)
