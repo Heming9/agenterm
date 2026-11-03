@@ -54,8 +54,41 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            arch: amd64
+            target: x86_64-unknown-linux-musl
+            extension: ''
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            target: aarch64-unknown-linux-musl
+            extension: ''
+          - os: macos-15-intel
+            platform: macos
+            arch: amd64
+            target: x86_64-apple-darwin
+            extension: ''
+          - os: macos-15
+            platform: macos
+            arch: arm64
+            target: aarch64-apple-darwin
+            extension: ''
+          - os: windows-2025
+            platform: windows
+            arch: amd64
+            target: x86_64-pc-windows-msvc
+            extension: .exe
+          - os: windows-11-arm
+            platform: windows
+            arch: arm64
+            target: aarch64-pc-windows-msvc
+            extension: .exe
+    name: ${{ matrix.platform }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
+    env:
+      P2P_CLI_BINARY: tools/p2p-cli/target/${{ matrix.target }}/release/p2p-cli${{ matrix.extension }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,20 +98,34 @@ jobs:
           go-version: '1.26.10'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
+      - name: Install Linux static-link tools
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - name: Install Intel macOS compression tool
+        if: matrix.platform == 'macos' && matrix.arch == 'amd64'
+        run: brew install advancecomp
       - name: Install pinned Rust tools
         shell: bash
         run: |
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target '${{ matrix.target }}'
           rustup default 1.99.1
       - name: Check and build native component
         shell: bash
         run: |
           cargo fmt --manifest-path tools/p2p-cli/Cargo.toml --check
-          cargo clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets -- -D warnings
-          cargo test --manifest-path tools/p2p-cli/Cargo.toml --locked
-          cargo build --manifest-path tools/p2p-cli/Cargo.toml --release --locked
-          python scripts/build_p2p_cli.py --output dist/p2p-assets
+          if [ '${{ matrix.platform }}' = linux ]; then
+            export CC=musl-gcc
+          fi
+          if [ '${{ matrix.platform }}' = windows ]; then
+            export RUSTFLAGS='-C target-feature=+crt-static'
+          fi
+          cargo clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets --target '${{ matrix.target }}' --locked -- -D warnings
+          cargo test --manifest-path tools/p2p-cli/Cargo.toml --target '${{ matrix.target }}' --locked
+          cargo build --manifest-path tools/p2p-cli/Cargo.toml --release --target '${{ matrix.target }}' --locked
+          python scripts/build_p2p_cli.py --target '${{ matrix.target }}' --binary "$P2P_CLI_BINARY" --output dist/p2p-assets
       - name: Test component extraction, downloads, and build scripts
         shell: bash
         run: |
@@ -90,14 +137,14 @@ jobs:
         run: |
           python - <<'PY'
           import os, pathlib, subprocess
-          binary = pathlib.Path('tools/p2p-cli/target/release') / ('p2p-cli.exe' if os.name == 'nt' else 'p2p-cli')
+          binary = pathlib.Path(os.environ['P2P_CLI_BINARY'])
           subprocess.run(['python', 'tools/p2p-cli/daemon_e2e.py', str(binary)], check=True)
           env = dict(os.environ, P2P_CLI_TEST_BINARY=str(binary.resolve()), P2P_CLI_TEST_ASSETS=str(pathlib.Path('dist/p2p-assets').resolve()))
           subprocess.run(['go', 'test', './internal/client', './internal/p2p', './internal/service', '-run', 'TestP2P|TestManifest', '-count=1'], env=env, check=True)
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: p2p-cli-${{ runner.os }}-${{ runner.arch }}
+          name: p2p-cli-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/p2p-assets/*
           if-no-files-found: error
 
@@ -116,7 +163,7 @@ jobs:
           pattern: p2p-cli-*
           path: component-builds
       - name: Merge native archives and checksums
-        run: python3 scripts/build_p2p_cli.py --merge component-builds/* --output dist/p2p-assets
+        run: python3 scripts/build_p2p_cli.py --merge component-builds/* --require-all --output dist/p2p-assets
       - uses: actions/upload-artifact@v4
         with:
           name: p2p-cli-distribution

@@ -70,7 +70,7 @@ def main():
                 merge_assets(args.p2p_assets, peers)
             else:
                 reuse_p2p(embedded, peers)
-            merge_assets([peers], merged)
+            merge_assets([peers], merged, require_all=True)
             clients = args.client_dir.resolve() if args.client_dir else raw
             if args.client_dir is None:
                 build_clients(root, clients)

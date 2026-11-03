@@ -1,6 +1,7 @@
 package components
 
 import (
+	"agenterm/internal/p2p"
 	"archive/zip"
 	"bytes"
 	"encoding/json"
@@ -13,6 +14,24 @@ import (
 	"testing"
 	"time"
 )
+
+func TestEmbeddedP2PDistributionCoversAllPlatforms(t *testing.T) {
+	paths, err := Prepare(privateBase(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := p2p.Load(paths.P2PDirectory())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, platform := range []string{"darwin", "linux", "windows"} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			if !manifest.Supports(platform, arch) {
+				t.Errorf("embedded P2P distribution missing %s/%s", platform, arch)
+			}
+		}
+	}
+}
 
 func fixture() map[string][]byte {
 	files := map[string][]byte{"client-cli/SHA256SUMS": []byte("checksums"), "p2p-cli/manifest.json": []byte("{}"), "p2p-cli/p2p-cli-macos-arm64.tar.gz": []byte("native p2p archive")}
