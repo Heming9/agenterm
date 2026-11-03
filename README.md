@@ -15,7 +15,7 @@
   <a href="docs/demo/agenterm-cleanup.mp4"><img src="docs/demo/quickstart.gif" alt="An agent creates an invitation, the target computer authorizes access, and the task runs" width="800"></a>
 </p>
 <p align="center">Create invitation → Authorize access → Connect device → Run task</p>
-<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">Full demo · 1 min 42 sec</a> · <a href="docs/demo/subtitles.zh-en.srt">Chinese / English subtitles</a></p>
+<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">Full demo · 1 min 42 sec</a></p>
 
 ## 🚀 Quick start
 
@@ -23,25 +23,11 @@
   <img src="docs/design/connection-flow-en.gif" alt="Connection workflow: connect Agent to MCP, ask Agent to generate a connection command, share the command, the recipient runs it and grants access, then Agent provides remote assistance" width="1000">
 </p>
 
-### 1. Person requesting help: connect your agent
+1. **Connect your agent:** Add the MCP service `https://agenterm.net/mcp` to an agent that supports Streamable HTTP. [See configuration examples](docs/usage.md#connect-your-agent).
+2. **Invite and authorize:** Ask the agent to create an invitation and privately share the connection command. The other person runs it and authorizes access.
+3. **Start assisting:** Once the device connects, tell the agent what to do. The other person can see commands and output and disconnect at any time.
 
-Add this MCP service to an agent that supports Streamable HTTP:
-
-```text
-https://agenterm.net/mcp
-```
-
-[See configuration examples](docs/usage.md#connect-your-agent). Describe your task, ask the agent to create an invitation, and privately share the generated connection command with the person at the target computer.
-
-### 2. Person at the target computer: connect and authorize
-
-Run the invitation command for your operating system, read the notice, and authorize access. The client displays connection status, commands, and output. You do not need to configure MCP or a server.
-
-### 3. Both: complete the task and disconnect
-
-Keep the agent conversation active while the device connects, then start the task. The target computer can disconnect at any time; close the client when finished.
-
-Connections grant terminal access with the current user's permissions. Only authorize people you trust.
+Connections grant terminal access with the target computer's current user permissions. Only authorize people you trust.
 
 ## 💡 When to use it
 
