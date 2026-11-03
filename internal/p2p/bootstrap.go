@@ -81,11 +81,11 @@ func Filename(platform, arch string) (string, error) {
 	}
 	switch platform {
 	case "darwin":
-		return "p2p-cli-macos-" + arch + ".tar.gz", nil
+		return "p2p-cli-macos-" + arch, nil
 	case "linux":
-		return "p2p-cli-linux-" + arch + ".tar.gz", nil
+		return "p2p-cli-linux-" + arch, nil
 	case "windows":
-		return "p2p-cli-windows-" + arch + ".zip", nil
+		return "p2p-cli-windows-" + arch + ".exe", nil
 	default:
 		return "", errors.New("unsupported p2p-cli platform")
 	}
@@ -108,8 +108,8 @@ func Scripts(m Manifest, base string, config []byte, foreground, stop bool) (str
 	for _, a := range m.Artifacts {
 		key := a.Platform + "/" + a.Arch
 		url := strings.TrimRight(base, "/") + "/p2p/downloads/" + a.File
-		fmt.Fprintf(&shCases, "  %s) url=%s; expected=%s; archive=%s ;;\n", key, shQuote(url), shQuote(strings.ToLower(a.SHA256)), shQuote(a.File))
-		fmt.Fprintf(&psCases, "  %s { $url=%s; $expected=%s; $archive=%s }\n", psQuote(key), psQuote(url), psQuote(strings.ToLower(a.SHA256)), psQuote(a.File))
+		fmt.Fprintf(&shCases, "  %s) url=%s; expected=%s; source=%s ;;\n", key, shQuote(url), shQuote(strings.ToLower(a.SHA256)), shQuote(a.File))
+		fmt.Fprintf(&psCases, "  %s { $url=%s; $expected=%s; $source=%s }\n", psQuote(key), psQuote(url), psQuote(strings.ToLower(a.SHA256)), psQuote(a.File))
 	}
 	mode := "background"
 	if foreground {

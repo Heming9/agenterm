@@ -28,13 +28,14 @@ Thumbs.db
 /artifacts/
 /release-base/
 /release-plan/
-/components.zip
-/.components-*.zip
+/release-files/
+/components.tar.xz
+/.components-*.tar.xz
 /internal/installer/assets/*
 !/internal/installer/assets/README.txt
 /internal/components/assets/*
 !/internal/components/assets/README.txt
-!/internal/components/assets/components.zip
+!/internal/components/assets/components.tar.xz
 
 # Python build caches and local environments
 __pycache__/

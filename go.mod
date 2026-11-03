@@ -16,6 +16,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7
+	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/net v0.35.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.34.0

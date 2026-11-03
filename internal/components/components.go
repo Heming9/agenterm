@@ -2,7 +2,8 @@
 package components
 
 import (
-	"archive/zip"
+	"agenterm/internal/p2p"
+	"agenterm/internal/xzarchive"
 	"bytes"
 	"crypto/sha256"
 	_ "embed"
@@ -18,47 +19,45 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 )
 
 //go:generate python3 ../../scripts/build_components.py
 
-//go:embed assets/components.zip
+//go:embed assets/components.tar.xz
 var bundle []byte
 
-const maxFileBytes = 64 << 20
-const maxTotalBytes = 512 << 20
+const maxFileBytes = xzarchive.MaxFileBytes
+const maxTotalBytes = xzarchive.MaxTotalBytes
 
 type fileInfo struct {
 	Bytes  int64  `json:"bytes"`
 	SHA256 string `json:"sha256"`
 }
 type manifest struct {
-	Schema int                 `json:"schema"`
-	Files  map[string]fileInfo `json:"files"`
+	Schema     int                 `json:"schema"`
+	P2PVersion string              `json:"p2p_version"`
+	Files      map[string]fileInfo `json:"files"`
 }
 
-var clientArchive = regexp.MustCompile(`^client-cli/agenterm-client-cli-(macos|linux|windows)-(amd64|arm64)\.(tar\.gz|zip)$`)
-var peerArchive = regexp.MustCompile(`^p2p-cli/p2p-cli-(macos|linux|windows)-(amd64|arm64)\.(tar\.gz|zip)$`)
+var rawName = regexp.MustCompile(`^(client-cli/agenterm-client-cli|p2p-cli/p2p-cli)-(macos|linux|windows)-(amd64|arm64)(\.exe)?$`)
+var versionPattern = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$`)
 
-func validName(name string) bool {
-	if !fs.ValidPath(name) || strings.ContainsAny(name, `\:`) {
-		return false
+func describe(files map[string][]byte) map[string]fileInfo {
+	result := make(map[string]fileInfo, len(files))
+	for name, data := range files {
+		hash := sha256.Sum256(data)
+		result[name] = fileInfo{Bytes: int64(len(data)), SHA256: hex.EncodeToString(hash[:])}
 	}
-	if name == "client-cli/SHA256SUMS" || name == "p2p-cli/manifest.json" {
-		return true
-	}
-	return (clientArchive.MatchString(name) || peerArchive.MatchString(name)) &&
-		(strings.Contains(name, "-windows-") == strings.HasSuffix(name, ".zip"))
+	return result
 }
-func validateManifest(m manifest) error {
-	if m.Schema != 1 || len(m.Files) < 9 || len(m.Files) > 32 {
+func validateRaw(m manifest) error {
+	if m.Schema != 2 || !versionPattern.MatchString(m.P2PVersion) || len(m.Files) != 12 {
 		return errors.New("invalid components manifest")
 	}
 	var total int64
 	for name, info := range m.Files {
 		hash, err := hex.DecodeString(info.SHA256)
-		if !validName(name) || info.Bytes <= 0 || info.Bytes > maxFileBytes || err != nil || len(hash) != 32 {
+		if !rawName.MatchString(name) || strings.Contains(name, "-windows-") != strings.HasSuffix(name, ".exe") || info.Bytes <= 0 || info.Bytes > maxFileBytes || err != nil || len(hash) != 32 {
 			return fmt.Errorf("invalid component entry %q", name)
 		}
 		total += info.Bytes
@@ -66,34 +65,43 @@ func validateManifest(m manifest) error {
 	if total > maxTotalBytes {
 		return errors.New("components bundle exceeds size limit")
 	}
-	for _, platform := range []string{"macos", "linux", "windows"} {
-		for _, arch := range []string{"amd64", "arm64"} {
-			ext := ".tar.gz"
-			if platform == "windows" {
-				ext = ".zip"
-			}
-			if _, ok := m.Files["client-cli/agenterm-client-cli-"+platform+"-"+arch+ext]; !ok {
-				return errors.New("components bundle is missing a CLI platform")
-			}
-		}
-	}
-	if _, ok := m.Files["client-cli/SHA256SUMS"]; !ok {
-		return errors.New("CLI checksums missing")
-	}
-	if _, ok := m.Files["p2p-cli/manifest.json"]; !ok {
-		return errors.New("P2P manifest missing")
-	}
+	// The name pattern admits exactly twelve OS/architecture/component combinations.
 	return nil
 }
+func validateManifest(m manifest) error { return validateRaw(m) }
 
-// Pack preserves the exact downloadable archive bytes. The outer ZIP stores
-// already-compressed files, so startup never recompresses platform downloads.
-func Pack(w io.Writer, files map[string][]byte) error {
-	m := manifest{Schema: 1, Files: make(map[string]fileInfo)}
-	for name, data := range files {
-		hash := sha256.Sum256(data)
-		m.Files[name] = fileInfo{Bytes: int64(len(data)), SHA256: hex.EncodeToString(hash[:])}
+func sourceMetadata(m manifest) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	names := make([]string, 0, 6)
+	for name := range m.Files {
+		if strings.HasPrefix(name, "client-cli/") {
+			names = append(names, name)
+		}
 	}
+	sort.Strings(names)
+	var checksums bytes.Buffer
+	for _, name := range names {
+		fmt.Fprintf(&checksums, "%s  %s\n", m.Files[name].SHA256, strings.TrimPrefix(name, "client-cli/"))
+	}
+	files["client-cli/SHA256SUMS"] = checksums.Bytes()
+	peers := p2p.Manifest{Version: m.P2PVersion}
+	for _, platform := range []string{"darwin", "linux", "windows"} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			name, _ := p2p.Filename(platform, arch)
+			peers.Artifacts = append(peers.Artifacts, p2p.Artifact{Platform: platform, Arch: arch, File: name, SHA256: m.Files["p2p-cli/"+name].SHA256})
+		}
+	}
+	data, err := json.MarshalIndent(peers, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	files["p2p-cli/manifest.json"] = append(data, '\n')
+	return files, nil
+}
+
+// Pack stores raw executables in one solid tar.xz; no download archives are nested.
+func Pack(w io.Writer, raw map[string][]byte, version string) error {
+	m := manifest{Schema: 2, P2PVersion: version, Files: describe(raw)}
 	if err := validateManifest(m); err != nil {
 		return err
 	}
@@ -101,95 +109,57 @@ func Pack(w io.Writer, files map[string][]byte) error {
 	if err != nil {
 		return err
 	}
-	zw := zip.NewWriter(w)
-	names := []string{"manifest.json"}
-	for name := range files {
-		names = append(names, name)
+	entries := make(map[string][]byte, len(raw)+1)
+	for name, data := range raw {
+		entries[name] = data
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		h := &zip.FileHeader{Name: name, Method: zip.Store, Modified: time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)}
-		h.SetMode(0644)
-		out, err := zw.CreateHeader(h)
-		if err != nil {
-			return err
-		}
-		data := files[name]
-		if name == "manifest.json" {
-			data = metadata
-		}
-		if _, err = out.Write(data); err != nil {
-			return err
-		}
-	}
-	return zw.Close()
+	entries["manifest.json"] = metadata
+	return xzarchive.Write(w, entries)
 }
 
 type Paths struct{ Root string }
 
-func (p Paths) ClientCLI() fs.FS     { return os.DirFS(filepath.Join(p.Root, "client-cli")) }
-func (p Paths) P2PDirectory() string { return filepath.Join(p.Root, "p2p-cli") }
-
-// Prepare installs into the instance's writable runtime directory. A bundle
-// hash keeps old frontends' files stable during frontend replacement.
+func (p Paths) ClientCLI() fs.FS         { return os.DirFS(filepath.Join(p.Root, "client-cli")) }
+func (p Paths) P2PDirectory() string     { return filepath.Join(p.Root, "p2p-cli") }
 func Prepare(base string) (Paths, error) { return install(base, bundle) }
 
-func readBundle(data []byte) (*zip.Reader, manifest, error) {
+// PrepareBundle also lets the release/build helper use the runtime encoder.
+func PrepareBundle(base string, data []byte) (Paths, error) { return install(base, data) }
+
+func readBundle(data []byte) (map[string][]byte, manifest, error) {
 	var m manifest
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	files, err := xzarchive.Read(data)
 	if err != nil {
 		return nil, m, err
 	}
-	if len(zr.File) < 10 || len(zr.File) > 33 {
-		return nil, m, errors.New("invalid components ZIP entry count")
+	metadata := files["manifest.json"]
+	if len(metadata) == 0 || len(metadata) > 64<<10 {
+		return nil, m, errors.New("invalid components manifest size")
 	}
-	seen := map[string]bool{}
-	for _, entry := range zr.File {
-		if seen[entry.Name] || !entry.Mode().IsRegular() || (entry.Name != "manifest.json" && !validName(entry.Name)) {
-			return nil, m, errors.New("invalid or duplicate component ZIP path")
-		}
-		seen[entry.Name] = true
-		if entry.Name == "manifest.json" {
-			if entry.UncompressedSize64 > 64<<10 {
-				return nil, m, errors.New("components manifest too large")
-			}
-			r, err := entry.Open()
-			if err != nil {
-				return nil, m, err
-			}
-			metadata, err := io.ReadAll(io.LimitReader(r, (64<<10)+1))
-			r.Close()
-			if err != nil {
-				return nil, m, err
-			}
-			decoder := json.NewDecoder(bytes.NewReader(metadata))
-			decoder.DisallowUnknownFields()
-			if err = decoder.Decode(&m); err != nil {
-				return nil, m, err
-			}
-			if decoder.Decode(new(any)) != io.EOF {
-				return nil, m, errors.New("trailing components manifest data")
-			}
-		}
+	decoder := json.NewDecoder(bytes.NewReader(metadata))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&m); err != nil {
+		return nil, m, err
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return nil, m, errors.New("trailing components manifest data")
 	}
 	if err := validateManifest(m); err != nil {
 		return nil, m, err
 	}
-	if len(zr.File) != len(m.Files)+1 {
-		return nil, m, errors.New("components ZIP does not match its manifest")
+	if len(files) != len(m.Files)+1 {
+		return nil, m, errors.New("components tar does not match manifest")
 	}
-	for _, entry := range zr.File {
-		if entry.Name == "manifest.json" {
-			continue
-		}
-		info, ok := m.Files[entry.Name]
-		if !ok || entry.UncompressedSize64 != uint64(info.Bytes) {
-			return nil, m, errors.New("component size does not match manifest")
+	delete(files, "manifest.json")
+	for name, data := range files {
+		expected, ok := m.Files[name]
+		hash := sha256.Sum256(data)
+		if !ok || int64(len(data)) != expected.Bytes || hex.EncodeToString(hash[:]) != expected.SHA256 {
+			return nil, m, errors.New("component checksum or size mismatch")
 		}
 	}
-	return zr, m, nil
+	return files, m, nil
 }
-
 func privateDirectory(path string) error {
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return err
@@ -240,12 +210,27 @@ func checkCache(path string, m manifest) error {
 			return errors.New("cached component checksum mismatch")
 		}
 	}
+	metadata, err := sourceMetadata(m)
+	if err != nil {
+		return err
+	}
+	for name, expected := range metadata {
+		file := filepath.Join(path, filepath.FromSlash(name))
+		info, err := os.Lstat(file)
+		if err != nil || !info.Mode().IsRegular() {
+			return errors.New("invalid cached component metadata")
+		}
+		data, err := os.ReadFile(file)
+		if err != nil || !bytes.Equal(data, expected) {
+			return errors.New("cached component metadata mismatch")
+		}
+	}
 	return nil
 }
 func install(base string, data []byte) (Paths, error) {
-	zr, m, err := readBundle(data)
+	raw, m, err := readBundle(data)
 	if err != nil {
-		return Paths{}, fmt.Errorf("components.zip: %w", err)
+		return Paths{}, fmt.Errorf("components.tar.xz: %w", err)
 	}
 	if err = privateDirectory(base); err != nil {
 		return Paths{}, err
@@ -264,48 +249,28 @@ func install(base string, data []byte) (Paths, error) {
 	} else if !os.IsNotExist(err) {
 		return Paths{}, err
 	}
+	files, err := sourceMetadata(m)
+	if err != nil {
+		return Paths{}, err
+	}
+	for name, content := range raw {
+		files[name] = content
+	}
 	stage, err := os.MkdirTemp(root, ".extract-")
 	if err != nil {
 		return Paths{}, err
 	}
 	defer os.RemoveAll(stage)
-	for _, entry := range zr.File {
-		path := filepath.Join(stage, filepath.FromSlash(entry.Name))
+	for name, content := range files {
+		path := filepath.Join(stage, filepath.FromSlash(name))
 		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return Paths{}, err
 		}
-		in, err := entry.Open()
-		if err != nil {
+		if err = os.WriteFile(path, content, 0600); err != nil {
 			return Paths{}, err
-		}
-		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if err != nil {
-			in.Close()
-			return Paths{}, err
-		}
-		checksum := sha256.New()
-		limit := int64(64 << 10)
-		if entry.Name != "manifest.json" {
-			limit = m.Files[entry.Name].Bytes
-		}
-		n, copyErr := io.Copy(io.MultiWriter(out, checksum), io.LimitReader(in, limit+1))
-		closeErr := out.Close()
-		in.Close()
-		if copyErr != nil {
-			return Paths{}, copyErr
-		}
-		if closeErr != nil {
-			return Paths{}, closeErr
-		}
-		if n > limit {
-			return Paths{}, errors.New("component exceeds declared size")
-		}
-		if entry.Name != "manifest.json" && (n != limit || hex.EncodeToString(checksum.Sum(nil)) != m.Files[entry.Name].SHA256) {
-			return Paths{}, errors.New("component ZIP checksum mismatch")
 		}
 	}
 	if err = os.Rename(stage, destination); err != nil {
-		// Another frontend can finish the same immutable bundle first.
 		if cachedErr := checkCache(destination, m); cachedErr != nil {
 			return Paths{}, err
 		}

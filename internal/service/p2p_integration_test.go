@@ -18,6 +18,22 @@ import (
 // Supply the native binary and assets made by scripts/build_p2p_cli.py. This
 // exercises actual downloads, the builtin scripts, Client and real DataChannels.
 func TestP2PBootstrapEndToEnd(t *testing.T) {
+	for _, format := range []string{"xz", "gzip", "raw"} {
+		t.Run(format, func(t *testing.T) {
+			if runtime.GOOS == "windows" && format != "xz" {
+				t.Skip("PowerShell fallback is exercised by the invitation installer test")
+			}
+			if format != "xz" {
+				bin := t.TempDir()
+				installTarShim(t, bin)
+				t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+				t.Setenv("AGENTERM_TEST_TAR_MODE", format)
+			}
+			runP2PBootstrapEndToEnd(t)
+		})
+	}
+}
+func runP2PBootstrapEndToEnd(t *testing.T) {
 	binary, assets := os.Getenv("P2P_CLI_TEST_BINARY"), os.Getenv("P2P_CLI_TEST_ASSETS")
 	if binary == "" || assets == "" {
 		t.Skip("set P2P_CLI_TEST_BINARY and P2P_CLI_TEST_ASSETS for real component integration")

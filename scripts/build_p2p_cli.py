@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Build/package native p2p-cli archives for the unified Server component bundle."""
+"""Build/verify native p2p-cli executables for the unified Server component bundle."""
 import argparse
-import gzip
 import hashlib
 import io
 import json
@@ -14,7 +13,6 @@ import subprocess
 import tarfile
 import tempfile
 import tomllib
-import zipfile
 
 
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
@@ -29,11 +27,11 @@ TARGETS = {
 }
 
 
-def archive_name(system, arch):
+def binary_name(system, arch):
     if (system, arch) not in PLATFORMS:
         raise ValueError('Unsupported component platform')
     platform_name = 'macos' if system == 'darwin' else system
-    return f'p2p-cli-{platform_name}-{arch}' + ('.zip' if system == 'windows' else '.tar.gz')
+    return f'p2p-cli-{platform_name}-{arch}' + ('.exe' if system == 'windows' else '')
 
 
 def verify_binary(data, system, arch):
@@ -62,25 +60,6 @@ def check_download_size(os_name, size):
         raise SystemExit(f"p2p-cli download is {size} bytes, exceeding the 2 MiB limit")
 
 
-def fit_download_size(system, payload):
-    # Intel macOS needs a stronger DEFLATE encoder to retain the 2 MiB budget.
-    # This changes only the gzip encoding; downloaded bytes remain standard gzip.
-    if system == 'darwin' and len(payload) > MAX_DOWNLOAD_BYTES:
-        encoder = shutil.which('advdef')
-        if encoder is None:
-            raise SystemExit('Install advancecomp (brew install advancecomp) to fit the macOS download within 2 MiB')
-        with tempfile.TemporaryDirectory(prefix='p2p-compress-') as directory:
-            archive = Path(directory) / 'p2p-cli.tar.gz'
-            archive.write_bytes(payload)
-            subprocess.run([encoder, '-q', '-z', '-4', '-i', '15', str(archive)], check=True)
-            candidate = archive.read_bytes()
-            if gzip.decompress(candidate) != gzip.decompress(payload):
-                raise ValueError('Recompression changed the archive contents')
-            payload = candidate
-    check_download_size(system, len(payload))
-    return payload
-
-
 def merge_assets(directories, output, require_all=False):
     entries = {}
     version = None
@@ -92,18 +71,19 @@ def merge_assets(directories, output, require_all=False):
         version = manifest["version"]
         for artifact in manifest["artifacts"]:
             name = artifact["file"]
-            if name != archive_name(artifact['platform'], artifact['arch']):
-                raise SystemExit("Invalid component archive name")
+            if name != binary_name(artifact['platform'], artifact['arch']):
+                raise SystemExit("Invalid component binary name")
             source = directory / name
-            check_download_size(artifact["platform"], source.stat().st_size)
-            if hashlib.sha256(source.read_bytes()).hexdigest() != artifact["sha256"]:
-                raise SystemExit("Component archive checksum mismatch")
+            payload = source.read_bytes()
+            verify_binary(payload, artifact["platform"], artifact["arch"])
+            if hashlib.sha256(payload).hexdigest() != artifact["sha256"]:
+                raise SystemExit("Component binary checksum mismatch")
             key = artifact["platform"], artifact["arch"]
             if key in entries:
                 raise SystemExit("Duplicate component platform")
             entries[key] = (artifact, source)
     if not entries:
-        raise SystemExit('No component archives to merge')
+        raise SystemExit('No component binaries to merge')
     if require_all and entries.keys() != PLATFORMS:
         missing = ', '.join(f'{system}/{arch}' for system, arch in sorted(PLATFORMS - entries.keys()))
         raise SystemExit('Missing P2P platforms: ' + missing)
@@ -120,7 +100,7 @@ def main():
     parser.add_argument("--output", default="dist/p2p-assets")
     parser.add_argument("--binary", help="Package an already built native executable")
     parser.add_argument('--target', choices=sorted(TARGETS), help='Explicit Rust target for native or cross builds')
-    parser.add_argument("--merge", nargs="+", metavar="ASSET_DIRECTORY", help="Combine verified native build outputs")
+    parser.add_argument("--merge", nargs="+", metavar="ASSET_DIRECTORY", help="Combine verified native binaries")
     parser.add_argument('--require-all', action='store_true', help='Reject a merged distribution missing any of the six platforms')
     args = parser.parse_args()
     if args.merge:
@@ -156,24 +136,14 @@ def main():
     verify_binary(data, os_name, arch)
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    name = archive_name(os_name, arch)
-    if os_name == "windows":
-        blob = io.BytesIO()
-        with zipfile.ZipFile(blob, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-            entry = zipfile.ZipInfo(exe, (1980, 1, 1, 0, 0, 0))
-            entry.compress_type = zipfile.ZIP_DEFLATED
-            entry.external_attr = 0o100755 << 16
-            archive.writestr(entry, data, compresslevel=9)
-        payload = blob.getvalue()
-    else:
-        blob = io.BytesIO()
-        with gzip.GzipFile(fileobj=blob, mode="wb", filename="", mtime=0, compresslevel=9) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w") as archive:
-                entry = tarfile.TarInfo(exe)
-                entry.size, entry.mode = len(data), 0o755
-                archive.addfile(entry, io.BytesIO(data))
-        payload = blob.getvalue()
-    payload = fit_download_size(os_name, payload)
+    name = binary_name(os_name, arch)
+    blob = io.BytesIO()
+    with tarfile.open(fileobj=blob, mode="w:xz", preset=9, format=tarfile.USTAR_FORMAT) as archive:
+        entry = tarfile.TarInfo(exe)
+        entry.size, entry.mode = len(data), 0o755
+        archive.addfile(entry, io.BytesIO(data))
+    check_download_size(os_name, len(blob.getvalue()))
+    payload = data
     def publish(path, content):
         with tempfile.NamedTemporaryFile(dir=output, delete=False) as file:
             file.write(content)
@@ -188,7 +158,7 @@ def main():
     manifest["artifacts"].append(dict(platform=os_name, arch=arch, file=name, sha256=hashlib.sha256(payload).hexdigest()))
     manifest["artifacts"].sort(key=lambda a: (a["platform"], a["arch"]))
     publish(manifest_path, (json.dumps(manifest, indent=2) + "\n").encode())
-    print(json.dumps(dict(manifest=str(manifest_path), archive=name, bytes=len(payload), binary_bytes=len(data))))
+    print(json.dumps(dict(manifest=str(manifest_path), binary=name, bytes=len(payload), binary_bytes=len(data))))
 
 
 if __name__ == "__main__":

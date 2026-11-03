@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"log/slog"
 	"net"
@@ -30,13 +31,15 @@ import (
 // frontend has no device credentials, connections or execution state. A fresh
 // instance can serve the same runtime immediately after an upgrade.
 type frontend struct {
-	control    control
-	clientURL  string
-	p2pAssets  string
-	mcpOnce    sync.Once
-	mcpHandler http.Handler
-	stopping   atomic.Bool
-	shutdown   context.CancelFunc
+	control          control
+	clientURL        string
+	p2pAssets        string
+	p2pDownloads     fs.FS
+	p2pDownloadsOnce sync.Once
+	mcpOnce          sync.Once
+	mcpHandler       http.Handler
+	stopping         atomic.Bool
+	shutdown         context.CancelFunc
 }
 
 const remoteAddrHeader = "X-Agenterm-Ingress-Remote-Addr"

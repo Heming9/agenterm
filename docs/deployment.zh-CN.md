@@ -28,7 +28,7 @@ Authorization:  Bearer 首次启动时显示的管理密钥
 
 ## 统一组件打包
 
-Client CLI 和 P2P 的平台下载包统一合并为 `internal/components/assets/components.zip`，普通 Go 构建直接将它内嵌到 Server。构建 Server 可执行文件：
+Client CLI 和 P2P 的平台下载包统一合并为 `internal/components/assets/components.tar.xz`，普通 Go 构建直接将它内嵌到 Server。构建 Server 可执行文件：
 
 ```sh
 python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
@@ -223,7 +223,7 @@ go build -o agenterm-client-gui ./cmd/agenterm-client-gui
 
 CLI 和 GUI 使用独立的入口包，共用连接与启动逻辑位于 `internal/client`。发布产物分别使用 `agenterm-client-cli-<平台>-<架构>` 和 `agenterm-client-gui-<平台>-<架构>` 前缀。选择性发布如果以旧产物名称的 Release 为基线，发布计划会自动完整构建，让整套产物一起迁移。
 
-普通源码构建默认内嵌 `components.zip`，其中 Client CLI 与 P2P CLI 均覆盖 macOS、Linux、Windows（amd64/arm64）六种组合，并提供两条一键连接命令。下载地址自动使用 `internal/version.Current`，无需额外发布标记或链接参数。Server 单个二进制即可提供安装脚本、客户端压缩包和校验清单。
+普通源码构建默认内嵌 `components.tar.xz`，保存 Client CLI 与 P2P CLI 在 macOS、Linux、Windows（amd64/arm64）六种组合的原始可执行文件，并提供两条一键连接命令。Server 启动时只解压并校验原始程序，收到下载请求后才按需打包并缓存结果。安装脚本探测解压能力，选择 XZ、兼容的 gzip/ZIP 格式或直接下载可执行文件，最终均校验程序 SHA-256。下载地址自动使用 `internal/version.Current`，无需额外发布标记或链接参数。
 
 修改 CLI 或共享客户端代码后，重新生成资源包，并随源码改动一起提交：
 
@@ -232,4 +232,6 @@ go generate ./internal/components
 go build -o agenterm-server ./cmd/agenterm-server
 ```
 
-重新生成需要 Python 3.11+ 和 Go，会交叉编译六个平台 CLI，复用现有统一包中的 P2P 归档，并原子替换 `internal/components/assets/components.zip`。更新 P2P 时，先为六种系统与架构组合分别运行 `scripts/build_p2p_cli.py`，再执行 `python3 scripts/build_components.py --p2p-assets <原生构建目录...>` 合并；缺少任意 P2P 平台时打包直接失败。发布工作流会自动串联六平台原生 P2P 构建、合并和 Server 内嵌。资源包缺失时直接编译失败，避免静默关闭组件下载功能。
+重新生成需要 Python 3.11+ 和 Go，会交叉编译六个平台 CLI，复用现有统一包中的 P2P 原始程序，并原子替换 `internal/components/assets/components.tar.xz`。更新 P2P 时，先为六种系统与架构组合分别运行 `scripts/build_p2p_cli.py`，再执行 `python3 scripts/build_components.py --p2p-assets <原生构建目录...>` 合并；缺少任意 P2P 平台时打包直接失败。发布工作流会自动串联六平台原生 P2P 构建、合并和 Server 内嵌。资源包缺失时直接编译失败，避免静默关闭组件下载功能。
+
+GitHub Release 附件只包含十四个原始可执行文件（六个 CLI、六个 Server，以及 macOS/Windows GUI 程序）和 `release-manifest.json` 版本清单，不附加组件总包或平台压缩包。macOS/Linux 直接下载后，先执行 `chmod +x <程序文件>` 再运行；macOS GUI 附件为 app 包中的可执行程序。

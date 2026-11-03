@@ -2,17 +2,19 @@ package components
 
 import (
 	"agenterm/internal/p2p"
-	"archive/zip"
+	"agenterm/internal/xzarchive"
+	"archive/tar"
 	"bytes"
 	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ulikunitz/xz"
 )
 
 func TestEmbeddedP2PDistributionCoversAllPlatforms(t *testing.T) {
@@ -27,22 +29,23 @@ func TestEmbeddedP2PDistributionCoversAllPlatforms(t *testing.T) {
 	for _, platform := range []string{"darwin", "linux", "windows"} {
 		for _, arch := range []string{"amd64", "arm64"} {
 			if !manifest.Supports(platform, arch) {
-				t.Errorf("embedded P2P distribution missing %s/%s", platform, arch)
+				t.Errorf("missing %s/%s", platform, arch)
 			}
 		}
 	}
 }
-
 func fixture() map[string][]byte {
-	files := map[string][]byte{"client-cli/SHA256SUMS": []byte("checksums"), "p2p-cli/manifest.json": []byte("{}"), "p2p-cli/p2p-cli-macos-arm64.tar.gz": []byte("native p2p archive")}
+	files := map[string][]byte{}
 	for _, platform := range []string{"macos", "linux", "windows"} {
 		for _, arch := range []string{"amd64", "arm64"} {
-			ext := ".tar.gz"
+			extension := ""
 			if platform == "windows" {
-				ext = ".zip"
+				extension = ".exe"
 			}
-			name := "client-cli/agenterm-client-cli-" + platform + "-" + arch + ext
-			files[name] = []byte("archive for " + name)
+			for _, component := range []string{"client-cli/agenterm-client-cli", "p2p-cli/p2p-cli"} {
+				name := component + "-" + platform + "-" + arch + extension
+				files[name] = []byte("binary for " + name)
+			}
 		}
 	}
 	return files
@@ -50,7 +53,7 @@ func fixture() map[string][]byte {
 func packed(t *testing.T, files map[string][]byte) []byte {
 	t.Helper()
 	var out bytes.Buffer
-	if err := Pack(&out, files); err != nil {
+	if err := Pack(&out, files, "0.1.0"); err != nil {
 		t.Fatal(err)
 	}
 	return out.Bytes()
@@ -67,7 +70,11 @@ func TestBundleInstallReuseAndUpgrade(t *testing.T) {
 	files := fixture()
 	data := packed(t, files)
 	if !bytes.Equal(data, packed(t, files)) {
-		t.Fatal("components.zip is not deterministic")
+		t.Fatal("non-deterministic bundle")
+	}
+	contents, _, err := readBundle(data)
+	if err != nil || !bytes.Equal(contents["client-cli/agenterm-client-cli-linux-amd64"], files["client-cli/agenterm-client-cli-linux-amd64"]) {
+		t.Fatalf("bundle must hold raw executables: %v", err)
 	}
 	base := privateBase(t)
 	paths, err := install(base, data)
@@ -77,11 +84,19 @@ func TestBundleInstallReuseAndUpgrade(t *testing.T) {
 	if filepath.Dir(paths.Root) != filepath.Join(base, "components") {
 		t.Fatal(paths.Root)
 	}
-	got, err := fs.ReadFile(paths.ClientCLI(), "SHA256SUMS")
-	if err != nil || !bytes.Equal(got, files["client-cli/SHA256SUMS"]) {
+	cli, err := fs.ReadFile(Downloads(paths.ClientCLI(), "agenterm-client-cli"), "agenterm-client-cli-windows-arm64.tar.xz")
+	if err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(paths.P2PDirectory(), "p2p-cli-macos-arm64.tar.gz")
+	decoded, err := xzarchive.Read(cli)
+	if err != nil || !bytes.Equal(decoded["agenterm-client-cli-windows-arm64.exe"], files["client-cli/agenterm-client-cli-windows-arm64.exe"]) {
+		t.Fatalf("invalid generated download: %v", err)
+	}
+	file := filepath.Join(paths.P2PDirectory(), "p2p-cli-macos-arm64")
+	old, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
 	stamp := time.Unix(123456, 0)
 	if err := os.Chtimes(file, stamp, stamp); err != nil {
 		t.Fatal(err)
@@ -92,16 +107,16 @@ func TestBundleInstallReuseAndUpgrade(t *testing.T) {
 	}
 	info, _ := os.Stat(file)
 	if !info.ModTime().Equal(stamp) {
-		t.Fatal("valid cache was rewritten")
+		t.Fatal("valid cache rewritten")
 	}
-	files["p2p-cli/p2p-cli-macos-arm64.tar.gz"] = []byte("new archive")
+	files["p2p-cli/p2p-cli-macos-arm64"] = []byte("new native binary")
 	updated, err := install(base, packed(t, files))
 	if err != nil || updated.Root == paths.Root {
 		t.Fatal(err)
 	}
-	old, err := os.ReadFile(file)
-	if err != nil || string(old) != "native p2p archive" {
-		t.Fatal("an update changed an old frontend's assets")
+	original, err := os.ReadFile(file)
+	if err != nil || !bytes.Equal(original, old) {
+		t.Fatal("upgrade changed old frontend assets")
 	}
 }
 func TestConcurrentInstallPublishesOneCompleteBundle(t *testing.T) {
@@ -121,7 +136,7 @@ func TestConcurrentInstallPublishesOneCompleteBundle(t *testing.T) {
 	}
 	entries, err := os.ReadDir(filepath.Join(base, "components"))
 	if err != nil || len(entries) != 1 {
-		t.Fatalf("partial or extra installation: %v %v", entries, err)
+		t.Fatalf("partial installation: %v %v", entries, err)
 	}
 }
 func TestCachedTamperingAndDirectorySymlinksAreRejected(t *testing.T) {
@@ -131,7 +146,7 @@ func TestCachedTamperingAndDirectorySymlinksAreRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(paths.P2PDirectory(), "p2p-cli-macos-arm64.tar.gz"), []byte("tampered"), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(paths.P2PDirectory(), "p2p-cli-macos-arm64"), []byte("tampered"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = install(base, data); err == nil {
@@ -140,8 +155,7 @@ func TestCachedTamperingAndDirectorySymlinksAreRejected(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
-	other := privateBase(t)
-	outside := t.TempDir()
+	other, outside := privateBase(t), t.TempDir()
 	if err = os.Symlink(outside, filepath.Join(other, "components")); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +169,7 @@ func TestCachedTamperingAndDirectorySymlinksAreRejected(t *testing.T) {
 }
 func TestInvalidBundlesNeverPublishPartialFiles(t *testing.T) {
 	data := packed(t, fixture())
-	for _, kind := range []string{"traversal", "backslash", "duplicate", "missing", "symlink", "hash", "oversize", "trailing-manifest", "crc", "truncated"} {
+	for _, kind := range []string{"traversal", "backslash", "duplicate", "missing", "symlink", "hash", "oversize", "trailing-manifest", "checksum", "truncated", "trailing-stream"} {
 		t.Run(kind, func(t *testing.T) {
 			bad := rewriteBundle(t, data, kind)
 			base := privateBase(t)
@@ -164,82 +178,87 @@ func TestInvalidBundlesNeverPublishPartialFiles(t *testing.T) {
 			}
 			entries, _ := os.ReadDir(filepath.Join(base, "components"))
 			if len(entries) != 0 {
-				t.Fatal("failed extraction left published or temporary files")
+				t.Fatal("failed extraction left files")
 			}
 		})
 	}
 }
 func rewriteBundle(t *testing.T, data []byte, kind string) []byte {
 	t.Helper()
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if kind == "truncated" {
 		return data[:len(data)-5]
 	}
-	if kind == "crc" {
+	if kind == "checksum" {
 		bad := bytes.Clone(data)
-		for _, entry := range zr.File {
-			if strings.HasPrefix(entry.Name, "p2p-cli/p2p-cli-") {
-				offset, _ := entry.DataOffset()
-				bad[offset] ^= 1
-				break
-			}
-		}
+		bad[len(bad)/2] ^= 1
 		return bad
 	}
+	if kind == "trailing-stream" {
+		return append(bytes.Clone(data), data...)
+	}
+	files, err := xzarchive.Read(data)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out bytes.Buffer
-	zw := zip.NewWriter(&out)
-	altered := false
-	for _, entry := range zr.File {
-		payload, err := fs.ReadFile(zr, entry.Name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		header := entry.FileHeader
-		if entry.Name == "manifest.json" && kind == "trailing-manifest" {
-			payload = append(payload, []byte(" {}")...)
-		}
-		if entry.Name == "manifest.json" && kind == "oversize" {
-			var m manifest
-			if err = json.Unmarshal(payload, &m); err != nil {
-				t.Fatal(err)
+	zw, err := xz.NewWriter(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(zw)
+	for name, payload := range files {
+		h := &tar.Header{Name: name, Size: int64(len(payload)), Mode: 0755, Typeflag: tar.TypeReg}
+		if name == "manifest.json" {
+			switch kind {
+			case "trailing-manifest":
+				payload = append(payload, []byte(" {}")...)
+			case "oversize":
+				var m manifest
+				if err = json.Unmarshal(payload, &m); err != nil {
+					t.Fatal(err)
+				}
+				v := m.Files["p2p-cli/p2p-cli-macos-arm64"]
+				v.Bytes = maxFileBytes + 1
+				m.Files["p2p-cli/p2p-cli-macos-arm64"] = v
+				payload, _ = json.Marshal(m)
 			}
-			info := m.Files["p2p-cli/p2p-cli-macos-arm64.tar.gz"]
-			info.Bytes = maxFileBytes + 1
-			m.Files["p2p-cli/p2p-cli-macos-arm64.tar.gz"] = info
-			payload, _ = json.Marshal(m)
 		}
-		if !altered && strings.HasPrefix(entry.Name, "p2p-cli/p2p-cli-") {
-			altered = true
+		if name == "p2p-cli/p2p-cli-macos-arm64" {
 			switch kind {
 			case "traversal":
-				header.Name = "../escaped"
+				h.Name = "../escaped"
 			case "backslash":
-				header.Name = `p2p-cli\escaped`
+				h.Name = `p2p-cli\escaped`
 			case "missing":
 				continue
 			case "symlink":
-				header.SetMode(os.ModeSymlink | 0777)
+				h.Typeflag = tar.TypeSymlink
+				h.Linkname = "outside"
+				payload = nil
 			case "hash":
+				payload = bytes.Clone(payload)
 				payload[0] ^= 1
-			}
-			if kind == "duplicate" {
-				duplicate := header
-				w, _ := zw.CreateHeader(&duplicate)
-				_, _ = w.Write(payload)
+			case "duplicate":
+				if err := tw.WriteHeader(h); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tw.Write(payload); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
-		w, err := zw.CreateHeader(&header)
-		if err != nil {
+		h.Size = int64(len(payload))
+		if err := tw.WriteHeader(h); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = w.Write(payload); err != nil {
+		if _, err := tw.Write(payload); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err = zw.Close(); err != nil {
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return out.Bytes()

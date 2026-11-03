@@ -45,7 +45,7 @@ jobs:
       - name: Detect component layout at the selected source
         id: layout
         run: |
-          if [ -f scripts/build_components.py ] && [ -f internal/components/assets/components.zip ]; then
+          if [ -f scripts/build_components.py ] && { [ -f internal/components/assets/components.tar.xz ] || [ -f internal/components/assets/components.zip ]; }; then
             echo 'unified=true' >> "$GITHUB_OUTPUT"
           else
             echo 'unified=false' >> "$GITHUB_OUTPUT"
@@ -87,11 +87,12 @@ jobs:
         run: |
           cd cmd/agenterm-client-gui
           "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon --release
-          ditto -c -k --keepParent Agenterm.app ../../agenterm-client-gui-macos-arm64.zip
+          cp Agenterm.app/Contents/MacOS/Agenterm ../../agenterm-client-gui-macos-arm64
+          chmod +x ../../agenterm-client-gui-macos-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: build-macos
-          path: agenterm-client-gui-macos-arm64.zip
+          path: agenterm-client-gui-macos-arm64
           if-no-files-found: error
 
   windows-tests:
@@ -139,13 +140,10 @@ jobs:
           & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Move-Item Agenterm.exe ../../agenterm-client-gui-windows-amd64.exe
-          Compress-Archive -Path ../../agenterm-client-gui-windows-amd64.exe -DestinationPath ../../agenterm-client-gui-windows-amd64.zip -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
           name: build-windows
-          path: |
-            agenterm-client-gui-windows-amd64.exe
-            agenterm-client-gui-windows-amd64.zip
+          path: agenterm-client-gui-windows-amd64.exe
           if-no-files-found: error
 
   p2p:
@@ -177,9 +175,6 @@ jobs:
           for asset in release-plan/reused/agenterm-client-cli-* release-plan/reused/agenterm-server-*; do
             [ ! -f "$asset" ] || cp "$asset" dist/
           done
-          if [ -f release-plan/reused/components.zip ]; then
-            cp release-plan/reused/components.zip dist/
-          fi
       - uses: actions/download-artifact@v4
         if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified == 'true'
         with:
@@ -219,30 +214,18 @@ jobs:
           fi
           if [ "$UNIFIED_COMPONENTS" = true ]; then
             # One packer owns exact downloads and the archive embedded by every server.
-            python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output dist
-            cp internal/components/assets/components.zip dist/components.zip
+            python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
           else
             # Rebuild older source refs with their own packer and embedded layout.
             go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
             xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
           fi
-          if [ "$BUILD_CLI" != true ]; then
-            for archive in release-plan/reused/agenterm-client-cli-*.tar.gz release-plan/reused/agenterm-client-cli-*.zip; do
-              cmp "$archive" "dist/$(basename "$archive")"
-            done
+          if [ "$UNIFIED_COMPONENTS" = true ]; then
+            # Validate generated HTTP downloads, which are not Release attachments.
+            AGENTERM_RELEASE_DIR="$RUNNER_TEMP/cli-downloads" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
+          else
+            AGENTERM_RELEASE_DIR="$PWD/dist" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           fi
-          # Verify the exact executable bytes before hashing and embedding.
-          for archive in dist/agenterm-client-cli-*.tar.gz; do
-            name=$(basename "$archive" .tar.gz)
-            tar -xOzf "$archive" "$name" | cmp - "dist/$name"
-          done
-          for archive in dist/agenterm-client-cli-*.zip; do
-            name=$(basename "$archive" .zip).exe
-            unzip -p "$archive" "$name" | cmp - "dist/$name"
-          done
-          # Extract the real embedded bundle and compare every download
-          # and checksum with the release files, before building any server.
-          AGENTERM_RELEASE_DIR="$PWD/dist" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
               platform="$os"
@@ -252,22 +235,20 @@ jobs:
               GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
             done
           done
+      - name: Stage raw executables for publication
+        run: python3 scripts/release/release.py stage --directory dist --output release-files --components cli server
       - name: Report artifact sizes
         run: |
-          # Keep distribution sizes visible when dependencies or assets change.
           {
-            printf '| Artifact | Bytes |\n| --- | ---: |\n'
-            for artifact in dist/agenterm-* dist/components.zip; do
-              [ -f "$artifact" ] || continue
+            printf '| Executable | Bytes |\n| --- | ---: |\n'
+            for artifact in release-files/*; do
               printf '| %s | %s |\n' "$(basename "$artifact")" "$(wc -c < "$artifact" | tr -d ' ')"
             done
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: build-server
-          path: |
-            dist/agenterm-*
-            dist/components.zip
+          path: release-files/*
           if-no-files-found: error
 
   publish:

@@ -27,6 +27,9 @@ func installerFixture(t *testing.T, client []byte) map[string][]byte {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for name, file := range source {
+		assets[name] = file.Data
+	}
 	return assets
 }
 
@@ -63,7 +66,7 @@ func TestGeneratedReleaseDownloads(t *testing.T) {
 
 func TestReleaseDownloads(t *testing.T) {
 	assets := fstest.MapFS{
-		"agenterm-client-cli-linux-amd64.tar.gz": {Data: []byte("archive")},
+		"agenterm-client-cli-linux-amd64.tar.xz": {Data: []byte("archive")},
 		"SHA256SUMS":                             {Data: []byte("manifest")},
 		"README.txt":                             {Data: []byte("private build note")},
 	}
@@ -75,8 +78,8 @@ func TestReleaseDownloads(t *testing.T) {
 		{"/downloads/v1.2.3/install.sh", 200},
 		{"/downloads/v1.2.3/install.ps1", 200},
 		{"/downloads/v1.2.3/SHA256SUMS", 200},
-		{"/downloads/v1.2.3/agenterm-client-cli-linux-amd64.tar.gz", 200},
-		{"/downloads/v1.2.3/agenterm-client-cli-windows-arm64.zip", 404},
+		{"/downloads/v1.2.3/agenterm-client-cli-linux-amd64.tar.xz", 200},
+		{"/downloads/v1.2.3/agenterm-client-cli-windows-arm64.tar.xz", 404},
 		{"/downloads/v1.2.3/agenterm-client-cli-linux-amd64", 404},
 		{"/downloads/v1.2.3/README.txt", 404},
 		{"/downloads/v1.2.3/", 404},
@@ -95,7 +98,7 @@ func TestReleaseDownloads(t *testing.T) {
 			}
 		}
 	}
-	r := httptest.NewRequest("GET", "/downloads/v1.2.3/agenterm-client-cli-linux-amd64.tar.gz", nil)
+	r := httptest.NewRequest("GET", "/downloads/v1.2.3/agenterm-client-cli-linux-amd64.tar.xz", nil)
 	r.Header.Set("Range", "bytes=0-2")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)

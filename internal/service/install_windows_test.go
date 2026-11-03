@@ -36,14 +36,14 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	if err != nil {
 		t.Fatal(err)
 	}
-	archive := strings.TrimSuffix(name, ".exe") + ".zip"
+	archive := strings.TrimSuffix(name, ".exe") + ".tar.xz"
 	for filename, data := range installerFixture(t, client) {
 		if err := os.WriteFile(filepath.Join(root, filename), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	state := &runtimeState{}
-	var archiveRequests, manifestRequests, probeRequests atomic.Int32
+	var archiveRequests, manifestRequests, probeRequests, zipRequests, rawRequests atomic.Int32
 	mux := state.routes(installerTestTag, os.DirFS(root))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == protocol.ClientPath {
@@ -51,6 +51,12 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 		}
 		if strings.HasSuffix(r.URL.Path, "/"+archive) {
 			archiveRequests.Add(1)
+		}
+		if strings.HasSuffix(r.URL.Path, "/"+strings.TrimSuffix(name, ".exe")+".zip") {
+			zipRequests.Add(1)
+		}
+		if strings.HasSuffix(r.URL.Path, "/"+name) {
+			rawRequests.Add(1)
 		}
 		if strings.HasSuffix(r.URL.Path, "/SHA256SUMS") {
 			manifestRequests.Add(1)
@@ -65,11 +71,20 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	}
 	value := issued["invitation"].(string)
 	_, command := installCommands(value)
+	forcedFormat := ""
 	runWithInput := func(input string) (string, error) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+command)
+		prefix := ""
+		if forcedFormat != "" {
+			hidden := `$Name -eq 'tar.exe'`
+			if forcedFormat == "raw" {
+				hidden += ` -or $Name -eq 'Expand-Archive'`
+			}
+			prefix = `function Get-Command { [CmdletBinding()] param([string]$Name); if (` + hidden + `) { return }; Microsoft.PowerShell.Core\Get-Command @PSBoundParameters }; `
+		}
+		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+prefix+command)
 		// CI runs under PowerShell 7. Let Windows PowerShell construct its own
 		// module path instead of trying to load the inherited PowerShell 7 modules.
 		for _, value := range os.Environ() {
@@ -122,6 +137,20 @@ func main() { fmt.Printf("arg=%s invitation=%s consent=%s\n", os.Args[1], os.Arg
 	if out, err := run(); err != nil || !strings.Contains(out, "正在下载客户端") || archiveRequests.Load() != 2 {
 		t.Fatalf("corrupt cache: %v\n%s", err, out)
 	}
+	for _, choice := range []struct {
+		format string
+		count  *atomic.Int32
+	}{{"zip", &zipRequests}, {"raw", &rawRequests}} {
+		forcedFormat = choice.format
+		before := choice.count.Load()
+		if err := os.WriteFile(cached, []byte("corrupted"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := run(); err != nil || !strings.Contains(out, "arg=-invite invitation="+value) || choice.count.Load() != before+1 {
+			t.Fatalf("%s fallback failed: %v %s", choice.format, err, out)
+		}
+	}
+	forcedFormat = ""
 	decoded, _ := protocol.Decode(value)
 	state.mu.Lock()
 	entry := state.invitations[decoded.Secret]

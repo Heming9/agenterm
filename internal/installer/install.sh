@@ -101,7 +101,6 @@ awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pP
 }
 say installer.server.reachable.invitation.and.version.verified
 say installer.2.4.preparing.client
-asset="agenterm-client-cli-$os-$arch.tar.gz"
 name="agenterm-client-cli-$os-$arch"
 binary="$cache/$name"
 curl -fsS --connect-timeout 5 --max-time 15 "$base/SHA256SUMS" -o "$work/SHA256SUMS"
@@ -117,7 +116,24 @@ if [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] && [ "$(checksum "
   say installer.cached.client.verified.skipping.download
 else
   say installer.downloading.client
-  expected_asset=$(expected "$asset")
+  archive_format=raw
+  if command -v tar >/dev/null 2>&1; then
+    printf '\375\067\172\130\132\000\000\004\346\326\264\106\002\000\041\001\014\000\000\000\217\230\101\234\340\003\377\000\013\135\000\000\157\375\377\377\243\267\177\106\062\000\000\000\014\047\151\040\227\143\170\303\000\001\047\200\010\000\000\000\056\171\256\255\261\304\147\373\002\000\000\000\000\004\131\132' > "$work/probe.tar.xz"
+    if tar -tf "$work/probe.tar.xz" >/dev/null 2>&1; then
+      archive_format=tar.xz
+    else
+      printf '\037\213\010\000\000\000\000\000\002\377\143\140\030\005\243\140\024\214\124\000\000\056\257\265\357\000\004\000\000' > "$work/probe.tar.gz"
+      if tar -tf "$work/probe.tar.gz" >/dev/null 2>&1; then archive_format=tar.gz; fi
+    fi
+    rm -f "$work/probe.tar.xz" "$work/probe.tar.gz"
+  fi
+  asset="$name"
+  if [ "$archive_format" != raw ]; then asset="$name.$archive_format"; fi
+  expected_asset=$expected_binary
+  if [ "$archive_format" != raw ]; then
+    curl -fsS --connect-timeout 5 --max-time 30 "$base/$asset.sha256" -o "$work/archive.sha256"
+    expected_asset=$(awk 'NR == 1 && $1 ~ /^[[:xdigit:]]+$/ && length($1) == 64 { print tolower($1) }' "$work/archive.sha256")
+  fi
   [ -n "$expected_asset" ] || { say installer.missing.archive.checksum >&2; exit 1; }
   if [ -t 2 ]; then
     curl -fS --progress-bar --connect-timeout 5 --max-time 180 "$base/$asset" -o "$work/$asset"
@@ -126,7 +142,7 @@ else
   fi
   say installer.download.complete.verifying.and.extracting
   [ "$(checksum "$work/$asset")" = "$expected_asset" ] || { say installer.archive.checksum.mismatch >&2; exit 1; }
-  tar -xzf "$work/$asset" -C "$work"
+  if [ "$archive_format" != raw ]; then tar -xf "$work/$asset" -C "$work" "$name"; fi
   [ -f "$work/$name" ] && [ ! -L "$work/$name" ] || { say installer.invalid.client.archive >&2; exit 1; }
   [ "$(checksum "$work/$name")" = "$expected_binary" ] || { say installer.client.checksum.mismatch >&2; exit 1; }
   chmod 700 "$work/$name"

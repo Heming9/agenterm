@@ -54,7 +54,7 @@ class P2PBuildTests(unittest.TestCase):
         directory.mkdir()
         artifacts = []
         for system, arch in sorted(platforms):
-            name = build.archive_name(system, arch)
+            name = build.binary_name(system, arch)
             payload = self.binary(system, arch)
             (directory / name).write_bytes(payload)
             artifacts.append(dict(platform=system, arch=arch, file=name, sha256=hashlib.sha256(payload).hexdigest()))
@@ -94,7 +94,7 @@ class P2PBuildTests(unittest.TestCase):
             manifest = json.loads(path.read_text())
             manifest['artifacts'][0]['arch'] = 'amd64'
             path.write_text(json.dumps(manifest))
-            with self.assertRaisesRegex(SystemExit, 'archive name'):
+            with self.assertRaisesRegex(SystemExit, 'binary name'):
                 build.merge_assets([source], root / 'merged')
         for system in ('darwin', 'windows'):
             build.check_download_size(system, build.MAX_DOWNLOAD_BYTES)

@@ -4,7 +4,7 @@ Rust 实现的独立 P2P 文件传输组件。`start` 建立并维护一条后�
 
 ## 通过 Agenterm 初始化
 
-Server 和 Client 都需要支持此功能的源码版本。P2P 和 Client CLI 的下载资源统一内嵌到 Server 的 `components.zip`；现有线上部署不会因本地源码变化自动获得新组件。
+Server 和 Client 都需要支持此功能的源码版本。P2P 和 Client CLI 的下载资源统一内嵌到 Server 的 `components.tar.xz`；现有线上部署不会因本地源码变化自动获得新组件。
 
 1. Agent 调用 `p2p_transfer_start`，按现有认证规则提供目标设备的 `client_id`，管理调用还需 `client_token`。
 2. Client 执行内置脚本，自动下载、校验并以前台受控进程运行远端 `p2p-cli`。
@@ -63,13 +63,13 @@ p2p-cli stop
 python3 scripts/build_p2p_cli.py --output dist/p2p-assets
 ```
 
-脚本原生构建 release 程序，生成 `manifest.json` 和本平台的归档：macOS/Linux 使用 `.tar.gz`，Windows 使用 `.zip`。统一分发覆盖三种系统的 amd64、arm64，共六种组合。清单绑定平台、架构、版本和 SHA-256。不同版本不能混装。
+脚本原生构建 release 程序，生成 `manifest.json` 和带平台、架构名称的原始可执行文件。统一分发覆盖三种系统的 amd64、arm64，共六种组合。清单绑定平台、架构、版本和 SHA-256。不同版本不能混装。
 
 交叉编译时显式传入 `--target <Rust target triple>`；已有二进制可再指定 `--binary <路径>`。脚本核对 ELF、Mach-O 或 PE 头中的系统与架构，拒绝错误标记的程序。Linux 分发使用 `x86_64-unknown-linux-musl` 和 `aarch64-unknown-linux-musl` 静态链接目标，避免依赖目标机器的 glibc 版本；原生构建机需安装目标 Rust 标准库和 `musl-tools`。
 
 Windows 构建使用 `-C target-feature=+crt-static` 静态链接 C 运行库，目标电脑无需另装 Visual C++ Redistributable；直接运行 Cargo 时也需通过 `RUSTFLAGS` 指定此选项。
 
-macOS 和 Windows 下载包限制为 2 MiB，原生打包及合并分发包时均检查，超出限制会让 CI 失败。Intel macOS 构建机还需 `brew install advancecomp`：普通 gzip 超限时用 Zopfli 重新编码，下载仍是标准 `.tar.gz`，解压内容不变。release 使用 `panic = "abort"` 减少栈展开代码，普通错误仍按原有路径处理和清理；Rust panic 会直接终止进程，可能留下未提交临时文件。
+macOS 和 Windows 的首选 XZ 下载包限制为 2 MiB，原生构建时检查；兼容格式和直接下载的原始程序可以更大。release 使用 `panic = "abort"` 减少栈展开代码，普通错误仍按原有路径处理和清理；Rust panic 会直接终止进程，可能留下未提交临时文件。
 
 将所需平台的原生构建结果合并：
 
@@ -84,7 +84,7 @@ python3 scripts/build_components.py --p2p-assets dist/p2p-assets
 python3 scripts/build_server.py --output dist/agenterm-server
 ```
 
-唯一内嵌资源为 `internal/components/assets/components.zip`，内部包含 `client-cli/`、`p2p-cli/` 和全包校验清单。生成统一包时要求 P2P 六种组合齐全，缺少任意一种直接失败。Server 启动时自动解压到实例运行目录的 `components/<包哈希>/`，不需要额外部署组件目录；组件下载路由继续使用公开路径前缀。缺少目标平台归档或校验不通过时，MCP 明确返回错误。修改 CLI 可运行 `go generate ./internal/components`，它会复用统一包中既有的 P2P 归档。
+唯一内嵌资源为 `internal/components/assets/components.tar.xz`，内部包含 `client-cli/`、`p2p-cli/` 的原始程序和全包校验清单，在同一个 XZ 流中整体压缩。生成统一包时要求 P2P 六种组合齐全，缺少任意一种直接失败。Server 启动时只把原始程序和源文件校验清单原子解压到实例运行目录的 `components/<包哈希>/`，不需要额外部署组件目录；组件下载路由继续使用公开路径前缀。收到下载请求后，Server 才按目标平台和格式打包，合并同一包的并发构建并缓存结果。客户端实际探测解压能力：macOS/Linux 优先 `tar.xz`、其次 `tar.gz`；Windows 优先 `tar.xz`、其次 ZIP；缺少解压能力时直接下载源程序。每种方式最终都核对同一个源程序 SHA-256，无需额外安装解压工具。Server 内置 Go XZ 编解码器。缺少目标平台归档或校验不通过时，MCP 明确返回错误。修改 CLI 可运行 `go generate ./internal/components`，它会复用统一包中既有的 P2P 原始程序。
 
 `P2P_CLI_STUN` 在 Runtime 启动时配置 STUN 主机与端口，默认 `stun.l.google.com:19302`，本机测试设为 `none`。它由协商协议返回给组件，组件使用者无需另行配置；更改已有 Runtime 的环境配置需要按既有规则重启 Runtime。
 

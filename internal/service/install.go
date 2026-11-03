@@ -1,6 +1,7 @@
 package service
 
 import (
+	"agenterm/internal/components"
 	"agenterm/internal/i18n"
 	"agenterm/internal/installer"
 	"agenterm/internal/invite"
@@ -145,8 +146,9 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 }
 
 // Only this server's version and the release download filenames are public.
-// No directory listings or uncompressed executables are exposed.
+// Source executables, selected archive formats and their checksums are public.
 func downloadHandler(tag string, assets fs.FS) http.Handler {
+	assets = components.Downloads(assets, "agenterm-client-cli")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -169,7 +171,7 @@ func downloadHandler(tag string, assets fs.FS) http.Handler {
 			http.ServeContent(w, r, name, time.Time{}, strings.NewReader(strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)))
 			return
 		}
-		if name != "SHA256SUMS" && !downloadArchive.MatchString(name) {
+		if name != "SHA256SUMS" && !downloadArchive.MatchString(strings.TrimSuffix(name, ".sha256")) {
 			http.NotFound(w, r)
 			return
 		}
@@ -177,4 +179,4 @@ func downloadHandler(tag string, assets fs.FS) http.Handler {
 	})
 }
 
-var downloadArchive = regexp.MustCompile(`^agenterm-client-cli-((macos|linux)-(amd64|arm64)\.tar\.gz|windows-(amd64|arm64)\.zip)$`)
+var downloadArchive = regexp.MustCompile(`^agenterm-client-cli-((macos|linux)-(amd64|arm64)(\.(tar\.xz|tar\.gz))?|windows-(amd64|arm64)(\.exe|\.tar\.xz|\.zip))$`)

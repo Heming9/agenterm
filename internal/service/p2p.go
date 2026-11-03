@@ -1,6 +1,7 @@
 package service
 
 import (
+	"agenterm/internal/components"
 	"agenterm/internal/p2p"
 	"agenterm/internal/protocol"
 	"bytes"
@@ -15,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -279,9 +279,16 @@ func (s *frontend) p2pHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		file := strings.TrimPrefix(path, "downloads/")
 		for _, asset := range manifest.Artifacts {
-			if file == asset.File {
+			base := strings.TrimSuffix(asset.File, ".exe")
+			requested := strings.TrimSuffix(file, ".sha256")
+			compatible := base + ".tar.gz"
+			if asset.Platform == "windows" {
+				compatible = base + ".zip"
+			}
+			if requested == asset.File || requested == base+".tar.xz" || requested == compatible {
+				s.p2pDownloadsOnce.Do(func() { s.p2pDownloads = components.Downloads(os.DirFS(s.p2pAssets), "p2p-cli") })
 				w.Header().Del("Content-Type")
-				http.ServeFile(w, r, filepath.Join(s.p2pAssets, file))
+				http.ServeFileFS(w, r, s.p2pDownloads, file)
 				return
 			}
 		}

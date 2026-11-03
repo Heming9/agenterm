@@ -85,6 +85,36 @@ class ReleaseTests(unittest.TestCase):
             release.prepare(scope, base)
         return json.loads(Path("release-plan/release-manifest.json").read_text())
 
+    def test_published_inventory_contains_only_raw_programs(self):
+        self.assertEqual(release.assets("gui"), ["agenterm-client-gui-macos-arm64", "agenterm-client-gui-windows-amd64.exe"])
+        names = [name for component in release.COMPONENTS for name in release.assets(component)]
+        self.assertEqual(len(names), 14)
+        self.assertEqual(len(set(names)), 14)
+        self.assertFalse(any(name.endswith((".zip", ".tar.gz", ".tar.xz")) for name in names))
+
+    def test_staging_excludes_generated_archives_and_checksums(self):
+        for name in ("components.tar.xz", "agenterm-client-cli-linux-amd64.tar.xz", "agenterm-client-cli-windows-amd64.zip", "SHA256SUMS"):
+            (self.base / name).write_text("internal build output")
+        output = Path("release-files")
+        release.stage(self.base, output, ("cli", "server"))
+        self.assertEqual({path.name for path in output.iterdir()}, {*release.assets("cli"), *release.assets("server")})
+        for path in output.iterdir():
+            self.assertEqual(path.read_bytes(), (self.base / path.name).read_bytes())
+
+    def test_staging_rejects_missing_or_empty_program_before_copying(self):
+        name = release.assets("server")[0]
+        for missing in (True, False):
+            with self.subTest(missing=missing):
+                path = self.base / name
+                if missing:
+                    path.unlink()
+                else:
+                    path.write_bytes(b"")
+                output = Path("release-files")
+                with self.assertRaisesRegex(ValueError, "Missing or empty executable"):
+                    release.stage(self.base, output, ("cli", "server"))
+                self.assertFalse(output.exists())
+
     def test_server_only_reuses_complete_clients(self):
         manifest = self.prepare("server")
         self.assertEqual(manifest["components"]["server"]["version"], "0.2.27")
@@ -208,7 +238,7 @@ class ReleaseTests(unittest.TestCase):
             for name in release.assets(component):
                 (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
-        self.assertEqual(len(list(directory.iterdir())), 23)
+        self.assertEqual(len(list(directory.iterdir())), 15)
 
     def test_obsolete_release_attachments_are_rejected(self):
         self.prepare("all")
@@ -217,7 +247,10 @@ class ReleaseTests(unittest.TestCase):
         for component in release.COMPONENTS:
             for name in release.assets(component):
                 (directory / name).write_text("new bytes: " + name)
-        for name in ["install.sh", "install.ps1", "SHA256SUMS"]:
+        for name in ["install.sh", "install.ps1", "SHA256SUMS", "components.tar.xz", "components.zip",
+                     "agenterm-client-cli-linux-amd64.tar.xz", "agenterm-client-cli-macos-arm64.tar.gz",
+                     "agenterm-client-cli-windows-amd64.zip", "agenterm-client-gui-macos-arm64.zip",
+                     "agenterm-client-gui-windows-amd64.zip"]:
             with self.subTest(attachment=name):
                 (directory / name).write_text("obsolete")
                 with self.assertRaisesRegex(ValueError, "Release assets differ"):
@@ -232,7 +265,7 @@ class ReleaseTests(unittest.TestCase):
             (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
         hashes = json.loads((Path("release-plan") / release.REUSED_DIGESTS).read_text())
-        self.assertEqual(len(list(directory.iterdir())), 23)  # 21 program files, components.zip and the release manifest.
+        self.assertEqual(len(list(directory.iterdir())), 15)  # Fourteen raw executables and the version manifest.
         self.assertEqual(set(hashes), {*release.assets("cli"), *release.assets("gui")})
         release.verify(directory, list(hashes), hashes)
         for name in ["install.sh", "install.ps1", "SHA256SUMS", release.REUSED_DIGESTS]:

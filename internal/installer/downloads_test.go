@@ -3,11 +3,10 @@ package installer
 import (
 	"agenterm/internal/components"
 	"archive/tar"
-	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	"github.com/ulikunitz/xz"
 	"io"
 	"io/fs"
 	"os"
@@ -16,6 +15,11 @@ import (
 	"testing"
 	"testing/fstest"
 )
+
+var clientNames = []string{
+	"agenterm-client-cli-macos-amd64", "agenterm-client-cli-linux-amd64", "agenterm-client-cli-windows-amd64.exe",
+	"agenterm-client-cli-macos-arm64", "agenterm-client-cli-linux-arm64", "agenterm-client-cli-windows-arm64.exe",
+}
 
 func sampleClients() fstest.MapFS {
 	files := make(fstest.MapFS)
@@ -31,61 +35,40 @@ func TestDownloadsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 7 {
-		t.Fatalf("got %d downloads, want six archives and manifest", len(files))
+	if len(files) != 13 {
+		t.Fatalf("got %d downloads, want twelve archives and manifest", len(files))
 	}
 	for _, name := range clientNames {
 		var got []byte
-		if strings.HasSuffix(name, ".exe") {
-			data := files[strings.TrimSuffix(name, ".exe")+".zip"]
-			zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(zr.File) != 1 || zr.File[0].Name != name || zr.File[0].Method != zip.Deflate {
-				t.Fatalf("unexpected ZIP contents for %s", name)
-			}
-			r, err := zr.File[0].Open()
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err = io.ReadAll(r)
-			r.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			gr, err := gzip.NewReader(bytes.NewReader(files[name+".tar.gz"]))
-			if err != nil {
-				t.Fatal(err)
-			}
-			tr := tar.NewReader(gr)
-			h, err := tr.Next()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if h.Name != name || h.Mode != 0755 || h.Typeflag != tar.TypeReg {
-				t.Fatalf("unexpected tar header: %+v", h)
-			}
-			got, err = io.ReadAll(tr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := tr.Next(); err != io.EOF {
-				t.Fatalf("extra tar entry: %v", err)
-			}
-			if _, err := io.Copy(io.Discard, gr); err != nil {
-				t.Fatal(err)
-			}
-			gr.Close()
+		gr, err := xz.NewReader(bytes.NewReader(files[strings.TrimSuffix(name, ".exe")+".tar.xz"]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := tar.NewReader(gr)
+		h, err := tr.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.Name != name || h.Mode != 0755 || h.Typeflag != tar.TypeReg {
+			t.Fatalf("unexpected tar header: %+v", h)
+		}
+		got, err = io.ReadAll(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tr.Next(); err != io.EOF {
+			t.Fatalf("extra tar entry: %v", err)
+		}
+		if _, err := io.Copy(io.Discard, gr); err != nil {
+			t.Fatal(err)
 		}
 		if !bytes.Equal(got, source[name].Data) {
 			t.Fatalf("%s changed during packing", name)
 		}
 	}
 	lines := strings.Split(strings.TrimSpace(string(files["SHA256SUMS"])), "\n")
-	if len(lines) != 12 {
-		t.Fatalf("got %d checksums, want 12", len(lines))
+	if len(lines) != 6 {
+		t.Fatalf("got %d checksums, want 6", len(lines))
 	}
 	for _, line := range lines {
 		hash, name, ok := strings.Cut(line, "  ")
@@ -98,7 +81,7 @@ func TestDownloadsRoundTrip(t *testing.T) {
 		}
 	}
 	// A fixed digest also runs on Windows CI to catch host-dependent metadata.
-	const wantManifestHash = "3edcfda1d392ccd8a297b1059ddd1c2296a35c88629bc4d4fba730d5459b4232"
+	const wantManifestHash = "25f390eb73d44aea5090a8a296829d43568d0557d0ab597361cef4d3f2890561"
 	if got := fmt.Sprintf("%x", sha256.Sum256(files["SHA256SUMS"])); got != wantManifestHash {
 		t.Fatalf("download encoding changed: manifest hash %s", got)
 	}
@@ -118,14 +101,18 @@ func TestEmbeddedReleaseDownloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := assets.ClientCLI()
+	files := components.Downloads(assets.ClientCLI(), "agenterm-client-cli")
 	manifest, err := os.ReadFile(filepath.Join(directory, "SHA256SUMS"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(manifest)), "\n") {
-		_, name, _ := strings.Cut(line, "  ")
-		if !strings.HasSuffix(name, ".zip") && !strings.HasSuffix(name, ".tar.gz") {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".tar.xz") && !strings.HasSuffix(name, ".tar.gz") && !strings.HasSuffix(name, ".zip") {
 			continue
 		}
 		release, err := os.ReadFile(filepath.Join(directory, name))
@@ -134,7 +121,7 @@ func TestEmbeddedReleaseDownloads(t *testing.T) {
 		}
 		served, err := fs.ReadFile(files, name)
 		if err != nil || !bytes.Equal(served, release) {
-			t.Fatalf("embedded %s differs from release: %v", name, err)
+			t.Fatalf("runtime %s differs from release: %v", name, err)
 		}
 	}
 	served, err := fs.ReadFile(files, "SHA256SUMS")

@@ -20,16 +20,36 @@ hash_file() {
   else shasum -a 256 "$1" | cut -d ' ' -f 1
   fi
 }
-# A private, verified archive is the cache authority, not just an executable's existence.
-if [ ! -f "$cache/$archive" ] || [ "$(hash_file "$cache/$archive")" != "$expected" ] || [ ! -x "$bin" ]; then
+# The source executable hash remains authoritative for every download format.
+if [ ! -x "$bin" ] || [ "$(hash_file "$bin")" != "$expected" ]; then
   tmp=$(mktemp -d "$cache/download.XXXXXXXX")
   trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+  format=raw
+  if command -v tar >/dev/null 2>&1; then
+    printf '\375\067\172\130\132\000\000\004\346\326\264\106\002\000\041\001\014\000\000\000\217\230\101\234\340\003\377\000\013\135\000\000\157\375\377\377\243\267\177\106\062\000\000\000\014\047\151\040\227\143\170\303\000\001\047\200\010\000\000\000\056\171\256\255\261\304\147\373\002\000\000\000\000\004\131\132' > "$tmp/probe.tar.xz"
+    if tar -tf "$tmp/probe.tar.xz" >/dev/null 2>&1; then
+      format=tar.xz
+    else
+      printf '\037\213\010\000\000\000\000\000\002\377\143\140\030\005\243\140\024\214\124\000\000\056\257\265\357\000\004\000\000' > "$tmp/probe.tar.gz"
+      if tar -tf "$tmp/probe.tar.gz" >/dev/null 2>&1; then format=tar.gz; fi
+    fi
+    rm -f "$tmp/probe.tar.xz" "$tmp/probe.tar.gz"
+  fi
+  archive="$source"
+  if [ "$format" != raw ]; then archive="$source.$format"; fi
+  url="${url%/*}/$archive"
   curl -fLsS --connect-timeout 10 --max-time 120 "$url" -o "$tmp/$archive"
-  [ "$(hash_file "$tmp/$archive")" = "$expected" ] || { echo 'p2p-cli checksum mismatch' >&2; exit 1; }
-  tar -xzf "$tmp/$archive" -C "$tmp" p2p-cli
+  if [ "$format" != raw ]; then
+    curl -fLsS --connect-timeout 10 --max-time 30 "$url.sha256" -o "$tmp/archive.sha256"
+    archive_hash=$(awk 'NR == 1 && $1 ~ /^[[:xdigit:]]+$/ && length($1) == 64 { print tolower($1) }' "$tmp/archive.sha256")
+    [ -n "$archive_hash" ] && [ "$(hash_file "$tmp/$archive")" = "$archive_hash" ] || { echo 'p2p-cli archive checksum mismatch' >&2; exit 1; }
+    tar -xf "$tmp/$archive" -C "$tmp" p2p-cli
+  else
+    mv "$tmp/$source" "$tmp/p2p-cli"
+  fi
+  [ "$(hash_file "$tmp/p2p-cli")" = "$expected" ] || { echo 'p2p-cli checksum mismatch' >&2; exit 1; }
   chmod 700 "$tmp/p2p-cli"
   mv "$tmp/p2p-cli" "$bin"
-  mv "$tmp/$archive" "$cache/$archive"
   rm -rf "$tmp"
   trap - EXIT HUP INT TERM
 fi

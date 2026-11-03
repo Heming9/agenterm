@@ -23,17 +23,24 @@ REUSED_DIGESTS = "reused-digests.json"
 
 def assets(component):
     if component == "gui":
-        return ["agenterm-client-gui-macos-arm64.zip", "agenterm-client-gui-windows-amd64.exe",
-                "agenterm-client-gui-windows-amd64.zip"]
-    names = ["components.zip"] if component == "server" else []
-    for platform in ("macos", "linux", "windows"):
-        for arch in ("amd64", "arm64"):
-            prefix = "agenterm-client-cli" if component == "cli" else "agenterm-server"
-            stem = f"{prefix}-{platform}-{arch}"
-            names.append(stem + (".exe" if platform == "windows" else ""))
-            if component == "cli":
-                names.append(stem + (".zip" if platform == "windows" else ".tar.gz"))
-    return names
+        return ["agenterm-client-gui-macos-arm64", "agenterm-client-gui-windows-amd64.exe"]
+    prefix = "agenterm-client-cli" if component == "cli" else "agenterm-server"
+    return [f"{prefix}-{platform}-{arch}" + (".exe" if platform == "windows" else "")
+            for platform in ("macos", "linux", "windows") for arch in ("amd64", "arm64")]
+
+
+def stage(directory, output, components):
+    """Copy only complete raw program inventories into an upload directory."""
+    names = [name for component in components for name in assets(component)]
+    for name in names:
+        path = directory / name
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f"Missing or empty executable: {name}")
+    if output.exists() and any(output.iterdir()):
+        raise ValueError("Upload staging directory must be empty")
+    output.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        shutil.copy2(directory / name, output / name)
 
 
 def run(*args):
@@ -159,7 +166,7 @@ def prepare(scope, requested_base):
         previous = base_components(cache, base["tag_name"], hashes)
     selected = select_builds(scope, tag, previous)
     # Naming/layout migrations require rebuilding instead of reusing binaries
-    # or archives whose embedded names still follow the old release layout.
+    # whose names still follow the old release layout.
     if base and any(name not in {asset["name"] for asset in base["assets"]}
                     for component in set(COMPONENTS) - selected for name in assets(component)):
         print("Base release uses a different asset layout; rebuilding all programs")
@@ -192,7 +199,7 @@ def prepare(scope, requested_base):
     for component, info in manifest["components"].items():
         action = "Built" if component in selected else "Reused"
         notes.append(f"| {component} | {action} | {info['version']} | {info['source_tag']} |")
-    notes += ["", "Reused programs retain their original version. Installation scripts and download checksums are served by the Server."]
+    notes += ["", "Release attachments contain raw executables and this version manifest. On macOS/Linux, make downloaded programs executable with chmod +x before running them. Reused programs retain their original version. Installation scripts, archive formats and download checksums are served by the Server."]
     (output / "notes.md").write_text("\n".join(notes) + "\n")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
@@ -227,11 +234,17 @@ if __name__ == "__main__":
     planner = subparsers.add_parser("prepare")
     planner.add_argument("--scope", choices=SCOPES, default="all")
     planner.add_argument("--base", default="")
+    staging = subparsers.add_parser("stage")
+    staging.add_argument("--directory", type=Path, default=Path("dist"))
+    staging.add_argument("--output", type=Path, default=Path("release-files"))
+    staging.add_argument("--components", nargs="+", choices=COMPONENTS, default=["cli", "server"])
     publisher = subparsers.add_parser("finalize")
     publisher.add_argument("--directory", type=Path, default=Path("artifacts"))
     publisher.add_argument("--plan", type=Path, default=Path("release-plan"))
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.scope, args.base)
+    elif args.command == "stage":
+        stage(args.directory, args.output, args.components)
     else:
         finalize(args.directory, args.plan)

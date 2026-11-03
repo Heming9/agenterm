@@ -87,10 +87,8 @@ New-Item -ItemType Directory -Path $cache -Force | Out-Null
 $work = Join-Path $cache ('.tmp-' + [System.Guid]::NewGuid())
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
-  $asset = "agenterm-client-cli-windows-$arch.zip"
   $binary = "agenterm-client-cli-windows-$arch.exe"
   $program = Join-Path $cache $binary
-  $file = Join-Path $work $asset
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 "$base/SHA256SUMS" -OutFile (Join-Path $work 'SHA256SUMS')
   $manifest = Get-Content (Join-Path $work 'SHA256SUMS')
   function Get-ExpectedHash([string]$Name) {
@@ -110,12 +108,35 @@ try {
     Say 'installer.cached.client.verified.skipping.download'
   } else {
     Say 'installer.downloading.client'
-    $expectedAsset = Get-ExpectedHash $asset
+    $format = 'raw'
+    $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+    if ($tar) {
+      $probeFile = Join-Path $work 'probe.tar.xz'
+      try {
+        [IO.File]::WriteAllBytes($probeFile, [Convert]::FromBase64String('/Td6WFoAAATm1rRGAgAhAQwAAACPmEGc4AP/AAtdAABv/f//o7d/RjIAAAAMJ2kgl2N4wwABJ4AIAAAALnmurbHEZ/sCAAAAAARZWg=='))
+        & $tar.Source -tf $probeFile 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $format = 'tar.xz' }
+      } catch { $format = 'raw' } finally { Remove-Item -LiteralPath $probeFile -ErrorAction SilentlyContinue }
+    }
+    if ($format -eq 'raw' -and (Get-Command Expand-Archive -ErrorAction SilentlyContinue)) { $format = 'zip' }
+    $asset = $binary
+    if ($format -ne 'raw') { $asset = "agenterm-client-cli-windows-$arch.$format" }
+    $file = Join-Path $work $asset
+    $expectedAsset = $expectedBinary
+    if ($format -ne 'raw') {
+      $hashFile = Join-Path $work 'archive.sha256'
+      Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 "$base/$asset.sha256" -OutFile $hashFile
+      $expectedAsset = (Get-Content -Raw -LiteralPath $hashFile).Trim()
+      if ($expectedAsset -notmatch '^[a-fA-F0-9]{64}$') { throw (Text 'installer.missing.archive.checksum') }
+    }
     $ProgressPreference = 'Continue'
     Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 "$base/$asset" -OutFile $file
     Say 'installer.download.complete.verifying.and.extracting'
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash -ne $expectedAsset) { throw (Text 'installer.archive.checksum.mismatch') }
-    Expand-Archive -LiteralPath $file -DestinationPath $work
+    if ($format -eq 'tar.xz') {
+      & $tar.Source -xf $file -C $work $binary
+      if ($LASTEXITCODE -ne 0) { throw (Text 'installer.invalid.client.archive') }
+    } elseif ($format -eq 'zip') { Expand-Archive -LiteralPath $file -DestinationPath $work }
     $staged = Join-Path $work $binary
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $staged).Hash -ne $expectedBinary) { throw (Text 'installer.client.checksum.mismatch') }
     if (Test-Path -LiteralPath $program -PathType Container) { throw (Text 'installer.client.cache.path.is.a.directory') }

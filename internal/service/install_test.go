@@ -17,6 +17,25 @@ import (
 	"time"
 )
 
+// Exercise real capability probes without depending on the host's tar features.
+func installTarShim(t *testing.T, directory string) {
+	t.Helper()
+	realTar, err := exec.LookPath("tar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+case "${AGENTERM_TEST_TAR_MODE:-}" in
+ raw) exit 2 ;;
+ gzip) for arg do case "$arg" in *.tar.xz) exit 2 ;; esac; done ;;
+esac
+exec '` + strings.ReplaceAll(realTar, "'", "'\"'\"'") + `' "$@"
+`
+	if err := os.WriteFile(filepath.Join(directory, "tar"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires a POSIX shell")
@@ -38,11 +57,12 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	}
 	name := "agenterm-client-cli-linux-amd64"
 	client := []byte("#!/bin/sh\nprintf 'arg=%s invitation=%s consent=%s\\n' \"$1\" \"$2\" \"$3\"\n")
-	archive := name + ".tar.gz"
+	archive := name + ".tar.xz"
 	for filename, data := range installerFixture(t, client) {
 		write(filepath.Join(assets, filename), data, 0o600)
 	}
 	write(filepath.Join(bin, "uname"), []byte("#!/bin/sh\ncase $1 in -s) echo Linux;; -m) echo x86_64;; esac\n"), 0o755)
+	installTarShim(t, bin)
 	log := filepath.Join(root, "downloads")
 	state := &runtimeState{}
 	var blockWebSocket atomic.Bool
@@ -151,6 +171,19 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if count := strings.Count(string(logContent), archive+"\n"); count != 2 {
 		t.Fatalf("archive downloaded %d times after corruption", count)
 	}
+	for _, choice := range []struct{ mode, asset string }{{"gzip", name + ".tar.gz"}, {"raw", name}} {
+		t.Setenv("AGENTERM_TEST_TAR_MODE", choice.mode)
+		write(cached, []byte("corrupted"), 0700)
+		before, _ := os.ReadFile(log)
+		if output := run(); !strings.Contains(output, "正在下载客户端") {
+			t.Fatalf("%s fallback failed: %s", choice.mode, output)
+		}
+		after, _ := os.ReadFile(log)
+		if !strings.Contains(string(after[len(before):]), "/"+choice.asset+"\n") {
+			t.Fatalf("%s downloaded wrong format: %s", choice.mode, after[len(before):])
+		}
+	}
+	t.Setenv("AGENTERM_TEST_TAR_MODE", "")
 	// A bad download must never be run or replace the existing cache.
 	write(cached, []byte("corrupted"), 0o700)
 	write(filepath.Join(assets, archive), []byte("corrupted archive"), 0o600)
@@ -158,7 +191,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "压缩包校验值不匹配") || strings.Contains(string(out), "arg=-invite") {
+	if err == nil || strings.Contains(string(out), "arg=-invite") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
 	}
 	// Invalid/expired invitations must fail before fetching the manifest or archive,

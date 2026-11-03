@@ -27,7 +27,7 @@ All credentials, invitations, output and sessions stay in Runtime memory. Socket
 
 ## Unified component bundle
 
-Client CLI and P2P platform downloads are merged into `internal/components/assets/components.zip`. Ordinary Go builds embed this unified archive. Build the Server executable with:
+Client CLI and P2P platform downloads are merged into `internal/components/assets/components.tar.xz`. Ordinary Go builds embed this unified archive. Build the Server executable with:
 
 ```sh
 python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
@@ -221,7 +221,7 @@ go build -o agenterm-client-gui ./cmd/agenterm-client-gui
 
 The CLI and GUI have separate entry packages and share connection and startup logic in `internal/client`. Release assets use `agenterm-client-cli-<platform>-<arch>` and `agenterm-client-gui-<platform>-<arch>` prefixes. When a selective release uses a base with the older asset names, the planner rebuilds all programs to migrate the complete release together.
 
-Ordinary server builds embed `components.zip`, containing matching six-target distributions of Client CLI and P2P CLI for macOS/Linux/Windows (amd64/arm64), and provide both one-command installers by default. Download URLs use `internal/version.Current`; no release linker flag is needed. The server binary contains everything needed to serve installers, client archives, and checksums.
+Ordinary server builds embed `components.tar.xz`, containing raw Client CLI and P2P CLI executables for macOS/Linux/Windows (amd64/arm64), and provide both one-command installers by default. Startup only extracts and verifies the original executables. Download requests generate the selected archive format on demand and cache its bytes. Installers probe available decompression tools and select XZ, a compatible gzip/ZIP format, or a direct executable download; all paths verify the executable SHA-256. Download URLs use `internal/version.Current`; no release linker flag is needed.
 
 After changing CLI or shared client code, regenerate and include the updated bundle with the source changes:
 
@@ -230,4 +230,6 @@ go generate ./internal/components
 go build -o agenterm-server ./cmd/agenterm-server
 ```
 
-Regeneration requires Python 3.11+ and Go, cross-compiles six CLI targets, reuses the existing bundle’s P2P archives, and atomically replaces `internal/components/assets/components.zip`. To update P2P, first run `scripts/build_p2p_cli.py` for all six OS/architecture combinations, then merge with `python3 scripts/build_components.py --p2p-assets <native-output-directories...>`. Missing P2P targets fail packing. Release CI joins six native P2P builds, the unified bundle and Server embedding. A missing bundle fails compilation instead of silently disabling component downloads.
+Regeneration requires Python 3.11+ and Go, cross-compiles six CLI targets, reuses the existing bundle’s raw P2P executables, and atomically replaces `internal/components/assets/components.tar.xz`. To update P2P, first run `scripts/build_p2p_cli.py` for all six OS/architecture combinations, then merge with `python3 scripts/build_components.py --p2p-assets <native-output-directories...>`. Missing P2P targets fail packing. Release CI joins six native P2P builds, the unified bundle and Server embedding. A missing bundle fails compilation instead of silently disabling component downloads.
+
+GitHub Release attachments contain fourteen original executables (six CLI, six Server, and the macOS/Windows GUI programs) plus `release-manifest.json`. Component bundles and per-platform archives are not attached. On macOS/Linux, run `chmod +x <downloaded-program>` before launching a directly downloaded executable. The macOS GUI attachment is the program from inside the app bundle.
