@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,6 +84,15 @@ func runP2PBootstrapEndToEnd(t *testing.T) {
 	// Runtime allows 25 seconds for the remote registration; keep the HTTP
 	// deadline longer so slow native runners return the actual bootstrap error.
 	data, failed, err := h.request(token, "p2p_transfer_start", map[string]any{}, 35*time.Second)
+	bootstrapDeadline := time.Now().Add(time.Minute)
+	for err == nil && failed && time.Now().Before(bootstrapDeadline) {
+		result, ok := data.(map[string]any)
+		message, _ := result["error"].(string)
+		if !ok || !strings.Contains(message, "remote P2P component still initializing") {
+			break
+		}
+		data, failed, err = h.request(token, "p2p_transfer_start", map[string]any{}, 35*time.Second)
+	}
 	if err != nil || failed {
 		t.Fatalf("bootstrap: failed=%v err=%v result=%v\nClient output:\n%s", failed, err, data, clientOutput.String())
 	}

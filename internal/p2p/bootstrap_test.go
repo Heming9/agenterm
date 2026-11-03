@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -64,5 +65,71 @@ func TestManifestRejectsTamperingAndScriptsKeepCredentialsScoped(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "manifest.json"), encoded, 0600)
 	if _, err := Load(root); err == nil {
 		t.Fatal("path traversal accepted")
+	}
+}
+
+func TestP2PBootstrapPowerShellPreservesNativeJSONInput(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires Windows PowerShell and a Windows executable")
+	}
+	root := t.TempDir()
+	source := filepath.Join(root, "main.go")
+	if err := os.WriteFile(source, []byte(`package main
+import ("encoding/json"; "fmt"; "io"; "os")
+func main() {
+    data, err := io.ReadAll(os.Stdin)
+    if err != nil || !json.Valid(data) { fmt.Fprintln(os.Stderr, "invalid UTF-8 JSON input"); os.Exit(1) }
+    foreground := len(os.Args) == 5 && os.Args[4] == "--foreground"
+    json.NewEncoder(os.Stdout).Encode(map[string]any{"config": json.RawMessage(data), "foreground": foreground})
+}
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(root, "fixture.exe")
+	if output, err := exec.Command("go", "build", "-o", binary, source).CombinedOutput(); err != nil {
+		t.Fatalf("build fixture: %v %s", err, output)
+	}
+	payload, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(payload)
+	expected := hex.EncodeToString(hash[:])
+	name, err := Filename(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{Version: "test-1", Artifacts: []Artifact{{Platform: runtime.GOOS, Arch: runtime.GOARCH, File: name, SHA256: expected}}}
+	cache := filepath.Join(root, "agenterm", "p2p-cli", "test-1-"+expected)
+	if err := os.MkdirAll(cache, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "p2p-cli.exe"), payload, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCALAPPDATA", root)
+	config := []byte(`{"session":"0123456789abcdef0123456789abcdef","token":"private-test-token","label":"配置输入"}`)
+	for _, foreground := range []bool{false, true} {
+		t.Run(fmt.Sprintf("foreground=%v", foreground), func(t *testing.T) {
+			embedded := config
+			t.Setenv("AGENTERM_P2P_CONFIG_B64", "")
+			if foreground {
+				embedded = nil
+				t.Setenv("AGENTERM_P2P_CONFIG_B64", base64.StdEncoding.EncodeToString(config))
+			}
+			_, script := Scripts(manifest, "https://example.test", embedded, foreground, false)
+			command := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("bootstrap: %v %s", err, output)
+			}
+			var result struct {
+				Config     map[string]string `json:"config"`
+				Foreground bool              `json:"foreground"`
+			}
+			if err := json.Unmarshal(output, &result); err != nil || result.Config["label"] != "配置输入" || result.Foreground != foreground {
+				t.Fatalf("native input changed: %s (%v)", output, err)
+			}
+		})
 	}
 }

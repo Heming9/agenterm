@@ -52,9 +52,23 @@ $config = $env:AGENTERM_P2P_CONFIG_B64
 if (!$config) { $config = '@CONFIG_B64@' }
 if (!$config) { throw 'Missing P2P negotiation parameters' }
 $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($config))
-if ('@MODE@' -eq 'foreground') {
-  $json | & $bin start --config - --foreground
-} else {
-  $json | & $bin start --config -
+# Write UTF-8 bytes directly: Windows PowerShell's native pipeline can change
+# the encoding of JSON even when the script sets $OutputEncoding.
+$process = [Diagnostics.Process]::new()
+$process.StartInfo.FileName = $bin
+$process.StartInfo.Arguments = 'start --config -'
+if ('@MODE@' -eq 'foreground') { $process.StartInfo.Arguments += ' --foreground' }
+$process.StartInfo.UseShellExecute = $false
+$process.StartInfo.RedirectStandardInput = $true
+# .NET Framework uses Console.InputEncoding for the redirected writer;
+# ProcessStartInfo.StandardInputEncoding requires newer .NET versions.
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+try {
+  $null = $process.Start()
+  $process.StandardInput.Write($json)
+  $process.StandardInput.Close()
+  $process.WaitForExit()
+  if ($process.ExitCode -ne 0) { throw "p2p-cli exited with code $($process.ExitCode)" }
+} finally {
+  $process.Dispose()
 }
-if ($LASTEXITCODE -ne 0) { throw "p2p-cli exited with code $LASTEXITCODE" }
