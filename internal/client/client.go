@@ -227,6 +227,13 @@ func (c *connection) run(m protocol.Message) {
 		cancel()
 		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(m.TimeoutMS)*time.Millisecond)
 	}
+	if m.P2P != nil {
+		original := cancel
+		var once sync.Once
+		cancel = func() { once.Do(func() { stopP2P(m.P2P.StopScript); original() }) }
+		m.Command = m.P2P.Script
+		m.Env = map[string]string{"AGENTERM_P2P_CONFIG_B64": m.P2P.ConfigBase64}
+	}
 	p := &process{cancel: cancel, ready: make(chan struct{}), inputQueue: make(chan protocol.Message, 32)}
 	c.mu.Lock()
 	c.running[m.ID] = p
@@ -241,11 +248,18 @@ func (c *connection) run(m protocol.Message) {
 		defer func() { p.stop(); c.mu.Lock(); delete(c.running, m.ID); c.mu.Unlock() }()
 		stopIO := context.AfterFunc(ctx, p.stop)
 		defer stopIO()
-		event := c.commandStarted(m)
+		display := m
+		if m.P2P != nil {
+			display.Command = "p2p-cli start"
+		}
+		event := c.commandStarted(display)
 		err := m.ExecOptions.Validate()
 		code := -1
 		if err == nil {
 			cmd := shellCommand(ctx, m.Command)
+			if m.P2P != nil {
+				cmd = p2pCommand(ctx, m.Command)
+			}
 			cmd.Dir = m.Cwd
 			cmd.Env = cmd.Environ()
 			for key, value := range m.Env {
@@ -348,6 +362,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	headers.Set(protocol.PlatformHeader, runtime.GOOS)
 	headers.Set(protocol.ArchHeader, runtime.GOARCH)
 	headers.Set(protocol.SessionControlsHeader, strings.Join(interactiveControls(), ","))
+	headers.Set(protocol.P2PCapabilityHeader, "1")
 	headers.Set(protocol.ShellHeader, base64.RawURLEncoding.EncodeToString([]byte(Shell())))
 	cwd, _ := os.Getwd()
 	headers.Set(protocol.DefaultCwdHeader, base64.RawURLEncoding.EncodeToString([]byte(cwd)))
@@ -431,6 +446,10 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			}
 		case "exec":
 			c.run(m)
+		case "p2p_start":
+			if m.P2P != nil && len(m.P2P.Script) <= 64<<10 && len(m.P2P.StopScript) <= 64<<10 && len(m.P2P.ConfigBase64) <= 32<<10 {
+				c.run(m)
+			}
 		case "cancel":
 			c.mu.Lock()
 			p := c.running[m.ID]

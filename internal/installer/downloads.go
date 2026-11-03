@@ -13,50 +13,19 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/ulikunitz/xz"
 )
 
-// Group by architecture so the solid archive can reuse similar machine code.
+// Canonical CLI targets shared by component packing and release checks.
 var clientNames = []string{
 	"agenterm-client-cli-macos-amd64", "agenterm-client-cli-linux-amd64", "agenterm-client-cli-windows-amd64.exe",
 	"agenterm-client-cli-macos-arm64", "agenterm-client-cli-linux-arm64", "agenterm-client-cli-windows-arm64.exe",
 }
 
-// DownloadFiles is immutable after construction. Each Open gets its own seek
-// cursor so concurrent HTTP downloads, HEAD and Range requests work normally.
-type DownloadFiles map[string][]byte
-
-func (files DownloadFiles) Open(name string) (fs.File, error) {
-	if !fs.ValidPath(name) {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
-	}
-	data, ok := files[name]
-	if !ok {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-	}
-	return &downloadFile{Reader: bytes.NewReader(data), name: name}, nil
-}
-
-type downloadFile struct {
-	*bytes.Reader
-	name string
-}
-
-func (f *downloadFile) Close() error               { return nil }
-func (f *downloadFile) Stat() (fs.FileInfo, error) { return f, nil }
-func (f *downloadFile) Name() string               { return f.name }
-func (f *downloadFile) Size() int64                { return f.Reader.Size() }
-func (f *downloadFile) Mode() fs.FileMode          { return 0444 }
-func (f *downloadFile) ModTime() time.Time         { return time.Time{} }
-func (f *downloadFile) IsDir() bool                { return false }
-func (f *downloadFile) Sys() any                   { return nil }
-
-// BuildDownloads is shared by the release tool and server. Fixed metadata and
-// Go's standard compressors make their archives and checksums byte-identical
-// when built with the same Go toolchain. Never recompress only one copy in CI.
-func BuildDownloads(source fs.FS) (DownloadFiles, error) {
-	files := make(DownloadFiles)
+// BuildDownloads creates the exact CLI archives stored in components.zip and
+// published by releases. Fixed metadata and standard compressors keep output
+// deterministic with the same Go toolchain; the server serves these bytes.
+func BuildDownloads(source fs.FS) (map[string][]byte, error) {
+	files := make(map[string][]byte)
 	hashes := make(map[string][sha256.Size]byte)
 	for _, name := range clientNames {
 		data, err := fs.ReadFile(source, name)
@@ -128,58 +97,4 @@ func writeClient(tw *tar.Writer, name string, data []byte) error {
 	}
 	_, err := tw.Write(data)
 	return err
-}
-
-// WriteBundle writes only the six executable files. Release CI applies XZ to
-// this tar stream; no external compressor is needed by the running server.
-func WriteBundle(w io.Writer, source fs.FS) error {
-	tw := tar.NewWriter(w)
-	for _, name := range clientNames {
-		data, err := fs.ReadFile(source, name)
-		if err != nil {
-			return err
-		}
-		if err := writeClient(tw, name, data); err != nil {
-			return err
-		}
-	}
-	return tw.Close()
-}
-
-func unpackDownloads(r io.Reader) (DownloadFiles, error) {
-	xr, err := xz.NewReader(r)
-	if err != nil {
-		return nil, err
-	}
-	tr := tar.NewReader(xr)
-	clients := make(DownloadFiles)
-	allowed := make(map[string]bool)
-	for _, name := range clientNames {
-		allowed[name] = true
-	}
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !allowed[h.Name] || h.Typeflag != tar.TypeReg || h.Size <= 0 || h.Size > 64<<20 {
-			return nil, fmt.Errorf("invalid bundled client %q", h.Name)
-		}
-		delete(allowed, h.Name)
-		clients[h.Name], err = io.ReadAll(tr)
-		if err != nil {
-			return nil, err
-		}
-	}
-	// tar EOF precedes the XZ footer. Read to the end to validate its checksum.
-	if _, err := io.Copy(io.Discard, xr); err != nil {
-		return nil, err
-	}
-	if len(allowed) != 0 {
-		return nil, fmt.Errorf("client bundle is missing %d platforms", len(allowed))
-	}
-	return BuildDownloads(clients)
 }

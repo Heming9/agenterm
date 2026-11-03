@@ -69,6 +69,7 @@ type runtimeState struct {
 	maxClientsPerIP int
 	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
 	nextClientOrder uint64
+	p2pRooms        map[string]*p2pRoom
 }
 
 type invitation struct {
@@ -209,6 +210,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			DefaultCwd:      metadataHeader(r, protocol.DefaultCwdHeader),
 			ClientVersion:   metadataHeader(r, version.Header),
 			SessionControls: sessionControlsHeader(r),
+			P2P:             r.Header.Get(protocol.P2PCapabilityHeader) == "1",
 		},
 	}}
 	if s.clients == nil {
@@ -233,6 +235,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			conn.Close()
 			stopHeartbeat()
 			s.mu.Lock()
+			s.closeP2PClientLocked(c, "client disconnected")
 			if s.clients[id] == c {
 				delete(s.clients, id)
 				if owner := s.clientOwners[secret]; owner != nil && !s.hasClientLocked(secret) {
@@ -267,6 +270,11 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			if err := conn.ReadJSON(&m); err != nil {
 				disconnectErr = err
 				return
+			}
+			if m.Type == "done" {
+				s.mu.Lock()
+				s.p2pCommandDoneLocked(c, m)
+				s.mu.Unlock()
 			}
 			c.mu.Lock()
 			ch := c.pending[m.ID]

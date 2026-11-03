@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"agenterm/internal/components"
 	"archive/tar"
 	"archive/zip"
 	"bytes"
@@ -14,8 +15,6 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-
-	"github.com/ulikunitz/xz"
 )
 
 func sampleClients() fstest.MapFS {
@@ -105,96 +104,21 @@ func TestDownloadsRoundTrip(t *testing.T) {
 	}
 }
 
-func xzBytes(t *testing.T, raw []byte) []byte {
-	t.Helper()
-	var out bytes.Buffer
-	w, err := xz.NewWriter(&out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write(raw); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return out.Bytes()
-}
-
-func TestBundleRoundTrip(t *testing.T) {
-	source := sampleClients()
-	var raw bytes.Buffer
-	if err := WriteBundle(&raw, source); err != nil {
-		t.Fatal(err)
-	}
-	want, err := BuildDownloads(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	compressed := xzBytes(t, raw.Bytes())
-	got, err := unpackDownloads(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, data := range want {
-		if !bytes.Equal(data, got[name]) {
-			t.Fatalf("reconstructed %s differs from release", name)
-		}
-	}
-	compressed[len(compressed)-1] ^= 1
-	if _, err := unpackDownloads(bytes.NewReader(compressed)); err == nil {
-		t.Fatal("corrupt XZ footer accepted after tar EOF")
-	}
-}
-
-func TestBundleInvalidContents(t *testing.T) {
-	for _, kind := range []string{"missing", "duplicate", "unknown", "symlink"} {
-		t.Run(kind, func(t *testing.T) {
-			var raw bytes.Buffer
-			tw := tar.NewWriter(&raw)
-			for i, name := range clientNames {
-				if kind == "missing" && i == 0 {
-					continue
-				}
-				if kind == "unknown" && i == 0 {
-					name = "../client"
-				}
-				if kind == "symlink" && i == 0 {
-					if err := tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: "other"}); err != nil {
-						t.Fatal(err)
-					}
-					continue
-				}
-				if err := writeClient(tw, name, []byte("client")); err != nil {
-					t.Fatal(err)
-				}
-				if kind == "duplicate" && i == 0 {
-					if err := writeClient(tw, name, []byte("duplicate")); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-			if err := tw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := unpackDownloads(bytes.NewReader(xzBytes(t, raw.Bytes()))); err == nil {
-				t.Fatal("invalid bundle accepted")
-			}
-		})
-	}
-}
-
-// Release CI runs this with actual binaries and the native XZ compressor,
-// proving the pure Go decoder and release downloads agree before publishing.
+// Release CI verifies the extracted unified bundle against public downloads.
 func TestEmbeddedReleaseDownloads(t *testing.T) {
 	directory := os.Getenv("AGENTERM_RELEASE_DIR")
 	if directory == "" {
 		t.Skip("release assets not requested")
 	}
-	files, err := Assets()
+	base := t.TempDir()
+	if err := os.Chmod(base, 0700); err != nil {
+		t.Fatal(err)
+	}
+	assets, err := components.Prepare(base)
 	if err != nil {
 		t.Fatal(err)
 	}
+	files := assets.ClientCLI()
 	manifest, err := os.ReadFile(filepath.Join(directory, "SHA256SUMS"))
 	if err != nil {
 		t.Fatal(err)
@@ -220,13 +144,17 @@ func TestEmbeddedReleaseDownloads(t *testing.T) {
 }
 
 func BenchmarkAssets(b *testing.B) {
+	base := b.TempDir()
+	if err := os.Chmod(base, 0700); err != nil {
+		b.Fatal(err)
+	}
 	b.ReportAllocs()
 	for b.Loop() {
-		files, err := Assets()
+		assets, err := components.Prepare(base)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := fs.ReadFile(files, "SHA256SUMS"); err != nil {
+		if _, err := fs.ReadFile(assets.ClientCLI(), "SHA256SUMS"); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -25,15 +25,15 @@ Both processes run as the same user. Default sockets live under the system tempo
 
 All credentials, invitations, output and sessions stay in Runtime memory. Socket files are IPC endpoints, not saved business state. For public access, keep an HTTPS reverse proxy with WebSocket support forwarding to port 8080 and preserving `/agenterm`. `-public-url` does not enable TLS. Hosting currently requires Linux/macOS; Windows target clients remain supported.
 
-## Prepare downloads at build time
+## Unified component bundle
 
-An ordinary `go build ./cmd/agenterm-server` decompresses the embedded bundle and compresses six platform archives at startup. To shorten frontend replacement, run from the repository root:
+Client CLI and P2P platform downloads are merged into `internal/components/assets/components.zip`. Ordinary Go builds embed this unified archive. Build the Server executable with:
 
 ```sh
 python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
 ```
 
-The script prepares downloads and embeds them directly with the `agenterm_prebuilt` build tag. Startup needs no archive compression, and public download bytes and checksums remain identical. The result is still one executable, with a larger file size. Prepared assets are cached by bundle contents, packer sources and Go version, with hashes checked before reuse; generated files are ignored by Git.
+Deploy only the Server executable. Startup verifies ZIP paths, sizes and SHA-256, then atomically extracts into `components/<bundle-hash>/` under the instance runtime directory. CLI and P2P downloads both come from there; no external `p2p-assets` directory is required. Valid caches are verified and reused, and different bundle hashes preserve old frontends’ assets. This writable runtime directory supports systemd PrivateTmp and read-only Docker root filesystems. Startup never recompresses downloads and needs no Python, Rust or system unzip utility.
 
 ## Commands and options
 
@@ -221,13 +221,13 @@ go build -o agenterm-client-gui ./cmd/agenterm-client-gui
 
 The CLI and GUI have separate entry packages and share connection and startup logic in `internal/client`. Release assets use `agenterm-client-cli-<platform>-<arch>` and `agenterm-client-gui-<platform>-<arch>` prefixes. When a selective release uses a base with the older asset names, the planner rebuilds all programs to migrate the complete release together.
 
-Ordinary server builds embed the checked-in CLI bundle for macOS, Linux, and Windows (amd64/arm64) and provide both one-command installers by default. Download URLs use `internal/version.Current`; no release linker flag is needed. The server binary contains everything needed to serve installers, client archives, and checksums.
+Ordinary server builds embed `components.zip`, containing six macOS/Linux/Windows CLI targets (amd64/arm64) and the available native P2P archives, and provide both one-command installers by default. Download URLs use `internal/version.Current`; no release linker flag is needed. The server binary contains everything needed to serve installers, client archives, and checksums.
 
 After changing CLI or shared client code, regenerate and include the updated bundle with the source changes:
 
 ```sh
-go generate ./internal/installer
+go generate ./internal/components
 go build -o agenterm-server ./cmd/agenterm-server
 ```
 
-Regeneration requires Python 3 and Go, cross-compiles all six CLI targets, and atomically replaces `internal/installer/assets/clients.tar.xz`. Ordinary builds and running the server do not require Python, XZ, or a Go installation on the server machine. A missing bundle fails compilation instead of silently disabling installer commands.
+Regeneration requires Python 3.11+ and Go, cross-compiles six CLI targets, reuses the existing bundle’s P2P archives, and atomically replaces `internal/components/assets/components.zip`. To update P2P, first run `scripts/build_p2p_cli.py` on native platforms, then merge with `python3 scripts/build_components.py --p2p-assets <native-output-directories...>`. Release CI joins native P2P builds, the unified bundle and Server embedding. A missing bundle fails compilation instead of silently disabling component downloads.

@@ -158,9 +158,11 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 		output = resultSchema[sessionListResult]()
 	case "session_control":
 		output = sessionActionResultSchema()
+	case "p2p_transfer_start":
+		output = resultSchema[p2pStartResult]()
 	}
 	readOnly := name == "list_clients" || name == "session_read" || name == "session_list"
-	destructive := name == "execute_command" || name == "session_start" || name == "session_control"
+	destructive := name == "execute_command" || name == "session_start" || name == "session_control" || name == "p2p_transfer_start"
 	openWorld := destructive
 	return &mcp.Tool{
 		Name: name, Description: serverText(description), InputSchema: input, OutputSchema: output,

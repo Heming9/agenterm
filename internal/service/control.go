@@ -231,6 +231,8 @@ func (s *runtimeState) controlHandler(lifetime context.Context, shutdown ...cont
 	registerControl(mux, "clients", func(ctx context.Context, in toolRequest[listClientsArgs]) ([]clientInfo, error) {
 		return s.waitForClients(ctx, in.Secret, time.Duration(in.Args.WaitMS)*time.Millisecond)
 	})
+	registerControl(mux, "p2p/start", s.startP2P)
+	registerControl(mux, "p2p/signal", s.p2pSignal)
 	registerControl(mux, "execute/start", func(ctx context.Context, in toolRequest[executeArgs]) (string, error) {
 		return s.startExecution(logging.WithRequestID(lifetime, logging.RequestID(ctx)), in)
 	})

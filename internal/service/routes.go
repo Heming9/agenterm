@@ -33,6 +33,7 @@ func (s *frontend) routes(tag string, assets fs.FS) http.Handler {
 	routes.HandleFunc("/mcp", s.mcp)
 	routes.Handle("/downloads/", downloadHandler(tag, assets))
 	routes.Handle("/c/", s.installWrapper(tag))
+	routes.HandleFunc("/p2p/", s.p2pHTTP)
 
 	mux := http.NewServeMux()
 	prefix := protocol.PathPrefix

@@ -25,7 +25,7 @@ def assets(component):
     if component == "gui":
         return ["agenterm-client-gui-macos-arm64.zip", "agenterm-client-gui-windows-amd64.exe",
                 "agenterm-client-gui-windows-amd64.zip"]
-    names = []
+    names = ["components.zip"] if component == "server" else []
     for platform in ("macos", "linux", "windows"):
         for arch in ("amd64", "arm64"):
             prefix = "agenterm-client-cli" if component == "cli" else "agenterm-server"

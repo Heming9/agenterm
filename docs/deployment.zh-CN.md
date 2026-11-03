@@ -26,15 +26,15 @@ Authorization:  Bearer 首次启动时显示的管理密钥
 
 所有凭证、邀请和会话只在 Runtime 内存中，不写数据库或状态文件。socket 是通信入口，不保存业务状态。公网使用支持 WebSocket 的 HTTPS 反向代理，继续转发到 8080 并保留 `/agenterm` 路径。`-public-url` 不会启用 TLS。托管服务目前要求 Linux/macOS，Windows 目标客户端不受影响。
 
-## 构建时预生成下载包
+## 统一组件打包
 
-普通 `go build ./cmd/agenterm-server` 会在启动时解压内嵌资源并重新压缩六个平台的安装包。需要缩短 frontend 更新等待时间时，在仓库根目录执行：
+Client CLI 和 P2P 的平台下载包统一合并为 `internal/components/assets/components.zip`，普通 Go 构建直接将它内嵌到 Server。构建 Server 可执行文件：
 
 ```sh
 python3 scripts/build_server.py --output dist/agenterm-server --goos linux --goarch amd64
 ```
 
-脚本先生成下载包，再通过 `agenterm_prebuilt` 构建标记将它们直接嵌入程序。启动时无需重新压缩，公开下载字节和校验和保持一致。产物仍是一个可执行文件，体积会增大。安装包缓存按资源内容、打包源码和 Go 版本失效，复用前校验哈希；生成目录不提交 Git。
+只需部署这一个 Server 文件。启动时校验 ZIP 清单、大小和 SHA-256，再原子解压到实例运行目录下的 `components/<包哈希>/`；CLI 与 P2P 都从这里提供下载，不需要旁置 `p2p-assets`。已有缓存会重新校验后复用，不同包分目录保存以保留旧 frontend 的资源。systemd PrivateTmp 和 Docker 的只读根文件系统均可继续使用，因为组件目录位于可写的运行目录中。启动过程不重新压缩下载包，不需要 Python、Rust 或系统解压工具。
 
 ## 命令和参数
 
@@ -223,13 +223,13 @@ go build -o agenterm-client-gui ./cmd/agenterm-client-gui
 
 CLI 和 GUI 使用独立的入口包，共用连接与启动逻辑位于 `internal/client`。发布产物分别使用 `agenterm-client-cli-<平台>-<架构>` 和 `agenterm-client-gui-<平台>-<架构>` 前缀。选择性发布如果以旧产物名称的 Release 为基线，发布计划会自动完整构建，让整套产物一起迁移。
 
-普通源码构建默认内嵌随仓库提供的 macOS、Linux、Windows（amd64/arm64）六个平台 CLI 资源包，并提供两条一键连接命令。下载地址自动使用 `internal/version.Current`，无需额外发布标记或链接参数。Server 单个二进制即可提供安装脚本、客户端压缩包和校验清单。
+普通源码构建默认内嵌 `components.zip`，其中包含 macOS、Linux、Windows（amd64/arm64）六个平台的 Client CLI 及已构建的各平台 P2P 归档，并提供两条一键连接命令。下载地址自动使用 `internal/version.Current`，无需额外发布标记或链接参数。Server 单个二进制即可提供安装脚本、客户端压缩包和校验清单。
 
 修改 CLI 或共享客户端代码后，重新生成资源包，并随源码改动一起提交：
 
 ```sh
-go generate ./internal/installer
+go generate ./internal/components
 go build -o agenterm-server ./cmd/agenterm-server
 ```
 
-重新生成需要 Python 3 和 Go，会交叉编译六个平台 CLI，并原子替换 `internal/installer/assets/clients.tar.xz`。普通构建不需要 Python 或 XZ，运行 Server 的机器也不需要安装 Go。资源包缺失时直接编译失败，避免静默关闭一键连接功能。
+重新生成需要 Python 3.11+ 和 Go，会交叉编译六个平台 CLI，复用现有统一包中的 P2P 归档，并原子替换 `internal/components/assets/components.zip`。更新 P2P 时，先在各平台运行 `scripts/build_p2p_cli.py`，再执行 `python3 scripts/build_components.py --p2p-assets <原生构建目录...>` 合并。发布工作流会自动串联原生 P2P 构建、合并和 Server 内嵌。资源包缺失时直接编译失败，避免静默关闭组件下载功能。

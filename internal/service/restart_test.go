@@ -25,8 +25,7 @@ import (
 )
 
 // Exercise the actual release entrypoints in independent processes. Build
-// ordinary binaries even under -race: the solid embedded XZ bundle is extremely
-// slow to decompress with race instrumentation. Unit tests cover core races.
+// ordinary binaries even under -race; unit tests separately cover core races.
 type serviceProcess struct {
 	cmd  *exec.Cmd
 	done chan error

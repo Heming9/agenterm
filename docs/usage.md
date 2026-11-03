@@ -35,12 +35,13 @@ The hosted service currently requires no management authentication and allows up
 
 ## MCP tool contracts
 
-Current source builds publish explicit output schemas and behavior annotations for all seven tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
+Current source builds publish explicit output schemas and behavior annotations for all eight tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
 
 | Tool | When to use it | Main result fields |
 | --- | --- | --- |
 | `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
 | `list_clients` | Inspect devices or wait for a connection. | `clients`; waiting calls also return `status`. |
+| `p2p_transfer_start` | Bootstrap p2p-cli remotely and return Agent-side scripts after remote signaling registration. | `connection_id`, endpoint IDs, `state`, `shell_script`, `powershell_script`. |
 | `execute_command` | Run a short non-interactive command and wait for its result. | `stdout`, `stderr`, `exit_code`, `timed_out`, `canceled`, `truncated`, optional `error`. |
 | `session_start` | Start an interactive or long-running process. | `session_id`, initial `cursor=0`. |
 | `session_read` | Read paginated output and check session completion. | `output`, `next_cursor`, `has_more`, `truncated`, `done`; terminal results add exit, timeout, cancellation and error fields. |
@@ -51,7 +52,7 @@ The MCP text content of `create_client` directly returns a fixed English plain-t
 
 After generating connection instructions with `create_client`, the agent must present the complete `display_text` in the language used to communicate with the user. Translate only headings and explanatory prose; when communicating in English, present it verbatim. Preserve all sections, order, line breaks and plain-text format. Keep commands, URLs, connection tokens, validity numbers and expiry timestamps unchanged. Do not omit content or add Markdown formatting. Then call `list_clients` with the returned `client_token` and `wait_ms: 300000` to check for a successful connection, with a 300-second timeout. The call returns immediately when any device is online. If no device connects within 300 seconds, report the timeout to the user. These requirements are published in the MCP tool descriptions.
 
-`session_control` requires `session_id` and `action`. Only `action=input` accepts and requires `input`; only `action=stop` accepts optional `wait_ms` (default 1000). Unrelated parameters are rejected. Every successful result includes its `action`, with separate result schemas for sent input, acknowledged control and stop confirmation. The tool is conservatively marked non-idempotent because input and interruption can repeat side effects; repeated stop remains safe as described below. Management access exposes seven tools; device-scoped access exposes six, excluding `create_client`.
+`session_control` requires `session_id` and `action`. Only `action=input` accepts and requires `input`; only `action=stop` accepts optional `wait_ms` (default 1000). Unrelated parameters are rejected. Every successful result includes its `action`, with separate result schemas for sent input, acknowledged control and stop confirmation. The tool is conservatively marked non-idempotent because input and interruption can repeat side effects; repeated stop remains safe as described below. Management access exposes eight tools; device-scoped access exposes seven, excluding `create_client`.
 
 ```json
 {"session_id":"…","action":"input","input":"pwd\n"}
@@ -142,3 +143,13 @@ Close the client before deleting the cache. One-command connection does not inst
 ### Language
 
 The desktop client follows your system language. Choose English, Simplified Chinese, or the system default from **Language / 语言** in the application menu, then restart to apply it. The CLI and server follow the terminal locale; set `AGENTERM_LANG=en` or `AGENTERM_LANG=zh-CN` to override it. Command output remains unchanged.
+
+## P2P file transfer
+
+`p2p-cli status` shows endpoint names, IDs, connection states, copy progress and recent throughput (`copy.bytes_per_second`, over an approximately three-second window, in B/s). Use `status --verbose` (or `-v`) for the task's average throughput (`copy.average_bytes_per_second`) and system, path, connection and keepalive diagnostics. Failure reasons appear in both modes.
+
+Call `p2p_transfer_start`, then execute the returned shell or PowerShell script matching the Agent execution environment. It downloads, verifies and starts the local component. The MCP result confirms remote signaling registration, not a completed P2P connection; check `status` to confirm connectivity. Bootstrap output includes `executable`: use that absolute path for subsequent `status`, `cp` and `stop` commands without changing PATH.
+
+`cp` operands use `CLIENT_ID:PATH`; swap source and destination to reverse direction. The first version supports one connection and individual files. Existing targets are rejected unless `--overwrite` is explicit. `stop` cancels the current copy and notifies both peers to disconnect. Client exit stops its managed connection. Updated Server and Client builds are required, with matching native assets in the Server’s embedded `components.zip`. Files use an encrypted direct connection, with no relay fallback.
+
+[Component usage, asset distribution and tests](../tools/p2p-cli/README.md).

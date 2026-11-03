@@ -13,6 +13,7 @@ import (
 )
 
 func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
+	p2pTestAssets(t)
 	h := newMultiHarness(t, 0)
 	admin := connectMCPClient(t, h, "admin-test")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -113,8 +114,10 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	if waited["status"] != "waiting" || len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("unexpected connection timeout result: %v", waited)
 	}
-	ws, _ := h.connect(t, token, "schema device")
+	ws, clientID := h.connect(t, token, "schema device")
+	enableP2PTestClient(h, clientID)
 	go serveTestDevice(ws, "schema", nil, nil)
+	call("p2p_transfer_start", map[string]any{"client_token": token, "client_id": clientID})
 	connected := call("list_clients", map[string]any{"client_token": token, "wait_ms": 300000})
 	if connected["status"] != "connected" || len(connected["clients"].([]any)) != 1 {
 		t.Fatalf("unexpected 300-second connection check result: %v", connected)
@@ -138,7 +141,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	}
 	call("session_read", map[string]any{"client_token": token, "session_id": id})
 	call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
-	if len(seen) != 7 {
+	if len(seen) != 8 {
 		t.Fatalf("validated %d tools", len(seen))
 	}
 }

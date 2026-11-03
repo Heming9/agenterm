@@ -35,12 +35,13 @@ Token 成功连接过后，只要仍有设备在线就保持有效。最后一�
 
 ## MCP 工具与返回结果
 
-当前源码构建会为全部七个工具提供明确的返回 Schema 和行为标注。请以实际连接 Server 的 `tools/list` 响应为准，既有部署或较旧发布的二进制可能仍提供旧版 Schema。
+当前源码构建会为全部八个工具提供明确的返回 Schema 和行为标注。请以实际连接 Server 的 `tools/list` 响应为准，既有部署或较旧发布的二进制可能仍提供旧版 Schema。
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
 | `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
 | `list_clients` | 查看设备或等待连接。 | `clients`；等待时还返回 `status`。 |
+| `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
 | `execute_command` | 运行短时非交互命令并等待结果。 | `stdout`、`stderr`、`exit_code`、`timed_out`、`canceled`、`truncated`，以及可选 `error`。 |
 | `session_start` | 启动交互或长时间运行的进程。 | `session_id`、初始 `cursor=0`。 |
 | `session_read` | 分页读取输出并检查会话是否完成。 | `output`、`next_cursor`、`has_more`、`truncated`、`done`；终态还包含退出、超时、取消及错误字段。 |
@@ -51,7 +52,7 @@ Token 成功连接过后，只要仍有设备在线就保持有效。最后一�
 
 通过 `create_client` 生成连接说明后，agent 必须先根据与用户交流的语言完整展示 `display_text`，仅翻译标题和说明文字；使用英语交流时原样展示。保留所有段落、顺序、换行和纯文本格式，命令、URL、连接令牌、有效期数值及截止时间保持原样，不得省略内容或添加 Markdown 格式。然后使用返回的 `client_token` 调用 `list_clients`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
 
-`session_control` 必须提供 `session_id` 和 `action`。仅 `action=input` 可带且必须带 `input`；仅 `action=stop` 可附带 `wait_ms`（默认 1000）。其他 action 不得带这些参数，混用会被拒绝。每个成功结果均带 `action`，发送输入、控制送达和停止确认使用不同的返回 Schema。由于输入和中断可能重复产生副作用，整个工具保守标注为非幂等；重复 stop 仍按下文语义处理。管理访问可见七个工具；设备范围访问可见六个，不含 `create_client`。
+`session_control` 必须提供 `session_id` 和 `action`。仅 `action=input` 可带且必须带 `input`；仅 `action=stop` 可附带 `wait_ms`（默认 1000）。其他 action 不得带这些参数，混用会被拒绝。每个成功结果均带 `action`，发送输入、控制送达和停止确认使用不同的返回 Schema。由于输入和中断可能重复产生副作用，整个工具保守标注为非幂等；重复 stop 仍按下文语义处理。管理访问可见八个工具；设备范围访问可见七个，不含 `create_client`。
 
 ```json
 {"session_id":"…","action":"input","input":"pwd\n"}
@@ -142,3 +143,13 @@ Token 成功连接过后，只要仍有设备在线就保持有效。最后一�
 ### 语言设置
 
 桌面客户端默认跟随系统语言，可在应用菜单的 **Language / 语言** 中选择英文、简体中文或跟随系统，重启后生效。CLI 和 Server 跟随终端语言环境，可通过 `AGENTERM_LANG=en` 或 `AGENTERM_LANG=zh-CN` 指定语言。命令输出保持原样。
+
+## P2P 文件传输
+
+`p2p-cli status` 默认只显示双方名称、ID、连接状态、传输进度和实时速率（`copy.bytes_per_second`，约 3 秒滑动窗口，单位 B/s）；`status --verbose`（或 `-v`）额外查看本次任务平均速率（`copy.average_bytes_per_second`）以及系统、路径、连接标识和保活等诊断信息。失败原因在两种模式下都会显示。
+
+调用 `p2p_transfer_start` 后，按 Agent 实际执行环境选择返回的 shell 或 PowerShell 脚本。脚本自动下载、校验并启动本机组件；返回时远端只保证已注册协商，请用组件的 `status` 确认连接成功。脚本输出包含 `executable`，后续用该绝对路径执行 `status`、`cp` 和 `stop`，无需修改系统 PATH。
+
+`cp` 使用 `客户端ID:路径`，交换源和目标即可反向复制。首版只支持单文件、单连接，默认拒绝覆盖，显式 `--overwrite` 才覆盖；`stop` 取消当前复制并通知双方断开。Client 退出会停止其管理的连接。Server 和 Client 都需要新版，且 Server 内嵌的 `components.zip` 必须包含匹配平台的组件包。文件内容仅走加密 P2P 直连，连接失败不回退中转。
+
+[组件用法、服务端组件分发和测试](../tools/p2p-cli/README.md)。

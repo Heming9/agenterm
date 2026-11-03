@@ -36,11 +36,20 @@ jobs:
       cli: ${{ steps.plan.outputs.cli }}
       server: ${{ steps.plan.outputs.server }}
       gui: ${{ steps.plan.outputs.gui }}
+      unified: ${{ steps.layout.outputs.unified }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ inputs.source_ref || github.ref }}
+      - name: Detect component layout at the selected source
+        id: layout
+        run: |
+          if [ -f scripts/build_components.py ] && [ -f internal/components/assets/components.zip ]; then
+            echo 'unified=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'unified=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.10'
@@ -139,8 +148,16 @@ jobs:
             agenterm-client-gui-windows-amd64.zip
           if-no-files-found: error
 
-  server:
+  p2p:
     needs: plan
+    if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified == 'true'
+    uses: ./.github/workflows/p2p-cli.yml
+    with:
+      source_ref: ${{ needs.plan.outputs.sha }}
+
+  server:
+    needs: [plan, p2p]
+    if: always() && needs.plan.result == 'success' && (needs.p2p.result == 'success' || needs.p2p.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -160,7 +177,16 @@ jobs:
           for asset in release-plan/reused/agenterm-client-cli-* release-plan/reused/agenterm-server-*; do
             [ ! -f "$asset" ] || cp "$asset" dist/
           done
-      - name: Install release compression tools
+          if [ -f release-plan/reused/components.zip ]; then
+            cp release-plan/reused/components.zip dist/
+          fi
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified == 'true'
+        with:
+          name: p2p-cli-distribution
+          path: component-builds/p2p-assets
+      - name: Install legacy release compression tools
+        if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xz-utils
@@ -172,6 +198,7 @@ jobs:
           CGO_ENABLED: '0'
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
           BUILD_CLI: ${{ needs.plan.outputs.cli }}
+          UNIFIED_COMPONENTS: ${{ needs.plan.outputs.unified }}
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._+-]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
@@ -190,15 +217,20 @@ jobs:
               done
             done
           fi
-          # Share the server's deterministic gzip/ZIP writer and checksum rules.
-          go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
+          if [ "$UNIFIED_COMPONENTS" = true ]; then
+            # One packer owns exact downloads and the archive embedded by every server.
+            python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output dist
+            cp internal/components/assets/components.zip dist/components.zip
+          else
+            # Rebuild older source refs with their own packer and embedded layout.
+            go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
+            xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
+          fi
           if [ "$BUILD_CLI" != true ]; then
             for archive in release-plan/reused/agenterm-client-cli-*.tar.gz release-plan/reused/agenterm-client-cli-*.zip; do
               cmp "$archive" "dist/$(basename "$archive")"
             done
           fi
-          # Only the solid archive is embedded, never the individual downloads.
-          xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
           # Verify the exact executable bytes before hashing and embedding.
           for archive in dist/agenterm-client-cli-*.tar.gz; do
             name=$(basename "$archive" .tar.gz)
@@ -208,7 +240,7 @@ jobs:
             name=$(basename "$archive" .zip).exe
             unzip -p "$archive" "$name" | cmp - "dist/$name"
           done
-          # Decode the real embedded bundle and compare every generated download
+          # Extract the real embedded bundle and compare every download
           # and checksum with the release files, before building any server.
           AGENTERM_RELEASE_DIR="$PWD/dist" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           for os in darwin linux windows; do
@@ -225,14 +257,17 @@ jobs:
           # Keep distribution sizes visible when dependencies or assets change.
           {
             printf '| Artifact | Bytes |\n| --- | ---: |\n'
-            for artifact in dist/agenterm-*; do
+            for artifact in dist/agenterm-* dist/components.zip; do
+              [ -f "$artifact" ] || continue
               printf '| %s | %s |\n' "$(basename "$artifact")" "$(wc -c < "$artifact" | tr -d ' ')"
             done
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: build-server
-          path: dist/agenterm-*
+          path: |
+            dist/agenterm-*
+            dist/components.zip
           if-no-files-found: error
 
   publish:

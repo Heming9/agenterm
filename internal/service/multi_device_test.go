@@ -130,6 +130,10 @@ func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, re
 			return
 		}
 		switch m.Type {
+		case "p2p_start":
+			if registerTestP2P(m.P2P.ConfigBase64) != nil {
+				return
+			}
 		case "exec":
 			if m.Command == "parallel" {
 				arrived <- label
@@ -332,9 +336,9 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 		for _, tool := range payload.Result.Tools {
 			names[tool.Name] = true
 		}
-		want := 6
+		want := 7
 		if auth == "admin-test" {
-			want = 7
+			want = 8
 		}
 		if len(names) != want || !names["list_clients"] || names["wait_for_client"] || names["wait_for_clients"] {
 			t.Fatal(names)

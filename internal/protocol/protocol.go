@@ -41,6 +41,7 @@ const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 
 // SessionControlsHeader advertises supported acknowledged session operations.
 const SessionControlsHeader = "X-Agenterm-Session-Controls"
+const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.
 const HeartbeatHeader = "X-Agenterm-Heartbeat"
@@ -387,13 +388,22 @@ type Message struct {
 	RequestID string `json:"request_id,omitempty"`
 	Command   string `json:"command,omitempty"`
 	ExecOptions
-	Interactive bool   `json:"interactive,omitempty"`
-	Input       string `json:"input,omitempty"`
-	Output      string `json:"output,omitempty"`
-	Stream      string `json:"stream,omitempty"`
-	ExitCode    int    `json:"exit_code,omitempty"`
-	TimedOut    bool   `json:"timed_out,omitempty"`
-	Canceled    bool   `json:"canceled,omitempty"`
-	Error       string `json:"error,omitempty"`
-	LatencyMS   int64  `json:"latency_ms,omitempty"`
+	Interactive bool       `json:"interactive,omitempty"`
+	Input       string     `json:"input,omitempty"`
+	Output      string     `json:"output,omitempty"`
+	Stream      string     `json:"stream,omitempty"`
+	ExitCode    int        `json:"exit_code,omitempty"`
+	TimedOut    bool       `json:"timed_out,omitempty"`
+	Canceled    bool       `json:"canceled,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	LatencyMS   int64      `json:"latency_ms,omitempty"`
+	P2P         *P2PLaunch `json:"p2p,omitempty"`
+}
+
+// P2PLaunch runs a built-in bootstrap without putting its short-lived credential
+// in the displayed command. File payloads are never carried in this protocol.
+type P2PLaunch struct {
+	Script       string `json:"script"`
+	StopScript   string `json:"stop_script"`
+	ConfigBase64 string `json:"config_base64"`
 }

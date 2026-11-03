@@ -1,0 +1,34 @@
+[Unit]
+Description=Agenterm isolated staging server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agenterm-staging
+Group=agenterm-staging
+EnvironmentFile=/etc/agenterm-staging.env
+Environment=AGENTERM_SYSTEMD_UNIT=agenterm-staging
+Environment=AGENTERM_LOG_FORMAT=json
+Environment=AGENTERM_RUNTIME_LOG_FILE=stderr
+ExecStart=/usr/bin/python3 /opt/agenterm-staging/current/service_manager.py run -- /opt/agenterm-staging/current/agenterm-server --listen 127.0.0.1:7776 --public-url https://agenterm.net --url-prefix /staging --passwd ${AGENTERM_MANAGEMENT_KEY} --max-clients-per-ip 4 --client-ip-header X-Real-IP
+ExecReload=/usr/bin/python3 /opt/agenterm-staging/current/service_manager.py reload -- /opt/agenterm-staging/current/agenterm-server --listen 127.0.0.1:7776 --public-url https://agenterm.net --url-prefix /staging --passwd ${AGENTERM_MANAGEMENT_KEY} --max-clients-per-ip 4 --client-ip-header X-Real-IP
+NotifyAccess=all
+TimeoutStartSec=120
+TimeoutStopSec=80
+KillMode=control-group
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+StateDirectory=agenterm-staging
+UMask=0077
+# Startup connection instructions contain the management credential.
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

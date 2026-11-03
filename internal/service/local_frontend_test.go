@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,7 +38,7 @@ func (c localControl) call(ctx context.Context, method string, in, out any) erro
 }
 
 func (s *runtimeState) testFrontend() *frontend {
-	return &frontend{control: localControl{s}, clientURL: s.clientURL}
+	return &frontend{control: localControl{s}, clientURL: s.clientURL, p2pAssets: os.Getenv("P2P_CLI_ASSETS_DIR")}
 }
 
 func (s *runtimeState) mcp(w http.ResponseWriter, r *http.Request) { s.testFrontend().mcp(w, r) }

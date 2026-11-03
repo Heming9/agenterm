@@ -22,6 +22,9 @@ import (
 	"time"
 
 	"agenterm/internal/invite"
+	"agenterm/internal/p2p"
+	"crypto/sha256"
+	"encoding/hex"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -32,6 +35,9 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	t.Setenv("TMPDIR", dir)
+	// A standalone Server must use its embedded components even when an old
+	// deployment still supplies the former external P2P directory setting.
+	t.Setenv("P2P_CLI_ASSETS_DIR", filepath.Join(dir, "no-external-components"))
 	paths, err := pathsForInstance(defaultInstance)
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +80,26 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	go func() { first.done <- first.cmd.Wait(); logs.Close() }()
 	t.Cleanup(func() { _ = first.cmd.Process.Kill() })
 	waitReady(t, origin+"/healthz", http.DefaultTransport, first)
+	componentDirs, err := filepath.Glob(filepath.Join(paths.Dir, "components", "*", "p2p-cli"))
+	if err != nil || len(componentDirs) != 1 {
+		t.Fatalf("server did not extract its embedded components: %v %v", componentDirs, err)
+	}
+	peerManifest, err := p2p.Load(componentDirs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range peerManifest.Artifacts {
+		response, err := http.Get(origin + "/agenterm/p2p/downloads/" + artifact.File)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		hash := sha256.Sum256(data)
+		if err != nil || response.StatusCode != 200 || hex.EncodeToString(hash[:]) != artifact.SHA256 {
+			t.Fatalf("embedded P2P download differs: %s HTTP %d %v", artifact.File, response.StatusCode, err)
+		}
+	}
 	config, err := controlCall[runtimeConfig](context.Background(), c, "config", struct{}{})
 	if err != nil || config.PID == first.cmd.Process.Pid {
 		t.Fatalf("independent runtime: %+v %v", config, err)

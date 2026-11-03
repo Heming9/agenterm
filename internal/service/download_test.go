@@ -11,7 +11,7 @@ import (
 	"testing/fstest"
 )
 
-func installerFixture(t *testing.T, client []byte) installer.DownloadFiles {
+func installerFixture(t *testing.T, client []byte) map[string][]byte {
 	t.Helper()
 	source := make(fstest.MapFS)
 	for _, platform := range []string{"macos", "linux", "windows"} {
@@ -32,7 +32,11 @@ func installerFixture(t *testing.T, client []byte) installer.DownloadFiles {
 
 func TestGeneratedReleaseDownloads(t *testing.T) {
 	assets := installerFixture(t, []byte(strings.Repeat("client output\n", 100)))
-	h := downloadHandler("v1.2.3", assets)
+	source := make(fstest.MapFS)
+	for name, data := range assets {
+		source[name] = &fstest.MapFile{Data: data}
+	}
+	h := downloadHandler("v1.2.3", source)
 	for name, data := range assets {
 		t.Run(name, func(t *testing.T) {
 			for _, method := range []string{"GET", "HEAD"} {
@@ -60,8 +64,8 @@ func TestGeneratedReleaseDownloads(t *testing.T) {
 func TestReleaseDownloads(t *testing.T) {
 	assets := fstest.MapFS{
 		"agenterm-client-cli-linux-amd64.tar.gz": {Data: []byte("archive")},
-		"SHA256SUMS":                      {Data: []byte("manifest")},
-		"README.txt":                      {Data: []byte("private build note")},
+		"SHA256SUMS":                             {Data: []byte("manifest")},
+		"README.txt":                             {Data: []byte("private build note")},
 	}
 	h := downloadHandler("v1.2.3", assets)
 	for _, tc := range []struct {

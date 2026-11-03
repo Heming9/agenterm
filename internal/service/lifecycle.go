@@ -1,7 +1,7 @@
 package service
 
 import (
-	"agenterm/internal/installer"
+	"agenterm/internal/components"
 	"agenterm/internal/logging"
 	"context"
 	"errors"
@@ -32,6 +32,7 @@ import (
 type frontend struct {
 	control    control
 	clientURL  string
+	p2pAssets  string
 	mcpOnce    sync.Once
 	mcpHandler http.Handler
 	stopping   atomic.Bool
@@ -294,7 +295,7 @@ func runtimeMain(options *runtimeLaunchOptions, controlSocket string, output io.
 func serverMain(paths instancePaths, stdio bool, expected runtimeConfig) error {
 	c := newRuntimeClient(paths.Runtime)
 	defer c.http.CloseIdleConnections()
-	assets, err := installer.Assets()
+	assets, err := components.Prepare(paths.Dir)
 	if err != nil {
 		return err
 	}
@@ -302,14 +303,14 @@ func serverMain(paths instancePaths, stdio bool, expected runtimeConfig) error {
 	defer stop()
 	ctx, cancel := context.WithCancel(signals)
 	defer cancel()
-	s := &frontend{control: c, clientURL: expected.ClientURL, shutdown: cancel}
+	s := &frontend{control: c, clientURL: expected.ClientURL, p2pAssets: assets.P2PDirectory(), shutdown: cancel}
 	candidate := paths.backendSocket()
 	listener, err := listenUnix(candidate)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	srv := &http.Server{Handler: s.socketHandler(s.routes(downloadTag, assets)), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: s.socketHandler(s.routes(downloadTag, assets.ClientCLI())), ReadHeaderTimeout: 10 * time.Second}
 	activate := func() error {
 		ready, stop := context.WithTimeout(ctx, 10*time.Second)
 		defer stop()

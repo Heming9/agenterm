@@ -11,4 +11,3 @@
 **/*_test.go
 **/.DS_Store
 internal/installer/assets/**
-!internal/installer/assets/clients.tar.xz

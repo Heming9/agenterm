@@ -240,6 +240,10 @@ func (s *frontend) sessionControl(ctx context.Context, secret string, a sessionA
 func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 	ms := mcp.NewServer(&mcp.Implementation{Name: "agenterm", Version: version.Current}, &mcp.ServerOptions{Instructions: serverText("mcp.connection.context") + "\n\n" + serverText("mcp.execution.workflow")})
 	ms.AddReceivingMiddleware(observeMCP)
+	addTargetTool(s, ms, admin, "p2p_transfer_start", "mcp.p2p.transfer.start", func(ctx context.Context, secret string, a p2pStartArgs) (*mcp.CallToolResult, p2pStartResult, error) {
+		out, err := s.p2pTransferStart(ctx, secret, a)
+		return nil, out, err
+	})
 	addTargetTool(s, ms, admin, "list_clients", "mcp.list.clients", func(ctx context.Context, secret string, a listClientsArgs) (*mcp.CallToolResult, map[string]any, error) {
 		clients, err := controlCall[[]clientInfo](ctx, s.control, "clients", toolRequest[listClientsArgs]{Secret: secret, Args: a})
 		if err != nil {

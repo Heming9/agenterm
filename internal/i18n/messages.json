@@ -990,5 +990,37 @@
   "runtime.compatibility.manual.unknown": {
     "en": "Confirm the runtime PID first, then run: kill -TERM <PID>",
     "zh-CN": "先确认 runtime PID，再执行：kill -TERM <PID>"
+  },
+  "mcp.p2p.transfer.start": {
+    "en": "Start the remote p2p-cli bootstrap and wait only until it registers for negotiation. Returns private shell and PowerShell bootstrap scripts: execute the one matching the Agent execution environment to download and start the local component. Bootstrap output includes executable: use that absolute path for status, cp and stop locally. File bytes use a direct encrypted peer connection, never this MCP service. Repeated calls reuse the active connection for this client; stop the existing P2P connection before starting a new one.",
+    "zh-CN": "启动远端 p2p-cli 初始化脚本，仅等待远端注册协商后返回。返回的 shell 和 PowerShell 脚本含私有接入凭据；请按 Agent 实际执行环境选择并执行，以下载并启动本机组件。脚本输出包含 executable，请用该绝对路径在本机执行 status、cp 和 stop。文件通过加密直连传输，不经过 MCP 服务。重复调用复用该客户端的活动连接，重新创建前请停止现有 P2P 连接。"
+  },
+  "mcp.result.connection_id": {
+    "en": "P2P connection identifier.",
+    "zh-CN": "P2P 连接标识。"
+  },
+  "mcp.result.local_client_id": {
+    "en": "Local p2p-cli identifier used in CLIENT:PATH copy operands.",
+    "zh-CN": "用于 CLIENT:PATH 复制路径的本机 p2p-cli 标识。"
+  },
+  "mcp.result.remote_client_id": {
+    "en": "Remote p2p-cli identifier used in CLIENT:PATH copy operands.",
+    "zh-CN": "用于 CLIENT:PATH 复制路径的远端 p2p-cli 标识。"
+  },
+  "mcp.result.state": {
+    "en": "Current P2P initialization state; waiting_for_agent means the remote registered, not that P2P connected.",
+    "zh-CN": "P2P 初始化状态；waiting_for_agent 表示远端已注册，不表示直连已经成功。"
+  },
+  "mcp.result.shell_script": {
+    "en": "Private POSIX shell bootstrap for the Agent environment on macOS or Linux.",
+    "zh-CN": "供 macOS 或 Linux Agent 执行环境使用的私有 shell 初始化脚本。"
+  },
+  "mcp.result.powershell_script": {
+    "en": "Private PowerShell bootstrap for the Agent environment on Windows.",
+    "zh-CN": "供 Windows Agent 执行环境使用的私有 PowerShell 初始化脚本。"
+  },
+  "mcp.result.p2p": {
+    "en": "Whether the client supports built-in p2p-cli initialization.",
+    "zh-CN": "客户端是否支持内置 p2p-cli 初始化。"
   }
 }

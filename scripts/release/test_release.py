@@ -208,7 +208,7 @@ class ReleaseTests(unittest.TestCase):
             for name in release.assets(component):
                 (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
-        self.assertEqual(len(list(directory.iterdir())), 22)
+        self.assertEqual(len(list(directory.iterdir())), 23)
 
     def test_obsolete_release_attachments_are_rejected(self):
         self.prepare("all")
@@ -232,7 +232,7 @@ class ReleaseTests(unittest.TestCase):
             (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
         hashes = json.loads((Path("release-plan") / release.REUSED_DIGESTS).read_text())
-        self.assertEqual(len(list(directory.iterdir())), 22)  # 21 program files and the manifest.
+        self.assertEqual(len(list(directory.iterdir())), 23)  # 21 program files, components.zip and the release manifest.
         self.assertEqual(set(hashes), {*release.assets("cli"), *release.assets("gui")})
         release.verify(directory, list(hashes), hashes)
         for name in ["install.sh", "install.ps1", "SHA256SUMS", release.REUSED_DIGESTS]:
