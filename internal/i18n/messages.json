@@ -992,8 +992,8 @@
     "zh-CN": "先确认 runtime PID，再执行：kill -TERM <PID>"
   },
   "mcp.p2p.transfer.start": {
-    "en": "Start the remote p2p-cli bootstrap and wait only until it registers for negotiation. Returns private shell and PowerShell bootstrap scripts: execute the one matching the Agent execution environment to download and start the local component. Bootstrap output includes executable: use that absolute path for status, cp and stop locally. File bytes use a direct encrypted peer connection, never this MCP service. Repeated calls reuse the active connection for this client; stop the existing P2P connection before starting a new one.",
-    "zh-CN": "启动远端 p2p-cli 初始化脚本，仅等待远端注册协商后返回。返回的 shell 和 PowerShell 脚本含私有接入凭据；请按 Agent 实际执行环境选择并执行，以下载并启动本机组件。脚本输出包含 executable，请用该绝对路径在本机执行 status、cp 和 stop。文件通过加密直连传输，不经过 MCP 服务。重复调用复用该客户端的活动连接，重新创建前请停止现有 P2P 连接。"
+    "en": "Recommended only when large files need to be transferred between the local machine (the Agent execution environment) and a connected remote computer. Start the remote p2p-cli bootstrap and wait only until it registers for negotiation. Returns private shell and PowerShell bootstrap scripts: execute the one matching the Agent execution environment to download and start the local component. Bootstrap output includes executable: use that absolute path for status, cp and stop locally. File bytes use a direct encrypted peer connection, never this MCP service. Repeated calls reuse the active connection for this client; stop the existing P2P connection before starting a new one.",
+    "zh-CN": "仅建议在本机与已连接的远程电脑之间需要传输大文件时使用。启动远端 p2p-cli 初始化脚本，仅等待远端注册协商后返回。返回的 shell 和 PowerShell 脚本含私有接入凭据；请按 Agent 实际执行环境选择并执行，以下载并启动本机组件。脚本输出包含 executable，请用该绝对路径在本机执行 status、cp 和 stop。文件通过加密直连传输，不经过 MCP 服务。重复调用复用该客户端的活动连接，重新创建前请停止现有 P2P 连接。"
   },
   "mcp.result.connection_id": {
     "en": "P2P connection identifier.",
