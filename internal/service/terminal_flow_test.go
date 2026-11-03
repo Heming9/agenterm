@@ -58,7 +58,7 @@ func TestAnonymousCommandsCloseAndReleaseSlots(t *testing.T) {
 		if failed {
 			wantCode = 1
 		}
-		if result["status"] != "completed" || result["command_done"] != true || result["done"] != true || result["session_alive"] != false || result["persistent"] != false || result["promoted"] != false || result["terminal_name"] != "" || result["session_created"] != true || result["canceled"] != false || result["exit_code"] != wantCode || result["output"] != "unset" {
+		if result["status"] != "completed" || result["command_done"] != true || result["done"] != true || result["session_alive"] != false || result["persistent"] != false || result["promoted"] != false || result["session_created"] != true || result["canceled"] != false || result["exit_code"] != wantCode || result["output"] != "unset" {
 			t.Fatalf("iteration %d: %v", i, result)
 		}
 	}
@@ -82,8 +82,8 @@ func TestAnonymousWaitRetainsOriginalShellAndRandomName(t *testing.T) {
 		inspect = "[Console]::Write($keep)"
 	}
 	result := h.call(t, token, "execute_command", map[string]any{"command": command, "wait_ms": 50}, false).(map[string]any)
-	name, ok := result["terminal_name"].(string)
-	if !ok || !strings.HasPrefix(name, "term-") || result["persistent"] != true || result["promoted"] != true || result["session_alive"] != true || result["done"] != false || result["status"] != "running" {
+	name, ok := result["session_id"].(string)
+	if !ok || name == "" || result["persistent"] != true || result["promoted"] != true || result["session_alive"] != true || result["done"] != false || result["status"] != "running" {
 		t.Fatal(result)
 	}
 	output, completed := readExecutionToCompletion(t, h, token, result)
@@ -94,7 +94,7 @@ func TestAnonymousWaitRetainsOriginalShellAndRandomName(t *testing.T) {
 	if err != nil || string(executions) != "x" {
 		t.Fatalf("command executed more than once: side effect=%q err=%v", executions, err)
 	}
-	reused := h.call(t, token, "execute_command", map[string]any{"terminal_name": name, "command": inspect}, false).(map[string]any)
+	reused := h.call(t, token, "execute_command", map[string]any{"session_id": name, "command": inspect}, false).(map[string]any)
 	if reused["session_id"] != result["session_id"] || reused["session_created"] != false || reused["output"] != "retained" || reused["persistent"] != true || reused["promoted"] != true || reused["done"] != false {
 		t.Fatal(reused)
 	}
@@ -106,7 +106,7 @@ func TestZeroWaitAnonymousIsPersistentEvenWhenCommandFinishesQuickly(t *testing.
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
 	result := h.call(t, token, "execute_command", map[string]any{"command": "echo quick", "wait_ms": 0}, false).(map[string]any)
-	if result["persistent"] != true || result["promoted"] != true || result["terminal_name"] == "" || result["done"] != false {
+	if result["persistent"] != true || result["promoted"] != true || result["session_id"] == "" || result["done"] != false {
 		t.Fatal(result)
 	}
 	_, completed := readExecutionToCompletion(t, h, token, result)
@@ -116,23 +116,42 @@ func TestZeroWaitAnonymousIsPersistentEvenWhenCommandFinishesQuickly(t *testing.
 	h.call(t, token, "session_control", map[string]any{"session_id": result["session_id"], "action": "stop"}, false)
 }
 
-func TestClosedNameCreatesNewInstanceAndRejectsOldID(t *testing.T) {
+func TestSuppliedSessionIDRecreatesClosedShell(t *testing.T) {
 	requirePOSIXFlow(t)
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"terminal_name": "workspace", "command": "keep=old"}, false).(map[string]any)
-	if first["terminal_name"] != "workspace" || first["persistent"] != true || first["promoted"] != false {
+	first := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "keep=old"}, false).(map[string]any)
+	if first["session_id"] != "workspace" || first["persistent"] != true || first["promoted"] != false {
 		t.Fatal(first)
 	}
 	h.call(t, token, "session_control", map[string]any{"session_id": first["session_id"], "action": "stop"}, false)
-	next := h.call(t, token, "execute_command", map[string]any{"terminal_name": "workspace", "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
-	if next["session_created"] != true || next["session_id"] == first["session_id"] || next["terminal_name"] != "workspace" || next["output"] != "new" {
+	next := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
+	if next["session_created"] != true || next["session_id"] != first["session_id"] || next["session_id"] != "workspace" || next["output"] != "new" {
 		t.Fatal(next)
 	}
-	h.call(t, token, "execute_command", map[string]any{"session_id": first["session_id"], "command": "echo never"}, true)
-	reused := h.call(t, token, "execute_command", map[string]any{"terminal_name": "workspace", "command": "echo alive"}, false).(map[string]any)
+	reused := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "echo alive"}, false).(map[string]any)
 	if reused["session_id"] != next["session_id"] || reused["session_created"] != false {
 		t.Fatal(reused)
+	}
+}
+
+func TestSuppliedSessionIDIsIsolatedBetweenTokens(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	tokens := []string{h.create(t, false), h.create(t, false)}
+	for i, token := range tokens {
+		label := []string{"first", "second"}[i]
+		ws, _ := h.connect(t, token, label)
+		go serveTestDevice(ws, label, nil, nil)
+		result := h.call(t, token, "execute_command", map[string]any{"session_id": "shared", "command": "quick"}, false).(map[string]any)
+		if result["session_id"] != "shared" || result["session_created"] != true || result["output"] != label+":quick" {
+			t.Fatal(result)
+		}
+	}
+	for i, token := range tokens {
+		result := h.call(t, token, "session_read", map[string]any{"session_id": "shared"}, false).(map[string]any)
+		if result["output"] != []string{"first:quick", "second:quick"}[i] {
+			t.Fatal(result)
+		}
 	}
 }

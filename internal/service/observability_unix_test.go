@@ -114,7 +114,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	readLogRecords(t, serverLog, func(entry map[string]any) bool {
 		return entry["msg"] == "mcp tool completed" && entry["request_id"] == id && entry["tool"] == "execute_command"
 	})
-	session := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": `read value; printf '%s' "$value"`}, false).(map[string]any)
+	session := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": `read value; printf '%s' "$value"`}, false).(map[string]any)
 	sessionID := session["session_id"].(string)
 	h.call(t, token, "session_control", map[string]any{"session_id": sessionID, "action": "input", "input": "private-session-input\n"}, false)
 	sessionLogs := readLogRecords(t, runtimeLog, func(entry map[string]any) bool {

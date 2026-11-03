@@ -49,16 +49,16 @@ type Callbacks struct {
 }
 
 type connection struct {
-	ws            *websocket.Conn
-	write         sync.Mutex
-	mu            sync.Mutex
-	terminalNames map[string]string
-	running       map[string]*process
-	log           io.Writer
-	command       func(CommandEvent)
-	output        func(string, []byte)
-	workers       sync.WaitGroup
-	outputMu      sync.Mutex
+	ws    *websocket.Conn
+	write sync.Mutex
+	mu    sync.Mutex
+
+	running  map[string]*process
+	log      io.Writer
+	command  func(CommandEvent)
+	output   func(string, []byte)
+	workers  sync.WaitGroup
+	outputMu sync.Mutex
 }
 
 func (c *connection) commandStarted(m protocol.Message) CommandEvent {

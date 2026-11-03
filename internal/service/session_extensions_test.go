@@ -136,7 +136,7 @@ func TestSessionReadLimitThroughMCP(t *testing.T) {
 	p.accept(protocol.Message{Type: "output", Output: strings.Repeat("x", 2*maxSessionReadBytes)})
 	p.accept(protocol.Message{Type: "done", ExitCode: 0})
 	h.s.mu.Lock()
-	h.s.sessions = map[string]*session{p.id: p}
+	h.s.sessions = map[string]*session{sessionKey(p.owner, p.id): p}
 	h.s.mu.Unlock()
 	r := h.call(t, token, "session_read", map[string]any{"session_id": p.id}, false).(map[string]any)
 	if len(r["output"].(string)) != defaultSessionReadBytes || r["has_more"] != true || r["done"] != true {
@@ -161,7 +161,7 @@ func TestSessionListIsolationFilterAndDisconnectedHistory(t *testing.T) {
 	go serveTestDevice(wsB, "B", nil, nil)
 	go serveTestDevice(wsOther, "other", nil, nil)
 	start := func(auth, clientID, command string) string {
-		return h.call(t, auth, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "client_id": clientID, "command": command}, false).(map[string]any)["session_id"].(string)
+		return h.call(t, auth, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "client_id": clientID, "command": command}, false).(map[string]any)["session_id"].(string)
 	}
 	idA := start(token, a, "first")
 	idB := start(token, b, "second")
@@ -209,9 +209,9 @@ func TestSessionListIsolationFilterAndDisconnectedHistory(t *testing.T) {
 	}
 	decoded, _ := protocol.Decode(token)
 	h.s.mu.Lock()
-	h.s.sessions[idA].mu.Lock()
-	h.s.sessions[idA].ended = time.Now().Add(-31 * time.Minute)
-	h.s.sessions[idA].mu.Unlock()
+	h.s.sessions[sessionKey(h.s.tokens[token], idA)].mu.Lock()
+	h.s.sessions[sessionKey(h.s.tokens[token], idA)].ended = time.Now().Add(-31 * time.Minute)
+	h.s.sessions[sessionKey(h.s.tokens[token], idA)].mu.Unlock()
 	h.s.mu.Unlock()
 	if len(h.s.listSessions(decoded.Secret, "")) != 1 {
 		t.Fatal("expired finished session remained visible")
@@ -237,7 +237,7 @@ func TestSessionControlAcknowledgmentAndErrors(t *testing.T) {
 			}
 		}
 	}()
-	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
 	r := h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, true).(map[string]any)
 	if !strings.Contains(r["error"].(string), "raw terminal") {
 		t.Fatalf("client failure was lost: %v", r)
@@ -281,7 +281,7 @@ func TestSessionControlsRequireAdvertisedCapabilities(t *testing.T) {
 			if err != nil || len(clients) != 1 || len(clients[0].Environment.SessionControls) != map[string]int{"": 0, "eof": 1}[capabilities] {
 				t.Fatalf("capability discovery: %v %v", clients, err)
 			}
-			id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
+			id := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
 			h.call(t, token, "session_control", map[string]any{"action": "interrupt", "session_id": id}, true)
 			h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, capabilities == "")
 		})
@@ -316,7 +316,7 @@ func TestConcurrentSessionControlsMatchTheirAcknowledgments(t *testing.T) {
 			_ = ws.WriteJSON(reply)
 		}
 	}()
-	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "test"}, false).(map[string]any)["session_id"].(string)
 	decoded, _ := protocol.Decode(token)
 	p, err := h.s.getSession(decoded.Secret, id)
 	if err != nil {

@@ -40,7 +40,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 		}
 	}()
 	defer close(finish)
-	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
 	id := started["session_id"].(string)
 	h.call(t, other, "session_control", map[string]any{"action": "stop", "session_id": id}, true)
 	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": "unknown"}, true)
@@ -159,7 +159,7 @@ func TestStopDisconnectDoesNotConfirmCancellation(t *testing.T) {
 			}
 		}
 	}()
-	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
 	out := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": started["session_id"]}, false).(map[string]any)
 	if out["status"] != "finished" || out["done"] != true || out["canceled"] != false || out["accepted"] != true || out["error"] == nil || out["error"] == "" {
 		t.Fatalf("disconnect was confused with confirmed cancellation: %v", out)

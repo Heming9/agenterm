@@ -31,18 +31,17 @@ func (o ExecOptions) Validate() error {
 	return nil
 }
 
-// ValidateTerminalName is shared by admission and the public API. Names are
-// scoped to a client connection; IDs always identify one immutable shell.
-func ValidateTerminalName(name string) error {
+// ValidateSessionID accepts both caller-supplied and generated session IDs.
+func ValidateSessionID(name string) error {
 	if name == "" {
 		return nil
 	}
 	if !utf8.ValidString(name) || utf8.RuneCountInString(name) > 64 || strings.TrimSpace(name) == "" {
-		return fmt.Errorf("invalid terminal_name: use 1–64 printable characters")
+		return fmt.Errorf("invalid session_id: use 1–64 printable characters")
 	}
 	for _, r := range name {
 		if !unicode.IsPrint(r) {
-			return fmt.Errorf("invalid terminal_name: use 1–64 printable characters")
+			return fmt.Errorf("invalid session_id: use 1–64 printable characters")
 		}
 	}
 	return nil

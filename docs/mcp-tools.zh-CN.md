@@ -15,7 +15,7 @@
 
 ## 常用调用
 
-创建邀请后，将连接命令私下交给目标用户；设备连接后可执行命令。后续命令通过 execute_command 指定名称或 ID 复用终端；当前命令等待输入时，使用 session_control：
+创建邀请后，将连接命令私下交给目标用户；设备连接后可执行命令。后续命令通过 execute_command 指定 session_id 复用终端；当前命令等待输入时，使用 session_control：
 
 ```json
 {"session_id":"…","action":"input","input":"pwd\n"}
@@ -32,7 +32,7 @@
 初始化独立终端并启动长任务：
 
 ```json
-{"command":"npm run build","cwd":"/project","terminal_name":"build","wait_ms":1000}
+{"command":"npm run build","cwd":"/project","session_id":"build","wait_ms":1000}
 ```
 
 复用返回的终端并保留目录和环境：
@@ -65,29 +65,29 @@
 
 | 职责 | 所属端 |
 | --- | --- |
-| 终端 ID 和名称、创建与复用、忙碌和输入校验 | 客户端共用执行核心，CLI/GUI 行为一致 |
+| 终端 ID、创建与复用、忙碌和输入校验 | 客户端共用执行核心，CLI/GUI 行为一致 |
 | 10 个存活终端上限、实际进程、等待到期保留与关闭 | 客户端 |
 | 鉴权、设备路由、请求关联、结果等待和输出缓存 | 服务端 |
 | 已结束记录的缓存容量与保留期限 | 服务端，仅清理缓存，不关闭终端 |
 
-客户端先回报实际终端 ID、名称、是否新建和保留策略，服务端再绑定输出缓存。服务端不会依据缓存状态选择终端或决定其生命周期。即使 MCP 等待已取消，后续回执仍可建立缓存，供 session_list 找回。匿名终端的完成关闭、等待到期保留均由客户端裁决；服务端清理记录不会关闭终端。
+客户端先回报实际终端 ID、是否新建和保留策略，服务端再绑定输出缓存。服务端不会依据缓存状态选择终端或决定其生命周期。即使 MCP 等待已取消，后续回执仍可建立缓存，供 session_list 找回。匿名终端的完成关闭、等待到期保留均由客户端裁决；服务端清理记录不会关闭终端。
 
 </details>
 
 <details>
 <summary>命令与交互式会话</summary>
 
-`execute_command` 统一短命令、长任务和交互任务，移除 `session_start` 和 `new_session`。省略 `terminal_name` 和 `session_id` 时，每次都新建匿名终端：命令在 `wait_ms` 内完成，则自动关闭并在返回前释放名额；等待先到期，则保留同一 shell，返回随机 `terminal_name`，不中断或重启进程。指定 `terminal_name` 时，名称存在则复用、不存在则创建持久终端；名称作用域为目标客户端连接。指定 `session_id` 则精确复用某次终端实例，未知或已关闭 ID 报错，不偷偷重建。两者不能同时使用。多设备模式在未指定 session_id 时需要 client_id。`session_created=true` 表示新建，false 表示复用。不再有默认终端或隐式复用。
+`execute_command` 统一短命令、长任务和交互任务。指定 `session_id` 时，存在则复用，不存在则按此 ID 创建持久终端；已关闭 ID 可以重新创建，`session_created=true` 表示新 shell。省略时每次新建匿名终端：命令在 wait_ms 内完成则自动关闭并释放名额，等待先到期则保留同一 shell 并返回随机 session_id，进程不中断、不重启。同一 token 内 session_id 唯一；多设备创建需要 client_id，已有 ID 可定位所属设备。没有默认终端或隐式复用。
 
 目录、变量、函数和虚拟环境状态在同一 shell 中保留。`cwd` 和 `env` 仅初始化新会话，复用时携带会报错；后续通过 `cd`、`export` 或目标 shell 对应命令修改。每个会话同一时间只执行一条命令，忙碌时返回 `session_busy` 和会话 ID，不自动另开终端、不排队。
 
 `wait_ms` 默认 10000（10 秒），范围 0–20000，从客户端接受开始计时，新匿名终端的 shell 启动时间也计算在内。0 表示立即保留匿名终端，仍需先等待客户端接受回执。等待到期不会终止命令。快速完成返回 `status=completed`，未完成返回 `status=running`、已有输出和 next_cursor，之后通过 session_read 读取、session_control 交互。`persistent=true` 表示命令完成后仍保留 shell；`promoted=true` 表示该终端由匿名终端在首次等待到期后保留而来（包括 0）。具名和保留后的终端没有空闲回收，需要 `session_control(action=stop)` 主动关闭。MCP 等待取消不会取消已接受任务，也不会停止客户端保留计时。已移除 timeout_ms。
 
-终端输出统一为合并的 output。command_done 和 exit_code 描述最新命令；done 表示终端已结束，session_alive 表示可用状态。快速匿名命令返回 `command_done=true`、`done=true`、`session_alive=false`、`persistent=false`、`promoted=false`，终端名称为空。具名或已保留终端的命令完成后为 `done=false`、`session_alive=true`、`persistent=true`。命令边界和退出码由客户端 shell 集成报告，不依赖可见提示符猜测。
+终端输出统一为合并的 output。command_done 和 exit_code 描述最新命令；done 表示终端已结束，session_alive 表示可用状态。快速匿名命令返回 `command_done=true`、`done=true`、`session_alive=false`、`persistent=false`、`promoted=false`。具名或已保留终端的命令完成后为 `done=false`、`session_alive=true`、`persistent=true`。命令边界和退出码由客户端 shell 集成报告，不依赖可见提示符猜测。
 
 Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道，支持基本输入交互，不模拟完整终端。为保持命令边界可靠，持续终端不加载用户 shell 启动配置；继承客户端环境，并保留提示符钩子、PS1 等供集成使用，请勿覆盖它们或修改终端回显。需要的环境可以在命令中显式初始化。服务端和客户端均需更新，旧客户端会收到升级提示。
 
-每个客户端进程最多 10 个存活终端，启动、运行、空闲和关闭中的 shell 在实际退出前都占名额。CLI/GUI 共用客户端执行层，同一进程内多个连接共享上限；同一 token 下不同进程各自计数。满额时新建匿名终端、创建尚不存在的具名终端均直接报错；明确指定已有名称或 ID 仍可复用，不自动选择其他终端。已关闭输出记录不占名额。服务端仅清理输出缓存，不检查终端配额或触发空闲关闭。客户端断线会终止该连接的终端，重连不恢复 shell 状态；服务端前端重启不影响 runtime 中已有连接和终端。
+每个客户端进程最多 10 个存活终端，启动、运行、空闲和关闭中的 shell 在实际退出前都占名额。CLI/GUI 共用客户端执行层，同一进程内多个连接共享上限；同一 token 下不同进程各自计数。满额时新建匿名终端、创建尚不存在的具名终端均直接报错；明确指定已有 session_id 仍可复用，不自动选择其他终端。已关闭输出记录不占名额。服务端仅清理输出缓存，不检查终端配额或触发空闲关闭。客户端断线会终止该连接的终端，重连不恢复 shell 状态；服务端前端重启不影响 runtime 中已有连接和终端。
 
 </details>
 
@@ -96,7 +96,7 @@ Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道�
 
 `session_read.max_bytes` 默认 16384，范围 4–65536 字节；输出不会在 UTF-8 字符中间切断。每次用返回的 `next_cursor` 继续读取。`has_more=true` 表示当前仍有保留输出；即使 `done=true`，也应读到 `has_more=false`。`command_done` 和 `exit_code` 标识最新命令的结果，`done` 仅表示整个终端已结束。分页本身不会触发 `truncated`。
 
-`session_list` 按创建时间返回本 token 的终端，包括离线设备的保留记录。可按 `client_id` 筛选，`terminal_name`、`persistent` 和 `promoted` 描述客户端回报的保留状态，移除旧 `default` 字段；`status` 为 `idle`、`running`、`stopping` 或 `finished`。`command`/`command_id` 是最近提交的命令，`command_done` 标识命令完成，`done` 标识终端结束。`output_start_cursor` 指向最早保留输出，`output_end_cursor` 指向末尾。已结束记录最多保留 30 分钟，也可能在新建终端时被替换。
+`session_list` 按创建时间返回本 token 的终端，包括离线设备的保留记录。可按 `client_id` 筛选，`session_id`、`persistent` 和 `promoted` 描述客户端回报的保留状态，移除旧 `default` 字段；`status` 为 `idle`、`running`、`stopping` 或 `finished`。`command`/`command_id` 是最近提交的命令，`command_done` 标识命令完成，`done` 标识终端结束。`output_start_cursor` 指向最早保留输出，`output_end_cursor` 指向末尾。已结束记录最多保留 30 分钟，也可能在新建终端时被替换。
 
 `session_read` 可附带 `command_id` 固定读取的命令；若终端已执行下一条命令则报错，避免把新命令的状态当成旧命令结果。不带此字段仍可按字节游标读取整个会话的保留输出。缓冲区保留最近 1 MiB，较旧输出被丢弃时设置 `truncated=true`，单纯分页不会设置它。命令完成后仍应读到 `has_more=false`。
 

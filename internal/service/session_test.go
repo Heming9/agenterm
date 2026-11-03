@@ -57,7 +57,7 @@ func TestServerMirrorsClientSessionsWithoutQuota(t *testing.T) {
 		// This simulated client accepts 12 requests. The server mirrors its
 		// decision instead of applying its own ten-terminal quota.
 		for range 12 {
-			h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "client_id": id, "command": "quick"}, false)
+			h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "client_id": id, "command": "quick"}, false)
 		}
 	}
 	h.s.mu.Lock()
@@ -126,7 +126,7 @@ func TestClosedSessionHistoryDoesNotExhaustClientSlots(t *testing.T) {
 	ws, _ := h.connect(t, token, "history")
 	go serveTestDevice(ws, "history", nil, nil)
 	for i := 0; i < 25; i++ {
-		result := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "quick"}, false).(map[string]any)
+		result := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "quick"}, false).(map[string]any)
 		h.call(t, token, "session_control", map[string]any{"session_id": result["session_id"], "action": "stop"}, false)
 	}
 	h.s.mu.Lock()
@@ -145,12 +145,12 @@ func TestFullClientRejectsAnonymousAndMissingNamedTerminals(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		initialize, overwrite, inspect = "$keep='initial'", "$keep='unexpected'", "Write-Output $keep"
 	}
-	first := h.call(t, token, "execute_command", map[string]any{"terminal_name": "original", "command": initialize}, false).(map[string]any)
+	first := h.call(t, token, "execute_command", map[string]any{"session_id": "original", "command": initialize}, false).(map[string]any)
 	for range 9 {
-		h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "command": "echo ready"}, false)
+		h.call(t, token, "execute_command", map[string]any{"session_id": random(), "command": "echo ready"}, false)
 	}
 	for _, args := range []map[string]any{
-		{"terminal_name": random(), "wait_ms": 0, "command": "echo must-not-run"},
+		{"session_id": random(), "wait_ms": 0, "command": "echo must-not-run"},
 		{"wait_ms": 0, "command": overwrite},
 	} {
 		denied := h.call(t, token, "execute_command", args, true).(map[string]any)
@@ -167,7 +167,7 @@ func TestFullClientRejectsAnonymousAndMissingNamedTerminals(t *testing.T) {
 	if closed["done"] != true {
 		t.Fatal(closed)
 	}
-	h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "echo replacement"}, false)
+	h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "echo replacement"}, false)
 }
 
 func TestConcurrentSessionStartsRespectLimit(t *testing.T) {
@@ -184,7 +184,7 @@ func TestConcurrentSessionStartsRespectLimit(t *testing.T) {
 					if shared {
 						name, command = "shared", longCommand()
 					}
-					_, failed, err := h.request(token, "execute_command", map[string]any{"terminal_name": name, "wait_ms": 0, "command": command})
+					_, failed, err := h.request(token, "execute_command", map[string]any{"session_id": name, "wait_ms": 0, "command": command})
 					if err != nil {
 						t.Error(err)
 					}
@@ -203,7 +203,7 @@ func TestConcurrentSessionStartsRespectLimit(t *testing.T) {
 				}
 			}
 			items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
-			if accepted != want || len(items) != want || (shared && items[0].(map[string]any)["terminal_name"] != "shared") {
+			if accepted != want || len(items) != want || (shared && items[0].(map[string]any)["session_id"] != "shared") {
 				t.Fatalf("accepted=%d want=%d sessions=%v", accepted, want, items)
 			}
 		})

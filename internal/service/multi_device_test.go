@@ -123,26 +123,19 @@ func (h *multiHarness) connect(t *testing.T, token, hostname string) (*websocket
 	}
 }
 
-// Simulate client-owned names and canonical IDs without server selection.
-func acceptTestSession(ws *websocket.Conn, m protocol.Message, names ...map[string]string) protocol.Message {
-	target := m.SessionID
-	if target == "" && m.TerminalName != "" && len(names) > 0 {
-		target = names[0][m.TerminalName]
+// Simulate client-owned create-or-reuse using only session_id.
+func acceptTestSession(ws *websocket.Conn, m protocol.Message, registries ...map[string]string) protocol.Message {
+	id := m.SessionID
+	created := id == "" || len(registries) == 0 || registries[0][id] == ""
+	if id == "" {
+		id = "client-" + m.ID
 	}
-	created := target == ""
-	if created {
-		target = "client-" + m.ID
-		if m.TerminalName != "" && len(names) > 0 {
-			names[0][m.TerminalName] = target
-		}
+	if len(registries) > 0 {
+		registries[0][id] = id
 	}
-	persistent := m.TerminalName != "" || m.SessionID != "" || m.WaitMS == 0
-	promoted := persistent && m.TerminalName == "" && m.SessionID == ""
-	if promoted {
-		m.TerminalName = "term-" + target
-	}
-	_ = ws.WriteJSON(protocol.Message{Type: "command_accepted", ID: m.ID, RequestID: m.RequestID, SessionID: target, SessionCreate: created, SessionPersistent: persistent, SessionPromoted: promoted, TerminalName: m.TerminalName, Command: m.Command})
-	m.ID, m.SessionPersistent = target, persistent
+	persistent := m.SessionID != "" || m.WaitMS == 0
+	_ = ws.WriteJSON(protocol.Message{Type: "command_accepted", ID: m.ID, RequestID: m.RequestID, SessionID: id, SessionCreate: created, SessionPersistent: persistent, SessionPromoted: persistent && m.SessionID == "", Command: m.Command})
+	m.ID, m.SessionPersistent = id, persistent
 	return m
 }
 
@@ -183,6 +176,7 @@ func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, re
 				return
 			}
 		case "cancel":
+			delete(names, m.ID)
 			if ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID}) != nil {
 				return
 			}
@@ -257,7 +251,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 
 	sessions := map[string]string{}
 	for _, target := range []struct{ id, label string }{{a, "A"}, {b, "B"}} {
-		sid := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
+		sid := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 		sessions[target.label] = sid
 		out := h.call(t, token, "session_read", map[string]any{"session_id": sid, "wait_ms": 1000}, false).(map[string]any)
 		if out["output"] != target.label+":interactive" {

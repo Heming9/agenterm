@@ -9,7 +9,7 @@ func TestSessionEOFKeepsWindowsOutputReadable(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	start := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0,
+	start := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0,
 		"command": `& sort.exe; Write-Output after-eof`,
 	}, false).(map[string]any)
 	id := start["session_id"].(string)

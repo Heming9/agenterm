@@ -94,7 +94,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 			t.Fatalf("wrong routing: %s", raw)
 		}
 	}
-	_, result := call(tokens[0], "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "test"})
+	_, result := call(tokens[0], "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "test"})
 	payload := result["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
 	var session map[string]any
 	if err := json.Unmarshal([]byte(payload), &session); err != nil {

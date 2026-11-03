@@ -157,7 +157,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		t.Fatalf("devices: %v", devices)
 	}
 	deviceID := devices[0].(map[string]any)["client_id"]
-	started := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": `printf 'before\n'; read line; printf 'after:%s\n' "$line"`}, false).(map[string]any)
+	started := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": `printf 'before\n'; read line; printf 'after:%s\n' "$line"`}, false).(map[string]any)
 	id := started["session_id"].(string)
 	before := h.call(t, token, "session_read", map[string]any{"session_id": id, "wait_ms": 4000}, false).(map[string]any)
 	if !strings.Contains(before["output"].(string), "before") {
@@ -169,7 +169,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	command := `while [ ! -f "$AGENTERM_RELEASE_FILE" ]; do sleep 0.02; done; printf 'drained\n'`
 	requestDone := make(chan error, 1)
 	go func() {
-		result, isError, err := h.request(token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 20000, "command": command, "env": map[string]string{"AGENTERM_RELEASE_FILE": release}}, 90*time.Second)
+		result, isError, err := h.request(token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 20000, "command": command, "env": map[string]string{"AGENTERM_RELEASE_FILE": release}}, 90*time.Second)
 		if err == nil && (isError || !strings.Contains(result.(map[string]any)["output"].(string), "drained")) {
 			err = fmt.Errorf("in-flight result: %v", result)
 		}
@@ -194,7 +194,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	crashCommand := `sleep 1; printf 'survived crash\n'`
 	crashWaiter := make(chan error, 1)
 	go func() {
-		_, _, err := h.request(token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 20000, "command": crashCommand})
+		_, _, err := h.request(token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 20000, "command": crashCommand})
 		crashWaiter <- err
 	}()
 	waitCommandEvent(t, events, crashCommand, false)

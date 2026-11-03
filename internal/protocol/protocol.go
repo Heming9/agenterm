@@ -43,9 +43,8 @@ const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 const SessionControlsHeader = "X-Agenterm-Session-Controls"
 const PersistentSessionsHeader = "X-Agenterm-Persistent-Sessions"
 
-// Version 4 adds named upsert and client-owned anonymous retention after the
-// admission wait, replacing default-terminal selection.
-const PersistentSessionsVersion = "4"
+// Version 5 uses session_id alone for client-owned create-or-reuse.
+const PersistentSessionsVersion = "5"
 const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.
@@ -395,7 +394,6 @@ type Message struct {
 	ExecOptions
 	SessionCreate     bool       `json:"session_create,omitempty"`
 	SessionID         string     `json:"session_id,omitempty"`
-	TerminalName      string     `json:"terminal_name,omitempty"`
 	WaitMS            int        `json:"wait_ms"`
 	SessionPersistent bool       `json:"session_persistent,omitempty"`
 	SessionPromoted   bool       `json:"session_promoted,omitempty"`

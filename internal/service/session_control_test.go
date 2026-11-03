@@ -71,7 +71,7 @@ func TestSessionControlRejectsInvalidArgumentsBeforeSending(t *testing.T) {
 			}
 		}
 	}()
-	id := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
+	id := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 	for _, args := range []map[string]any{
 		{},
 		{"action": "unknown"},

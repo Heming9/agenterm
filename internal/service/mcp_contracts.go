@@ -21,7 +21,6 @@ type executeResult struct {
 }
 
 type sessionReadResult struct {
-	TerminalName string `json:"terminal_name,omitempty"`
 	Persistent   *bool  `json:"persistent,omitempty"`
 	Promoted     *bool  `json:"promoted,omitempty"`
 	SessionAlive *bool  `json:"session_alive,omitempty"`
@@ -49,7 +48,6 @@ type sessionListResult struct {
 }
 
 type sessionInfo struct {
-	TerminalName      string     `json:"terminal_name,omitempty"`
 	Persistent        bool       `json:"persistent"`
 	Promoted          bool       `json:"promoted"`
 	CommandID         string     `json:"command_id,omitempty"`

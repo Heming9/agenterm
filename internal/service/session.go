@@ -35,7 +35,6 @@ type session struct {
 	ended          time.Time
 	changed        chan struct{}
 	keepAlive      bool
-	terminalName   string
 	promoted       bool
 	commandDone    bool
 	commandID      string
@@ -66,7 +65,7 @@ func (p *session) accept(m protocol.Message) {
 		}
 		p.signal()
 	case "session_retained":
-		p.keepAlive, p.terminalName, p.promoted = m.SessionPersistent, m.TerminalName, m.SessionPromoted
+		p.keepAlive, p.promoted = m.SessionPersistent, m.SessionPromoted
 		p.signal()
 	case "command_done":
 		if m.RequestID != p.commandID || p.commandDone {
@@ -152,7 +151,7 @@ func (p *session) readCommand(ctx context.Context, cursor int64, wait time.Durat
 					result["error"] = p.err
 				}
 			}
-			result["persistent"], result["promoted"], result["terminal_name"] = p.keepAlive, p.promoted, p.terminalName
+			result["persistent"], result["promoted"] = p.keepAlive, p.promoted
 			result["session_alive"], result["command_done"], result["command_id"] = !p.done && !p.stopRequested, p.commandDone, p.commandID
 			result["status"] = "running"
 			if p.commandDone {
@@ -172,10 +171,14 @@ func (p *session) readCommand(ctx context.Context, cursor int64, wait time.Durat
 		}
 	}
 }
+
+// Caller-supplied IDs are isolated by credential without changing tool fields.
+func sessionKey(secret, id string) string { return secret + "\x00" + id }
+
 func (s *runtimeState) getSession(secret, id string) (*session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p := s.sessions[id]
+	p := s.sessions[sessionKey(secret, id)]
 	if p == nil || p.owner != secret {
 		return nil, i18n.NewError("unknown.session")
 	}
@@ -201,7 +204,7 @@ func (s *runtimeState) listSessions(secret, clientID string) []sessionInfo {
 		if clientID == "" || clientID == p.client.info.ID {
 			info := sessionInfo{SessionID: p.id, ClientID: p.client.info.ID, Command: p.command,
 				StartedAt: p.started, Status: "running", Done: p.done,
-				TerminalName: p.terminalName, Persistent: p.keepAlive, Promoted: p.promoted, CommandID: p.commandID, CommandDone: p.commandDone, SessionAlive: !p.done && !p.stopRequested,
+				Persistent: p.keepAlive, Promoted: p.promoted, CommandID: p.commandID, CommandDone: p.commandDone, SessionAlive: !p.done && !p.stopRequested,
 				OutputStartCursor: p.offset, OutputEndCursor: p.offset + int64(len(p.output))}
 			if p.commandDone {
 				info.Status = "idle"

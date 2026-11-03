@@ -13,9 +13,6 @@ func (t *persistentTerminal) stopRetentionTimerLocked() {
 }
 func (t *persistentTerminal) lifecycleLocked(m *protocol.Message) {
 	m.SessionPersistent, m.SessionPromoted = t.persistent, t.promoted
-	if t.persistent {
-		m.TerminalName = t.name
-	}
 }
 
 // Completion and retention use the same lock: exactly one wins. Once retained,

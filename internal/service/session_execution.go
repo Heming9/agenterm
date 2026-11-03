@@ -43,14 +43,7 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 	s.mu.Lock()
 	var c *client
 	var err error
-	if a.SessionID != "" {
-		// This lookup enforces ownership and routes the request. Cached busy,
-		// alive and idle fields never decide whether execution is permitted.
-		p := s.sessions[a.SessionID]
-		if p == nil || p.owner != in.Secret {
-			s.mu.Unlock()
-			return sessionExecution{}, i18n.NewError("unknown.session")
-		}
+	if p := s.sessions[sessionKey(in.Secret, a.SessionID)]; a.SessionID != "" && p != nil && s.clients[p.client.info.ID] == p.client {
 		c = p.client
 		if a.ClientID != "" && a.ClientID != c.info.ID {
 			s.mu.Unlock()
@@ -97,7 +90,7 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 	if a.WaitMS != nil {
 		wait = *a.WaitMS
 	}
-	if err := c.send(protocol.Message{Type: "session_exec", ID: id, RequestID: id, SessionID: a.SessionID, TerminalName: a.TerminalName, WaitMS: wait, Command: a.Command, ExecOptions: a.ExecOptions}); err != nil {
+	if err := c.send(protocol.Message{Type: "session_exec", ID: id, RequestID: id, SessionID: a.SessionID, WaitMS: wait, Command: a.Command, ExecOptions: a.ExecOptions}); err != nil {
 		return sessionExecution{}, err
 	}
 	select {
@@ -121,7 +114,7 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 // That ordering ensures output sent immediately after the client acknowledgment
 // has a cache destination, even when its original MCP waiter has disappeared.
 func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error {
-	if m.SessionID == "" || m.SessionID == m.ID || m.RequestID != m.ID {
+	if m.SessionID == "" || m.RequestID != m.ID {
 		return i18n.NewError("session.control.invalid.response")
 	}
 	s.mu.Lock()
@@ -130,11 +123,11 @@ func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error 
 	if request != nil && request.client != c {
 		return i18n.NewError("unknown.session")
 	}
-	p := s.sessions[m.SessionID]
-	if p != nil && (p.owner != c.secret || p.client != c) {
+	p := s.sessions[sessionKey(c.secret, m.SessionID)]
+	if p != nil && (p.owner != c.secret || (p.client != c && s.clients[p.client.info.ID] == p.client)) {
 		return i18n.NewError("unknown.session")
 	}
-	if p == nil {
+	if p == nil || m.SessionCreate {
 		p = &session{id: m.SessionID, owner: c.secret, client: c, changed: make(chan struct{}), started: time.Now().UTC()}
 		p.log = c.logger().With("session_id", p.id)
 		if request != nil {
@@ -143,13 +136,13 @@ func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error 
 		if s.sessions == nil {
 			s.sessions = make(map[string]*session)
 		}
-		s.sessions[p.id] = p
+		s.sessions[sessionKey(c.secret, p.id)] = p
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// Mirror facts from client admission. No shell is created, chosen or kept
 	// alive by this cache, and no cached lifecycle field gates admission.
-	p.keepAlive, p.terminalName, p.promoted = m.SessionPersistent, m.TerminalName, m.SessionPromoted
+	p.keepAlive, p.promoted = m.SessionPersistent, m.SessionPromoted
 	p.commandDone, p.done, p.stopRequested = false, false, false
 	p.commandID, p.command = m.RequestID, m.Command
 	commandStart := p.offset + int64(len(p.output))
@@ -174,7 +167,7 @@ func (s *runtimeState) acceptSessionEvent(c *client, m protocol.Message) bool {
 		return false
 	}
 	s.mu.Lock()
-	p := s.sessions[m.ID]
+	p := s.sessions[sessionKey(c.secret, m.ID)]
 	s.mu.Unlock()
 	if p == nil || p.client != c {
 		return false

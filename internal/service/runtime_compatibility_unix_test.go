@@ -57,7 +57,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 	token := h.create(t, false)
 	ws, clientID := h.connect(t, token, "retained")
 	go serveTestDevice(ws, "retained", nil, nil)
-	sessionID := h.call(t, token, "execute_command", map[string]any{"terminal_name": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
+	sessionID := h.call(t, token, "execute_command", map[string]any{"session_id": random(), "wait_ms": 0, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 	before := h.call(t, token, "session_read", map[string]any{"session_id": sessionID, "wait_ms": 1000}, false).(map[string]any)
 	cursor := before["next_cursor"]
 
