@@ -1,0 +1,25 @@
+Use case: style-transfer / ads-marketing.
+Edit target: the attached Agenterm promotional poster. User likes the content but finds the AI-generated aesthetic excessive. Completely redesign its visual language as PURE FLAT graphic design. Output one finished Chinese portrait poster, 2:3 aspect ratio, 1024x1536 or higher.
+Preserve brand, factual content, all Chinese wording, URLs and information hierarchy. Change only graphic treatment and layout spacing. A confident Swiss editorial / independently designed open-source software poster, typographic and restrained.
+Strict visual rules: ONLY solid flat fills, crisp uniform strokes and flat typography. NO gradients anywhere, NO texture, NO shadows, NO glow, NO 3D, NO perspective, NO metallic finish, NO volumetric lighting, NO glossy buttons, NO floating objects, NO decorative robot mascot, NO fake photographic devices. Background is uniform warm ivory #F5F2E9, primary type near-black #20211F, single accent flat mustard #E5BA54. Wide margins, rigorous grid, strong left alignment, large Chinese sans-serif headlines, clean medium-weight body. Small radius or square corners, no capsule-heavy UI. No unnecessary decorative elements.
+Top: small flat black square terminal-face icon >_< beside Agenterm wordmark; small label "AI 远程终端助手".
+Large headline in three lines:
+"一条授权命令"
+"让 AI 帮你搞定"
+"远程电脑"
+Use flat mustard rectangular highlight behind last line, with dark lettering.
+Supporting line: "继续用你熟悉的 Agent，协助操作另一台电脑。"
+Central graphic occupies a modest area: pure 2D diagram of three outlined rectangular terminal windows, linked by a straight thin black line with simple arrows. Left terminal marked >_, center flat mustard square bearing >_<, right two overlapping simple outlined terminal windows. No literal laptop drawings, no robots. Labels "你的 AI Agent", "Agenterm", "已授权的远程设备". Everything lies on the page plane like a vector drawing.
+Below: a three-column numbered workflow with thin horizontal rules, no cards:
+"01  接入 MCP" → "02  邀请并授权" → "03  开始协助".
+Then three editorial feature rows separated by thin black rules, each with tiny flat line icon and bold title and description:
+"远程排障" / "检查环境、日志，少来回复制命令"
+"多设备协作" / "开发机、服务器，一起交给 Agent"
+"过程看得见" / "查看命令与输出，随时断开连接"
+One minimal flat text line: "无需 SSH   ·   无需开放入站端口   ·   支持自托管"
+Footer:
+"让 AI 的能力，延伸到另一台电脑。"
+"agenterm.net" large bold with small flat arrow
+"github.com/Heming9/agenterm"
+"macOS · Linux · Windows    /    CLI · GUI    /    Apache-2.0"
+All copy must be accurate and readable. No invented claims, QR codes or additional text. The result should look deliberately typeset by a human graphic designer, extremely clean, fully two-dimensional, generous negative space. Preserve all functionality meaning from reference, with explicit authorization and terminal assistance.

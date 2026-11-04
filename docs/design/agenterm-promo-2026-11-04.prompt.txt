@@ -1,0 +1,16 @@
+Use case: ads-marketing
+Asset type: Chinese social sharing infographic poster for the open-source project Agenterm.
+Create a polished premium portrait poster, aspect ratio 2:3, high resolution, highly legible Chinese typography. Editorial tech design with generous spacing, near-black charcoal background, warm ivory text and restrained champagne-gold accents, very subtle texture. Sophisticated, approachable, concrete, no visual clutter.
+Brand: Agenterm. Brand icon is a softly rounded black square with a warm ivory terminal-face glyph >_<. Small icon beside the wordmark at top. Do not add other brand logos.
+Layout:
+1. Top brand wordmark "Agenterm" and small category text "AI 远程终端助手".
+2. Large striking headline split into three short lines: "一条授权命令" / "让 AI 帮你搞定" / "远程电脑". Emphasize "远程电脑" in warm gold. Supporting sentence "继续用你熟悉的 Agent，协助操作另一台电脑。"
+3. Central hero illustration: elegant miniature laptop on left with a friendly abstract AI terminal symbol, a luminous gold connection passing through an Agenterm connector in the center, branching to a laptop and small server on the right. Terminal windows with only simple prompt glyphs and short abstract command lines, no fabricated real screenshot, no remote desktop mouse interaction. Labels "你的 AI Agent" on left, "Agenterm" in middle, "已授权的远程设备" on right. This should feel like a premium 3D product illustration integrated naturally into the poster, not a technical architecture chart.
+4. A crisp horizontal three-step strip, generous readable type: "01  接入 MCP" → "02  邀请并授权" → "03  开始协助".
+5. Three clean feature rows or cards, with tasteful minimal icons, each with a bold title and one short detail:
+"远程排障" — "检查环境、日志，少来回复制命令"
+"多设备协作" — "开发机、服务器，一起交给 Agent"
+"过程看得见" — "查看命令与输出，随时断开连接"
+6. A small readable row of benefit pills: "无需 SSH" · "无需开放入站端口" · "支持自托管".
+7. Footer main CTA "让 AI 的能力，延伸到另一台电脑。" then prominent "agenterm.net" and smaller "github.com/Heming9/agenterm". Small footer metadata "macOS · Linux · Windows    /    CLI · GUI    /    Apache-2.0".
+Use exactly the Chinese copy supplied, ensure no typos, no duplicated text, no invented statistics, awards or claims. No QR code. Clear hierarchy: headline first, hero second, benefit content third. All text must be comfortably readable in a phone-sized preview. Maintain wide outer margins and avoid filling every inch. This product is terminal-based remote assistance with explicit authorization; do not imply graphical remote desktop, unattended unauthorized access, encryption guarantees or zero-risk security. Output one finished poster.
