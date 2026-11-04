@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -87,6 +88,9 @@ func TestAnonymousWaitRetainsOriginalShellAndRandomName(t *testing.T) {
 	if !ok || name == "" || result["status"] != "running" {
 		t.Fatal(result)
 	}
+	if decoded, err := hex.DecodeString(name); err != nil || len(decoded) != 3 {
+		t.Fatalf("unexpected generated session ID %q", name)
+	}
 	output, completed := readExecutionToCompletion(t, h, token, result)
 	if completed["status"] != "idle" || output != "once" || completed["exit_code"] != float64(0) {
 		t.Fatalf("command restarted, lost output or stopped: %v output=%q", completed, output)
@@ -122,18 +126,19 @@ func TestSetupCreatesAndRecreatesClosedSession(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": "keep=old"}, false).(map[string]any)
-	if first["status"] != "idle" || first["session_id"] != "workspace" {
+	const name = "工作区-workspace"
+	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": name}, "command": "keep=old"}, false).(map[string]any)
+	if first["status"] != "idle" || first["session_id"] != name {
 		t.Fatal(first)
 	}
-	h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": "echo never"}, true)
+	h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": name}, "command": "echo never"}, true)
 	h.call(t, token, "session_control", map[string]any{"session_id": first["session_id"], "action": "stop"}, false)
-	h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "echo never"}, true)
-	next := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "workspace"}, "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
-	if next["status"] != "idle" || next["session_id"] != first["session_id"] || next["session_id"] != "workspace" || next["output"] != "new" {
+	h.call(t, token, "execute_command", map[string]any{"session_id": name, "command": "echo never"}, true)
+	next := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": name}, "command": `printf '%s' "${keep-new}"`}, false).(map[string]any)
+	if next["status"] != "idle" || next["session_id"] != first["session_id"] || next["session_id"] != name || next["output"] != "new" {
 		t.Fatal(next)
 	}
-	reused := h.call(t, token, "execute_command", map[string]any{"session_id": "workspace", "command": "echo alive"}, false).(map[string]any)
+	reused := h.call(t, token, "execute_command", map[string]any{"session_id": name, "command": "echo alive"}, false).(map[string]any)
 	if reused["status"] != "idle" || reused["session_id"] != next["session_id"] {
 		t.Fatal(reused)
 	}

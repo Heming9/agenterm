@@ -85,18 +85,26 @@ func (c *connection) runPersistent(m protocol.Message) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		p = &process{cancel: cancel, ready: make(chan struct{}), inputQueue: make(chan protocol.Message, 32), ownsTerminalSlot: true}
-		nonce := make([]byte, 24)
-		if _, err := rand.Read(nonce); err != nil {
-			c.mu.Unlock()
-			cancel()
-			p.releaseTerminalSlot()
-			reject(err)
-			return
+		// Keep the private prompt marker independent of the public session ID.
+		nonce := make([]byte, 27)
+		for {
+			if _, err := rand.Read(nonce); err != nil {
+				c.mu.Unlock()
+				cancel()
+				p.releaseTerminalSlot()
+				reject(err)
+				return
+			}
+			if id != "" {
+				break
+			}
+			candidate := hex.EncodeToString(nonce[24:])
+			if c.running[candidate] == nil {
+				id = candidate
+				break
+			}
 		}
-		markerID := hex.EncodeToString(nonce)
-		if id == "" {
-			id = markerID
-		}
+		markerID := hex.EncodeToString(nonce[:24])
 		t := &persistentTerminal{c: c, p: p, id: id, ready: make(chan struct{}), marker: "\x1eagenterm:" + markerID + ":", submitted: make(chan struct{}), reserved: true, persistent: (m.Setup != nil && m.Setup.SessionID != "") || m.WaitMS == 0, promoted: (m.Setup == nil || m.Setup.SessionID == "") && m.WaitMS == 0}
 		p.terminal = t
 		c.running[id] = p
