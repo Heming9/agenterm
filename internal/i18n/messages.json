@@ -584,8 +584,8 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns a fixed English plain-text template in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Translate only headings and explanatory prose; when communicating in English, present it verbatim. Preserve all sections, their order, line breaks and plain-text format. Keep commands, URLs, connection tokens, validity numbers and expiry timestamps unchanged. Do not summarize, omit content, or add Markdown formatting such as bold, code fences, tables or links. Then call list_clients with the returned client_token and wait_ms=300000 to check whether a device connects, with a 300-second timeout. Report whether a device connected or the wait timed out. multi_device controls simultaneous connections and invitation reuse.",
-    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。文本内容和 structuredContent.display_text 均返回固定的英文纯文本模板，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言，完整展示 display_text：仅翻译标题和说明文字，使用英语交流时原样展示。保留所有段落、顺序、换行和纯文本格式；命令、URL、连接令牌、有效期数值及截止时间必须保持原样。不得总结、省略内容，也不得添加加粗、代码块、表格或链接等 Markdown 格式。然后使用返回的 client_token 调用 list_clients，设置 wait_ms=300000，以 300 秒为超时时间检查设备是否连接成功，并向用户报告连接成功或等待超时。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
+    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns a fixed English plain-text template in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Translate only headings and explanatory prose; when communicating in English, present it verbatim. Preserve all sections, their order, line breaks and plain-text format. Keep commands, URLs, connection tokens, validity numbers and expiry timestamps unchanged. Do not summarize, omit content, or add Markdown formatting such as bold, code fences, tables or links. Then call list_client with the returned client_token and wait_ms=300000 to check whether a device connects, with a 300-second timeout. Report whether a device connected or the wait timed out. multi_device controls simultaneous connections and invitation reuse.",
+    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。文本内容和 structuredContent.display_text 均返回固定的英文纯文本模板，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言，完整展示 display_text：仅翻译标题和说明文字，使用英语交流时原样展示。保留所有段落、顺序、换行和纯文本格式；命令、URL、连接令牌、有效期数值及截止时间必须保持原样。不得总结、省略内容，也不得添加加粗、代码块、表格或链接等 Markdown 格式。然后使用返回的 client_token 调用 list_client，设置 wait_ms=300000，以 300 秒为超时时间检查设备是否连接成功，并向用户报告连接成功或等待超时。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 300 (5 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
@@ -644,20 +644,20 @@
     "zh-CN": "没有设备在线时等待连接的最长毫秒数，范围 0–300000。生成连接说明后必须设为 300000（超时 300 秒）。0 表示立即返回快照。"
   },
   "mcp.connection.context": {
-    "en": "Tokens, invitations and connection commands are private credentials. Observe devices through list_clients; no background agent notifications are sent. Restarting the server frontend preserves runtime connections and state. Restarting the runtime invalidates tokens, invitations and sessions.",
-    "zh-CN": "Token、邀请和连接命令是私密凭据。通过 list_clients 查看设备，无后台 agent 通知。服务端前端重启保留 runtime 中的连接和状态；runtime 重启会使 token、邀请和会话失效。"
+    "en": "Tokens, invitations and connection commands are private credentials. Observe devices through list_client; no background agent notifications are sent. Restarting the server frontend preserves runtime connections and state. Restarting the runtime invalidates tokens, invitations and sessions.",
+    "zh-CN": "Token、邀请和连接命令是私密凭据。通过 list_client 查看设备，无后台 agent 通知。服务端前端重启保留 runtime 中的连接和状态；runtime 重启会使 token、邀请和会话失效。"
   },
   "mcp.client.id": {
-    "en": "Six lowercase letters or digits from list_clients, used to select or filter devices. For multi-device tokens it is required when a specific device must be selected and no existing session_id identifies it. Session-list filtering is optional.",
-    "zh-CN": "list_clients 返回的 6 位小写字母或数字 ID，用于选择或筛选设备。多设备模式下，操作需要定位设备且无法由已有 session_id 定位时必须提供；会话列表筛选为可选。"
+    "en": "Six lowercase letters or digits from list_client, used to select or filter devices. For multi-device tokens it is required when a specific device must be selected and no existing session_id identifies it. Session-list filtering is optional.",
+    "zh-CN": "list_client 返回的 6 位小写字母或数字 ID，用于选择或筛选设备。多设备模式下，操作需要定位设备且无法由已有 session_id 定位时必须提供；会话列表筛选为可选。"
   },
   "unknown.client.id": {
     "en": "Unknown or offline client_id for this token.",
     "zh-CN": "此 Token 下没有该 client_id，或设备已离线。"
   },
   "client.id.required": {
-    "en": "client_id is required for multi-device tokens. Call list_clients to select a device.",
-    "zh-CN": "多设备 Token 必须提供 client_id，请调用 list_clients 选择设备。"
+    "en": "client_id is required for multi-device tokens. Call list_client to select a device.",
+    "zh-CN": "多设备 Token 必须提供 client_id，请调用 list_client 选择设备。"
   },
   "multi.device.display.notice": {
     "en": "Multi-device mode: connection commands can be reused on multiple computers until the invitation expires. Multiple devices may stay connected simultaneously.",
@@ -1078,5 +1078,17 @@
   "session.disconnected.unconfirmed": {
     "en": "client disconnected; remote process termination is unconfirmed",
     "zh-CN": "客户端已断开；远端进程是否终止尚未确认"
+  },
+  "mcp.close.client": {
+    "en": "Close selected online devices for this token. Pass client_ids from list_client to close only those devices. Omit client_ids to close all online devices and revoke the token and its invitations, including when no devices are online. Every ID must belong to this token. Closing a device stops its sessions and active transfers.",
+    "zh-CN": "关闭此 token 下选定的在线设备。传入 list_client 返回的 client_ids 时只关闭指定设备；不传则关闭所有在线设备并撤销 token 和其邀请，即使当前没有在线设备也会撤销。所有 ID 必须属于此 token。关闭设备会停止其会话和进行中的传输。"
+  },
+  "mcp.client.ids": {
+    "en": "Unique device IDs from list_client. Omit to close all online devices and revoke the token and its invitations; an empty array is not allowed.",
+    "zh-CN": "list_client 返回的设备 ID，不能重复。不传则关闭全部在线设备并撤销 token 和邀请；不允许空数组。"
+  },
+  "mcp.result.client_ids": {
+    "en": "IDs of devices closed by this call.",
+    "zh-CN": "本次关闭的设备 ID。"
   }
 }

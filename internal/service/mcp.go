@@ -56,6 +56,10 @@ type listClientsArgs struct {
 	targetArgs
 	WaitMS int `json:"wait_ms,omitempty"`
 }
+type closeClientArgs struct {
+	targetArgs
+	ClientIDs []string `json:"client_ids,omitempty"`
+}
 type executeArgs struct {
 	targetArgs
 	ClientID  string                 `json:"client_id,omitempty"`
@@ -104,6 +108,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 	descriptions := map[string]string{
 		"client_token": "mcp.target.client.connection.token.required.when.authenticated.with",
 		"client_id":    "mcp.client.id", "command": "mcp.shell.command",
+		"client_ids": "mcp.client.ids",
 		"setup":      "mcp.execution.setup",
 		"session_id": "mcp.session.identifier", "cursor": "mcp.byte.cursor.initially.0",
 		"wait_ms": "mcp.wait.up.to.this.many.milliseconds.for.output", "input": "mcp.input.bytes.as.text.e.g.yes.n",
@@ -123,6 +128,10 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 			}
 		case "client_id":
 			property.Pattern = "^[a-z0-9]{6}$"
+		case "client_ids":
+			property.MinItems = new(1)
+			property.UniqueItems = true
+			property.Items.Pattern = "^[a-z0-9]{6}$"
 		case "cursor":
 			property.Minimum = new(float64(0))
 		case "max_bytes":
@@ -130,7 +139,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 			property.Default = json.RawMessage("16384")
 		case "wait_ms":
 			property.Minimum, property.Maximum, property.Default = new(float64(0)), new(float64(20000)), json.RawMessage("0")
-			if name == "list_clients" {
+			if name == "list_client" {
 				property.Maximum = new(float64(300000))
 				property.Description = serverText("mcp.wait.for.connection")
 			}
@@ -178,7 +187,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 			return nil, zero, err
 		}
 		if secret == "" {
-			if name == "list_clients" {
+			if name == "list_client" {
 				return nil, zero, i18n.NewError("mcp.connection.wait.failed", i18n.NewError("valid.client.token.is.required"))
 			}
 			return nil, zero, i18n.NewError("valid.client.token.is.required")
@@ -234,12 +243,16 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		out, err := s.p2pTransferStart(ctx, secret, a)
 		return nil, out, err
 	})
-	addTargetTool(s, ms, admin, "list_clients", "mcp.list.clients", func(ctx context.Context, secret string, a listClientsArgs) (*mcp.CallToolResult, map[string]any, error) {
+	addTargetTool(s, ms, admin, "list_client", "mcp.list.clients", func(ctx context.Context, secret string, a listClientsArgs) (*mcp.CallToolResult, map[string]any, error) {
 		clients, err := controlCall[[]clientInfo](ctx, s.control, "clients", toolRequest[listClientsArgs]{Secret: secret, Args: a})
 		if err != nil {
 			return nil, nil, i18n.NewError("mcp.connection.wait.failed", err)
 		}
 		return nil, map[string]any{"clients": clients}, nil
+	})
+	addTargetTool(s, ms, admin, "close_client", "mcp.close.client", func(ctx context.Context, secret string, a closeClientArgs) (*mcp.CallToolResult, closeClientResult, error) {
+		out, err := controlCall[closeClientResult](ctx, s.control, "clients/close", toolRequest[closeClientArgs]{Secret: secret, Args: a})
+		return nil, out, err
 	})
 	addTargetTool(s, ms, admin, "execute_command", "mcp.execution.workflow", func(ctx context.Context, secret string, a executeArgs) (*mcp.CallToolResult, map[string]any, error) {
 		if err := validateExecution(a); err != nil {

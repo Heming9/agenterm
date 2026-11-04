@@ -120,7 +120,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 			t.Error("client did not exit")
 		}
 	})
-	devices := h.call(t, token, "list_clients", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
+	devices := h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
 	if len(devices) != 1 {
 		t.Fatal(devices)
 	}
@@ -168,7 +168,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	if !strings.Contains(output.String(), "answer:hello") {
 		t.Fatalf("session interrupted: %q", output.String())
 	}
-	devices = h.call(t, token, "list_clients", map[string]any{}, false).(map[string]any)["clients"].([]any)
+	devices = h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any)
 	if connections.Load() != 1 || devices[0].(map[string]any)["client_id"] != deviceID {
 		t.Fatal("client reconnected during automatic bootstrap")
 	}

@@ -23,7 +23,7 @@ func TestClientListOmitsStatusAndPreservesHeartbeatLatency(t *testing.T) {
 	check := func() {
 		t.Helper()
 		for _, wait := range []int{0, 20000} {
-			out := h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, false).(map[string]any)
+			out := h.call(t, token, "list_client", map[string]any{"wait_ms": wait}, false).(map[string]any)
 			clients := out["clients"].([]any)
 			if len(clients) != 2 {
 				t.Fatalf("expected two clients: %v", out)
@@ -77,7 +77,7 @@ func TestExecutionShellAvailableBeforeFirstCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, wait := range []int{0, 20000} {
-		out := h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, false).(map[string]any)
+		out := h.call(t, token, "list_client", map[string]any{"wait_ms": wait}, false).(map[string]any)
 		clients := out["clients"].([]any)
 		if len(clients) != 1 {
 			t.Fatalf("expected one client: %v", out)
@@ -139,7 +139,7 @@ func TestClientShellMetadataThroughMCP(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { ws.Close() })
-			out := h.call(t, "admin-test", "list_clients", map[string]any{"client_token": token, "wait_ms": 20000}, false).(map[string]any)
+			out := h.call(t, "admin-test", "list_client", map[string]any{"client_token": token, "wait_ms": 20000}, false).(map[string]any)
 			clients := out["clients"].([]any)
 			if len(clients) != 1 || clients[0].(map[string]any)["client_info"].(map[string]any)["shell"] != tc.want {
 				t.Fatalf("shell metadata: %v, want %q", out, tc.want)
@@ -174,7 +174,7 @@ func TestClientDefaultCwdMetadataThroughMCP(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { ws.Close() })
-			out := h.call(t, token, "list_clients", map[string]any{}, false).(map[string]any)
+			out := h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)
 			clients := out["clients"].([]any)
 			if len(clients) != 1 {
 				t.Fatalf("expected one client: %v", out)

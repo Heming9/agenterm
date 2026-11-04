@@ -213,7 +213,7 @@ func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, re
 func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token, other := h.create(t, true), h.create(t, true)
-	empty := h.call(t, token, "list_clients", map[string]any{}, false).(map[string]any)
+	empty := h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)
 	if len(empty["clients"].([]any)) != 0 {
 		t.Fatal(empty)
 	}
@@ -228,11 +228,11 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	if a == b || !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(a) || !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(b) {
 		t.Fatalf("invalid IDs: %q %q", a, b)
 	}
-	listed := h.call(t, "admin-test", "list_clients", map[string]any{"client_token": token}, false).(map[string]any)["clients"].([]any)
+	listed := h.call(t, "admin-test", "list_client", map[string]any{"client_token": token}, false).(map[string]any)["clients"].([]any)
 	if len(listed) != 2 || listed[0].(map[string]any)["client_info"].(map[string]any)["platform"] != "linux" || listed[0].(map[string]any)["connected_at"] == "" {
 		t.Fatal(listed)
 	}
-	if len(h.call(t, other, "list_clients", map[string]any{}, false).(map[string]any)["clients"].([]any)) != 0 {
+	if len(h.call(t, other, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any)) != 0 {
 		t.Fatal("cross-token device listing")
 	}
 	for _, name := range []string{"execute_command"} {
@@ -383,11 +383,11 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 		for _, tool := range payload.Result.Tools {
 			names[tool.Name] = true
 		}
-		want := 6
+		want := 7
 		if auth == "admin-test" {
-			want = 7
+			want = 8
 		}
-		if len(names) != want || !names["list_clients"] || names["wait_for_client"] || names["wait_for_clients"] {
+		if len(names) != want || !names["list_client"] || !names["close_client"] || names["list_clients"] || names["wait_for_client"] || names["wait_for_clients"] {
 			t.Fatal(names)
 		}
 		for _, removed := range []string{"wait_for_client", "wait_for_clients"} {

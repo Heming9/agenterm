@@ -230,6 +230,9 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 	registerControl(mux, "clients", func(ctx context.Context, in toolRequest[listClientsArgs]) ([]clientInfo, error) {
 		return s.waitForClients(ctx, in.Secret, time.Duration(in.Args.WaitMS)*time.Millisecond)
 	})
+	registerControl(mux, "clients/close", func(ctx context.Context, in toolRequest[closeClientArgs]) (closeClientResult, error) {
+		return s.closeClients(ctx, in.Secret, in.Args.ClientIDs)
+	})
 	registerControl(mux, "p2p/start", s.startP2P)
 	registerControl(mux, "p2p/signal", s.p2pSignal)
 	registerControl(mux, "session/execute", s.executeInSession)

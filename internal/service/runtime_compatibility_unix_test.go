@@ -94,7 +94,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 			t.Fatalf("%s interrupted the session: %v", action, after)
 		}
 		cursor = after["next_cursor"]
-		clients := h.call(t, token, "list_clients", map[string]any{}, false).(map[string]any)["clients"].([]any)
+		clients := h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any)
 		if len(clients) != 1 || clients[0].(map[string]any)["client_id"] != clientID {
 			t.Fatalf("%s changed existing client connection: %v", action, clients)
 		}

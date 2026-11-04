@@ -55,7 +55,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 				t.Fatalf("%s permits a redundant false truncation field", tool.Name)
 			}
 		}
-		if tool.Name == "list_clients" && (len(schema.Properties) != 1 || schema.Properties["clients"] == nil) {
+		if tool.Name == "list_client" && (len(schema.Properties) != 1 || schema.Properties["clients"] == nil) {
 			t.Fatalf("redundant device list fields: %s", data)
 		}
 		if tool.Name == "session_list" {
@@ -153,8 +153,8 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	}
 	created := call("create_client", map[string]any{})
 	token := created["client_token"].(string)
-	call("list_clients", map[string]any{"client_token": token})
-	waited := call("list_clients", map[string]any{"client_token": token, "wait_ms": 20})
+	call("list_client", map[string]any{"client_token": token})
+	waited := call("list_client", map[string]any{"client_token": token, "wait_ms": 20})
 	if len(waited) != 1 || len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("unexpected connection timeout result: %v", waited)
 	}
@@ -162,12 +162,12 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	enableP2PTestClient(h, clientID)
 	go serveTestDevice(ws, "schema", nil, nil)
 	call("p2p_transfer_start", map[string]any{"client_token": token, "client_id": clientID})
-	connected := call("list_clients", map[string]any{"client_token": token, "wait_ms": 300000})
+	connected := call("list_client", map[string]any{"client_token": token, "wait_ms": 300000})
 	if len(connected) != 1 || len(connected["clients"].([]any)) != 1 {
 		t.Fatalf("unexpected 300-second connection check result: %v", connected)
 	}
 	for _, wait := range []int{-1, 300001} {
-		h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, true)
+		h.call(t, token, "list_client", map[string]any{"wait_ms": wait}, true)
 	}
 	call("execute_command", map[string]any{"client_token": token, "command": "example"})
 	started := call("execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "client_token": token, "command": "interactive"})
@@ -185,7 +185,8 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	}
 	call("session_read", map[string]any{"client_token": token, "session_id": id})
 	call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
-	if len(seen) != 7 {
+	call("close_client", map[string]any{"client_token": token, "client_ids": []string{clientID}})
+	if len(seen) != 8 {
 		t.Fatalf("validated %d tools", len(seen))
 	}
 }

@@ -39,13 +39,17 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 		return sessionExecution{}, err
 	}
 	s.mu.Lock()
+	if !s.validSecretLocked(in.Secret) {
+		s.mu.Unlock()
+		return sessionExecution{}, i18n.NewError("valid.client.token.is.required")
+	}
 	var c *client
 	var err error
 	targetID := a.SessionID
 	if a.Setup != nil {
 		targetID = a.Setup.SessionID
 	}
-	if p := s.sessions[sessionKey(in.Secret, targetID)]; targetID != "" && p != nil && s.clients[p.client.info.ID] == p.client {
+	if p := s.sessions[sessionKey(in.Secret, targetID)]; targetID != "" && p != nil && s.clients[p.client.info.ID] == p.client && !p.client.closing {
 		c = p.client
 		if a.ClientID != "" && a.ClientID != c.info.ID {
 			s.mu.Unlock()

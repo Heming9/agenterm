@@ -184,7 +184,7 @@ func observeMCP(next mcp.MethodHandler) mcp.MethodHandler {
 		tool := "unknown"
 		if call, ok := request.(*mcp.CallToolRequest); ok && call.Params != nil {
 			switch call.Params.Name {
-			case "create_client", "list_clients", "execute_command", "session_read", "session_list", "session_control", "p2p_transfer_start":
+			case "create_client", "list_client", "close_client", "execute_command", "session_read", "session_list", "session_control", "p2p_transfer_start":
 				tool = call.Params.Name
 			}
 		}

@@ -152,7 +152,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 			t.Error("client did not exit")
 		}
 	})
-	devices := h.call(t, token, "list_clients", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
+	devices := h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
 	if len(devices) != 1 {
 		t.Fatalf("devices: %v", devices)
 	}
@@ -229,7 +229,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	if !strings.Contains(output.String(), "after:hello") {
 		t.Fatalf("output after restart: %q", output.String())
 	}
-	after := h.call(t, token, "list_clients", map[string]any{}, false).(map[string]any)["clients"].([]any)
+	after := h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any)
 	if len(after) != 1 || after[0].(map[string]any)["client_id"] != deviceID || connected.Load() != 1 {
 		t.Fatalf("client reconnected across server restart: %v count=%d", after, connected.Load())
 	}

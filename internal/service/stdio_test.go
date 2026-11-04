@@ -45,7 +45,7 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 7 {
+	if err != nil || len(tools.Tools) != 8 {
 		t.Fatalf("tools: %v %v", tools, err)
 	}
 	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_client", Arguments: map[string]any{}})
@@ -71,7 +71,7 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	if err != nil || token != invitation.ClientToken || token == "" {
 		t.Fatalf("HTTP invitation redemption: token match=%v err=%v", token == invitation.ClientToken, err)
 	}
-	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_clients", Arguments: map[string]any{"client_token": token}})
+	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_client", Arguments: map[string]any{"client_token": token}})
 	if err != nil || listed.IsError {
 		t.Fatalf("stdio target credentials: %v %v", listed, err)
 	}

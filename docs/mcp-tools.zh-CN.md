@@ -1,11 +1,12 @@
 # MCP 工具技术参考
 
-当前源码构建会为全部七个工具提供明确的返回 Schema 和行为标注。请以实际连接 Server 的 `tools/list` 响应为准，既有部署或较旧发布的二进制可能仍提供旧版 Schema。
+当前源码构建会为全部八个工具提供明确的返回 Schema 和行为标注。请以实际连接 Server 的 `tools/list` 响应为准，既有部署或较旧发布的二进制可能仍提供旧版 Schema。
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
 | `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
-| `list_clients` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
+| `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
+| `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
 | `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
 | `execute_command` | 通过 setup 创建、session_id 复用；匿名任务快速完成关闭，等待到期保留。 | `session_id`、`command_id`、`status`、`output`、`next_cursor`、`has_more`；按需返回 `exit_code`、`error`、`truncated`。 |
 | `session_read` | 分页读取输出，与 execute_command 使用同一返回格式。 | 六个常规字段；命令结束时带 `exit_code`，有错误或丢失输出时带对应字段。 |
@@ -49,14 +50,16 @@
 
 `create_client` 的 MCP 文本内容直接返回固定的英文纯文本连接模板，与 `structuredContent.display_text` 一致，不受服务器语言设置影响；凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。模板依次包含 Windows 命令、macOS / Linux 命令、连接令牌、使用方法和邀请有效期；多设备模式会追加复用提示。
 
-通过 `create_client` 生成连接说明后，agent 必须先根据与用户交流的语言完整展示 `display_text`，仅翻译标题和说明文字；使用英语交流时原样展示。保留所有段落、顺序、换行和纯文本格式，命令、URL、连接令牌、有效期数值及截止时间保持原样，不得省略内容或添加 Markdown 格式。然后使用返回的 `client_token` 调用 `list_clients`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
+通过 `create_client` 生成连接说明后，agent 必须先根据与用户交流的语言完整展示 `display_text`，仅翻译标题和说明文字；使用英语交流时原样展示。保留所有段落、顺序、换行和纯文本格式，命令、URL、连接令牌、有效期数值及截止时间保持原样，不得省略内容或添加 Markdown 格式。然后使用返回的 `client_token` 调用 `list_client`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
 
 </details>
 
 <details>
 <summary>设备信息</summary>
 
-`list_clients` 只返回在线设备。每条包含 client_id、connected_at 和 client_info，不再返回顶层或设备条目的 status；是否在线由 clients 数组直接判断。client_info 的主机名、平台、架构、shell、默认目录、客户端版本和能力信息保持不变。心跳和 RTT 仍由连接内部及客户端界面使用，不拼接为 MCP 状态字符串。
+`list_client` 只返回在线设备。每条包含 client_id、connected_at 和 client_info，不再返回顶层或设备条目的 status；是否在线由 clients 数组直接判断。client_info 的主机名、平台、架构、shell、默认目录、客户端版本和能力信息保持不变。心跳和 RTT 仍由连接内部及客户端界面使用，不拼接为 MCP 状态字符串。
+
+`close_client` 接受非空、无重复的 `client_ids` 数组；不传该参数时关闭当前 token 下所有在线设备并撤销该 token 和其邀请，即使没有在线设备也会撤销。所有 ID 均须属于该 token，校验失败时不关闭任何设备。返回的 `client_ids` 列出已关闭的连接，无设备在线时返回空数组。关闭会结束设备的会话和活动传输；仅关闭指定设备时保留 token 和邀请。已关闭客户端不会自动重连。管理访问须传 `client_token`，设备范围访问使用 Bearer token。
 
 </details>
 
@@ -107,7 +110,7 @@ Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道�
 
 `session_control` 必须提供 session_id 和 action。input 仅向当前命令发送输入，空闲终端拒绝；新命令使用 execute_command。仅 input 接受且必须提供 input，仅 stop 接受可选 wait_ms（默认 1000）。input、interrupt、eof 成功统一返回 `{"ok":true}`，表示客户端已确认请求，不保证程序已消费输入或处理中断。stop 返回 status 和可选 exit_code/error。不回显 action。输入和信号可能重复产生副作用，超时后勿盲目重试。
 
-调用中断或 EOF 前，先检查 `list_clients.client_info.session_controls`（`interrupt` 和/或 `eof`）；空列表表示不可用，旧客户端可能需要更新。这两个操作最多等待 5 秒取得客户端确认；`ok=true` 不保证程序已处理，应继续读取输出核实。超时或取消后操作可能已经执行，请勿盲目重试。
+调用中断或 EOF 前，先检查 `list_client.client_info.session_controls`（`interrupt` 和/或 `eof`）；空列表表示不可用，旧客户端可能需要更新。这两个操作最多等待 5 秒取得客户端确认；`ok=true` 不保证程序已处理，应继续读取输出核实。超时或取消后操作可能已经执行，请勿盲目重试。
 
 - `session_control(action="interrupt")` 在 Linux/macOS 向终端当前前台进程组发送 SIGINT，前台命令退出后交互 shell 可能继续可用；程序也可能忽略信号或退出。它不会像 `session_control(action="stop")` 一样强制取消整个会话。Windows 管道模式不支持中断。
 - `session_control(action="eof")` 排在先前输入之后执行。在 Linux/macOS 的规范终端模式下发送配置的 VEOF 字符；若有未提交的输入，会先交付这些输入，可能需要再次 EOF，且不会永久关闭输入。原始模式或禁用 VEOF 时返回错误。在 Windows 管道模式下永久关闭标准输入，输出仍可读取，后续写入失败，重复 EOF 无额外影响。在空闲 shell 提示符处发送 EOF 可能退出 shell。

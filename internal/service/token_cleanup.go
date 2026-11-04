@@ -60,20 +60,32 @@ func (s *runtimeState) deleteTokensLocked(secrets map[string]bool) {
 	if len(secrets) == 0 {
 		return
 	}
-	for key, entry := range s.invitations {
-		if secrets[s.tokens[entry.token]] {
-			s.deleteInvitation(key)
-		}
-	}
+	s.revokeTokensLocked(secrets)
+	s.deleteSessionsLocked(secrets)
+}
+
+func (s *runtimeState) deleteSessionsLocked(secrets map[string]bool) {
 	for id, p := range s.sessions {
 		if secrets[p.owner] {
 			delete(s.sessions, id)
 		}
 	}
-	for secret := range secrets {
-		if owner := s.clientOwners[secret]; owner != nil {
-			delete(s.tokens, owner.token)
+}
+
+// Revoke before disconnecting clients to prevent a concurrent reconnect.
+// Retained sessions can be removed after disconnect cleanup has notified waiters.
+func (s *runtimeState) revokeTokensLocked(secrets map[string]bool) {
+	for key, entry := range s.invitations {
+		if secrets[s.tokens[entry.token]] {
+			s.deleteInvitation(key)
 		}
+	}
+	for token, secret := range s.tokens {
+		if secrets[secret] {
+			delete(s.tokens, token)
+		}
+	}
+	for secret := range secrets {
 		delete(s.clientOwners, secret)
 		delete(s.multiDevice, secret)
 		s.notifyClientWaitersLocked(secret)

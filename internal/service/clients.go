@@ -3,8 +3,11 @@ package service
 import (
 	"agenterm/internal/i18n"
 	"agenterm/internal/protocol"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"slices"
@@ -12,12 +15,92 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/gorilla/websocket"
 )
 
 type clientInfo struct {
 	ID          string            `json:"client_id"`
 	Environment clientEnvironment `json:"client_info"`
 	ConnectedAt time.Time         `json:"connected_at"`
+}
+
+// closeClients validates the whole selection before closing any connection.
+func (s *runtimeState) closeClients(ctx context.Context, secret string, ids []string) (closeClientResult, error) {
+	s.mu.Lock()
+	if !s.validSecretLocked(secret) {
+		s.mu.Unlock()
+		return closeClientResult{}, i18n.NewError("valid.client.token.is.required")
+	}
+	selected := make([]*client, 0)
+	if ids == nil {
+		for _, info := range s.listClientsLocked(secret) {
+			selected = append(selected, s.clients[info.ID])
+		}
+		s.revokeTokensLocked(map[string]bool{secret: true})
+	} else {
+		seen := make(map[string]bool)
+		if len(ids) == 0 {
+			s.mu.Unlock()
+			return closeClientResult{}, i18n.NewError("unknown.client.id")
+		}
+		for _, id := range ids {
+			c := s.clients[id]
+			if c == nil || c.secret != secret || seen[id] {
+				s.mu.Unlock()
+				return closeClientResult{}, i18n.NewError("unknown.client.id")
+			}
+			seen[id] = true
+			selected = append(selected, c)
+		}
+	}
+	for _, c := range selected {
+		c.closing = true
+		c.mu.Lock()
+		c.closed = true
+		c.mu.Unlock()
+	}
+	s.mu.Unlock()
+	// Policy violation is understood by existing clients as a permanent close,
+	// so an explicitly closed device does not immediately reconnect.
+	out := closeClientResult{ClientIDs: make([]string, 0, len(selected))}
+	var closeErrors []error
+	for _, c := range selected {
+		if err := c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "closed by server"), time.Now().Add(time.Second)); err != nil {
+			closeErrors = append(closeErrors, fmt.Errorf("client %s: close signal delivery failed: %w", c.info.ID, err))
+		}
+		_ = c.conn.Close()
+		out.ClientIDs = append(out.ClientIDs, c.info.ID)
+	}
+	cleanup := func() {
+		for _, c := range selected {
+			<-c.done
+		}
+		if ids == nil {
+			s.mu.Lock()
+			s.deleteSessionsLocked(map[string]bool{secret: true})
+			s.mu.Unlock()
+		}
+	}
+	for _, c := range selected {
+		select {
+		case <-c.done:
+		case <-ctx.Done():
+			if ids == nil {
+				go cleanup()
+			}
+			return closeClientResult{}, ctx.Err()
+		}
+	}
+	if ids == nil {
+		s.mu.Lock()
+		s.deleteSessionsLocked(map[string]bool{secret: true})
+		s.mu.Unlock()
+	}
+	if len(closeErrors) != 0 {
+		return closeClientResult{}, errors.Join(closeErrors...)
+	}
+	return out, nil
 }
 
 type clientEnvironment struct {
@@ -95,7 +178,7 @@ func (s *runtimeState) hasClientLocked(secret string) bool {
 
 func (s *runtimeState) targetClientLocked(secret, id string) (*client, error) {
 	if id != "" {
-		if c := s.clients[id]; c != nil && c.secret == secret {
+		if c := s.clients[id]; c != nil && c.secret == secret && !c.closing {
 			return c, nil
 		}
 		return nil, i18n.NewError("unknown.client.id")
@@ -104,7 +187,7 @@ func (s *runtimeState) targetClientLocked(secret, id string) (*client, error) {
 		return nil, i18n.NewError("client.id.required")
 	}
 	for _, c := range s.clients {
-		if c.secret == secret {
+		if c.secret == secret && !c.closing {
 			return c, nil
 		}
 	}

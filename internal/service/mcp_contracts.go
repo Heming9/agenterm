@@ -11,6 +11,9 @@ import (
 type clientsResult struct {
 	Clients []clientInfo `json:"clients"`
 }
+type closeClientResult struct {
+	ClientIDs []string `json:"client_ids"`
+}
 
 type executeResult = sessionReadResult
 
@@ -114,8 +117,10 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 	switch name {
 	case "create_client":
 		output = resultSchema[invitationResult]()
-	case "list_clients":
+	case "list_client":
 		output = resultSchema[clientsResult]()
+	case "close_client":
+		output = resultSchema[closeClientResult]()
 	case "execute_command":
 		output = resultSchema[executeResult]()
 	case "session_read":
@@ -127,8 +132,8 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 	case "p2p_transfer_start":
 		output = resultSchema[p2pStartResult]()
 	}
-	readOnly := name == "list_clients" || name == "session_read" || name == "session_list"
-	destructive := name == "execute_command" || name == "session_control" || name == "p2p_transfer_start"
+	readOnly := name == "list_client" || name == "session_read" || name == "session_list"
+	destructive := name == "execute_command" || name == "session_control" || name == "p2p_transfer_start" || name == "close_client"
 	openWorld := destructive
 	return &mcp.Tool{
 		Name: name, Description: serverText(description), InputSchema: input, OutputSchema: output,

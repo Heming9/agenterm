@@ -1,11 +1,12 @@
 # MCP tool reference
 
-Current source builds publish explicit output schemas and behavior annotations for all seven tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
+Current source builds publish explicit output schemas and behavior annotations for all eight tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
 
 | Tool | When to use it | Main result fields |
 | --- | --- | --- |
 | `create_client` | Create a private connection invitation. | `client_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
-| `list_clients` | List online devices or wait for a connection. | `clients`; empty means no online device when returned. |
+| `list_client` | List online devices or wait for a connection. | `clients`; empty means no online device when returned. |
+| `close_client` | Close selected devices or all online devices for the token. | Closed `client_ids`. |
 | `p2p_transfer_start` | Bootstrap p2p-cli remotely and return Agent-side scripts after remote signaling registration. | `connection_id`, endpoint IDs, `state`, `shell_script`, `powershell_script`. |
 | `execute_command` | Create through setup or reuse through session_id; anonymous commands close quickly or retain on wait expiry. | `session_id`, `command_id`, `status`, `output`, `next_cursor`, `has_more`; optional `exit_code`, `error`, `truncated`. |
 | `session_read` | Read paginated output using the same result format as execute_command. | Six regular fields; completion adds exit_code, with error/truncated only when needed. |
@@ -49,14 +50,16 @@ Reuse the terminal:
 
 The MCP text content of `create_client` directly returns a fixed English plain-text connection template, identical to `structuredContent.display_text`, regardless of the server language setting. Credentials, expiry and platform commands remain available in `structuredContent` for programmatic use. The template contains the Windows command, macOS / Linux command, connection token, usage steps and invitation validity in that order. Multi-device mode appends an invitation reuse notice.
 
-After generating connection instructions with `create_client`, the agent must present the complete `display_text` in the language used to communicate with the user. Translate only headings and explanatory prose; when communicating in English, present it verbatim. Preserve all sections, order, line breaks and plain-text format. Keep commands, URLs, connection tokens, validity numbers and expiry timestamps unchanged. Do not omit content or add Markdown formatting. Then call `list_clients` with the returned `client_token` and `wait_ms: 300000` to check for a successful connection, with a 300-second timeout. The call returns immediately when any device is online. If no device connects within 300 seconds, report the timeout to the user. These requirements are published in the MCP tool descriptions.
+After generating connection instructions with `create_client`, the agent must present the complete `display_text` in the language used to communicate with the user. Translate only headings and explanatory prose; when communicating in English, present it verbatim. Preserve all sections, order, line breaks and plain-text format. Keep commands, URLs, connection tokens, validity numbers and expiry timestamps unchanged. Do not omit content or add Markdown formatting. Then call `list_client` with the returned `client_token` and `wait_ms: 300000` to check for a successful connection, with a 300-second timeout. The call returns immediately when any device is online. If no device connects within 300 seconds, report the timeout to the user. These requirements are published in the MCP tool descriptions.
 
 </details>
 
 <details>
 <summary>Device information</summary>
 
-`list_clients` contains online devices only. Each entry retains client_id, connected_at and client_info, without top-level or per-device status. Array membership indicates connectivity. Hostname, platform, architecture, shell, default directory, client version and capability metadata remain available. Heartbeat/RTT remain internal and available to the client UI; they are not embedded in MCP status strings.
+`list_client` contains online devices only. Each entry retains client_id, connected_at and client_info, without top-level or per-device status. Array membership indicates connectivity. Hostname, platform, architecture, shell, default directory, client version and capability metadata remain available. Heartbeat/RTT remain internal and available to the client UI; they are not embedded in MCP status strings.
+
+`close_client` accepts a nonempty array of unique `client_ids`; omit it to close all online devices and revoke the token and its invitations, even when no devices are online. Every ID must belong to that token, and validation failure closes none. The result lists the closed IDs, or an empty array when none are online. Closing a device ends its sessions and active transfers; selecting IDs preserves the token and invitations. Closed clients do not automatically reconnect. Management access requires `client_token`; device-scoped access uses its bearer token.
 
 </details>
 
@@ -107,7 +110,7 @@ Optionally pass `command_id` to `session_read` to pin its status to that command
 
 `session_control` requires session_id and action. Input targets only the active command; idle shells reject it, and new commands use execute_command. Only input requires/accepts input text, and only stop accepts optional wait_ms (default 1000). Input, interrupt and EOF share `{"ok":true}` after client acknowledgment, without claiming that a program consumed input or handled a signal. Stop returns status and optional exit_code/error, with no action echo. Input/signals may repeat side effects: do not blindly retry uncertain delivery.
 
-Before interrupt or EOF, check `list_clients.client_info.session_controls` (`interrupt` and/or `eof`). An empty list means unavailable; older clients may need updating. Both operations wait up to 5 seconds for client acknowledgment. `ok=true` does not guarantee the program handled the operation; read output to verify. A timeout or cancellation leaves delivery uncertain, so do not blindly retry.
+Before interrupt or EOF, check `list_client.client_info.session_controls` (`interrupt` and/or `eof`). An empty list means unavailable; older clients may need updating. Both operations wait up to 5 seconds for client acknowledgment. `ok=true` does not guarantee the program handled the operation; read output to verify. A timeout or cancellation leaves delivery uncertain, so do not blindly retry.
 
 - `session_control(action="interrupt")` sends SIGINT to the current terminal foreground process group on Linux/macOS. An interactive shell may remain usable after its foreground command exits; the program may also ignore the signal or exit. This does not forcibly cancel the entire session like `session_control(action="stop")`. Windows pipe mode does not support interrupt.
 - `session_control(action="eof")` follows previously queued input. On Linux/macOS canonical terminals it sends the configured VEOF character: pending input may be delivered first, requiring another EOF, and stdin is not permanently closed. Raw mode or disabled VEOF returns an error. On Windows pipes it permanently closes stdin while output remains readable; subsequent writes fail and repeated EOF is harmless. EOF at an idle shell prompt may exit the shell.

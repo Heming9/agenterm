@@ -31,6 +31,8 @@ type client struct {
 	mu        sync.Mutex
 	pending   map[string]chan protocol.Message
 	closed    bool
+	closing   bool // guarded by runtimeState.mu; prevents new routing during close
+	done      chan struct{}
 	latencyMS int64 // Latest heartbeat RTT; guarded by mu. Zero means unmeasured.
 }
 
@@ -44,6 +46,12 @@ func (c *client) logger() *slog.Logger {
 func (c *client) send(m protocol.Message) error {
 	c.write.Lock()
 	defer c.write.Unlock()
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
+		return i18n.NewError("client.disconnected")
+	}
 	if err := c.conn.SetWriteDeadline(time.Now().Add(protocol.WriteTimeout)); err != nil {
 		return err
 	}
@@ -202,7 +210,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := s.newClientIDLocked()
-	c := &client{conn: conn, secret: secret, pending: make(map[string]chan protocol.Message), info: clientInfo{
+	c := &client{conn: conn, secret: secret, done: make(chan struct{}), pending: make(map[string]chan protocol.Message), info: clientInfo{
 		ID: id, ConnectedAt: time.Now().UTC(),
 		Environment: clientEnvironment{
 			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),
@@ -233,6 +241,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		disconnectReason := "read_failed"
 		stopHeartbeat := c.startHeartbeat(protocol.HeartbeatInterval, protocol.HeartbeatTimeout)
 		defer func() {
+			defer close(c.done)
 			conn.Close()
 			stopHeartbeat()
 			s.mu.Lock()

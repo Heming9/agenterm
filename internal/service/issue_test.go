@@ -279,16 +279,16 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("client may create: status=%d %v", status, denied)
 	}
-	_, missing := call("admin-test", "list_clients", `{}`)
+	_, missing := call("admin-test", "list_client", `{}`)
 	if missing["isError"] != true {
 		t.Fatalf("missing client accepted: %v", missing)
 	}
 	args, _ := json.Marshal(map[string]any{"client_token": token})
-	_, waited := call("admin-test", "list_clients", string(args))
+	_, waited := call("admin-test", "list_client", string(args))
 	if len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("wait: %v", waited)
 	}
-	_, old := call(token, "list_clients", `{}`)
+	_, old := call(token, "list_client", `{}`)
 	if len(old["clients"].([]any)) != 0 {
 		t.Fatalf("client token compatibility: %v", old)
 	}

@@ -86,7 +86,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 			t.Error("client did not stop")
 		}
 	})
-	h.call(t, token, "list_clients", map[string]any{"wait_ms": 4000}, false)
+	h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false)
 	command := "printf 'private-command-output'"
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{
 		"name": "execute_command", "arguments": map[string]any{"command": command, "setup": map[string]any{"env": map[string]string{"PRIVATE_VAR": "private-env"}}},

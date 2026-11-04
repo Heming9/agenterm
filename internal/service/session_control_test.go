@@ -22,7 +22,7 @@ func TestSessionControlDiscoveryAndRetiredTools(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"execute_command", "list_clients", "p2p_transfer_start", "session_control", "session_list", "session_read"}
+		want := []string{"close_client", "execute_command", "list_client", "p2p_transfer_start", "session_control", "session_list", "session_read"}
 		if auth == "admin-test" {
 			want = append(want, "create_client")
 		}
