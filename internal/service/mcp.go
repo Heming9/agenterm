@@ -224,12 +224,7 @@ func (s *frontend) sessionControl(ctx context.Context, secret string, a sessionA
 	if err := a.validate(); err != nil {
 		return nil, err
 	}
-	out, err := controlCall[map[string]any](ctx, s.control, "session/control", toolRequest[sessionActionArgs]{Secret: secret, Args: a})
-	if err != nil {
-		return nil, err
-	}
-	out["action"] = a.Action
-	return out, nil
+	return controlCall[map[string]any](ctx, s.control, "session/control", toolRequest[sessionActionArgs]{Secret: secret, Args: a})
 }
 
 func (s *frontend) newMCPServer(admin bool) *mcp.Server {
@@ -244,14 +239,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		if err != nil {
 			return nil, nil, i18n.NewError("mcp.connection.wait.failed", err)
 		}
-		out := map[string]any{"clients": clients}
-		if a.WaitMS > 0 {
-			out["status"] = "waiting"
-			if len(clients) > 0 {
-				out["status"] = "connected"
-			}
-		}
-		return nil, out, nil
+		return nil, map[string]any{"clients": clients}, nil
 	})
 	addTargetTool(s, ms, admin, "execute_command", "mcp.execution.workflow", func(ctx context.Context, secret string, a executeArgs) (*mcp.CallToolResult, map[string]any, error) {
 		if err := validateExecution(a); err != nil {

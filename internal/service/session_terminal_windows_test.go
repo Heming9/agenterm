@@ -15,7 +15,7 @@ func TestSessionEOFKeepsWindowsOutputReadable(t *testing.T) {
 	id := start["session_id"].(string)
 	h.call(t, token, "session_control", map[string]any{"action": "interrupt", "session_id": id}, true)
 	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "beta\r\nalpha\r\n"}, false)
-	if out := h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, false).(map[string]any); out["delivered"] != true {
+	if out := h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, false).(map[string]any); out["ok"] != true {
 		t.Fatal(out)
 	}
 	var cursor float64

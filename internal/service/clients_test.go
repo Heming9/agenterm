@@ -5,7 +5,6 @@ import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"os"
 	"runtime"
@@ -16,12 +15,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestClientStatusAndLatencyThroughMCP(t *testing.T) {
+func TestClientListOmitsStatusAndPreservesHeartbeatLatency(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, true)
 	ws, id := h.connect(t, token, "measured device")
 	_, unmeasuredID := h.connect(t, token, "unmeasured device")
-	check := func(want string) {
+	check := func() {
 		t.Helper()
 		for _, wait := range []int{0, 20000} {
 			out := h.call(t, token, "list_clients", map[string]any{"wait_ms": wait}, false).(map[string]any)
@@ -29,27 +28,24 @@ func TestClientStatusAndLatencyThroughMCP(t *testing.T) {
 			if len(clients) != 2 {
 				t.Fatalf("expected two clients: %v", out)
 			}
-			if wait > 0 && out["status"] != "connected" {
+			if len(out) != 1 || out["status"] != nil {
 				t.Fatalf("wait status changed: %v", out)
 			}
 			for _, entry := range clients {
 				info := entry.(map[string]any)
-				expected := "Connected"
 				switch info["client_id"] {
-				case id:
-					expected = want
-				case unmeasuredID:
+				case id, unmeasuredID:
 				default:
 					t.Fatalf("unexpected client: %v", info)
 				}
-				if info["status"] != expected {
-					t.Fatalf("device status: %v, want %q", info, expected)
+				if _, exists := info["status"]; exists {
+					t.Fatalf("redundant device status: %v", info)
 				}
 			}
 		}
 	}
 	// Neither peer reads Ping frames yet, so no RTT has been measured.
-	check("Connected")
+	check()
 	respond := ws.PingHandler()
 	ws.SetPingHandler(func(payload string) error {
 		time.Sleep(10 * time.Millisecond)
@@ -65,7 +61,7 @@ func TestClientStatusAndLatencyThroughMCP(t *testing.T) {
 	if message.Type != "latency" || message.LatencyMS < 10 {
 		t.Fatalf("unexpected heartbeat measurement: %+v", message)
 	}
-	check(fmt.Sprintf("Connected · %dms", message.LatencyMS))
+	check()
 }
 
 func TestExecutionShellAvailableBeforeFirstCommand(t *testing.T) {

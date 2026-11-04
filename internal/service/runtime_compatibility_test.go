@@ -57,7 +57,7 @@ func TestRuntimeCompatibilityDiagnostics(t *testing.T) {
 				if r.URL.Path != "/v1/config" || r.Header.Get(controlVersionHeader) != controlVersion {
 					t.Errorf("unexpected retry: %s %s", r.Method, r.URL.Path)
 				}
-				w.Header().Set(controlVersionHeader, "6")
+				w.Header().Set(controlVersionHeader, "7")
 				w.Header().Set(runtimeVersionHeader, "0.4.0")
 				w.Header().Set(runtimePIDHeader, "12345")
 				w.WriteHeader(status)
@@ -70,7 +70,7 @@ func TestRuntimeCompatibilityDiagnostics(t *testing.T) {
 			for _, language := range []string{"en", "zh-CN"} {
 				t.Setenv("AGENTERM_LANG", language)
 				message := withRuntimeInstance(err, "staging").Error()
-				for _, part := range []string{version.Current, "API " + controlVersion, "0.4.0", "API 6", "runtime PID 12345", "stop -instance staging", "kill -TERM 12345"} {
+				for _, part := range []string{version.Current, "API " + controlVersion, "0.4.0", "API 7", "runtime PID 12345", "stop -instance staging", "kill -TERM 12345"} {
 					if !strings.Contains(message, part) {
 						t.Errorf("%s diagnostic missing %q: %s", language, part, message)
 					}

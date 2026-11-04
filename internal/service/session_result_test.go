@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func assertCompactReadResult(t *testing.T, r map[string]any) {
@@ -69,6 +70,15 @@ func TestCompactReadLifecycleStates(t *testing.T) {
 			if len(r) != wantFields {
 				t.Fatalf("redundant fields: %v", r)
 			}
+			p.owner = "owner"
+			p.client = &client{info: clientInfo{ID: "device"}}
+			p.ended = time.Now()
+			state := &runtimeState{sessions: map[string]*session{sessionKey(p.owner, p.id): p}}
+			listed := state.listSessions(p.owner, "")
+			if len(listed) != 1 || listed[0].Status != r["status"] {
+				t.Fatalf("list/read state mismatch: %v %v", listed, r)
+			}
+
 		})
 	}
 }

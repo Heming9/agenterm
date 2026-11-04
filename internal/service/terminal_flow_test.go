@@ -65,7 +65,7 @@ func TestAnonymousCommandsCloseAndReleaseSlots(t *testing.T) {
 	}
 	items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
 	for _, item := range items {
-		if item.(map[string]any)["done"] != true {
+		if item.(map[string]any)["status"] != "closed" {
 			t.Fatalf("anonymous terminal leaked: %v", item)
 		}
 	}

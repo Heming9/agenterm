@@ -44,7 +44,7 @@ func TestNamedSessionStateAndFastCommands(t *testing.T) {
 		t.Fatalf("independent: %v", other)
 	}
 	items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
-	if len(items) != 2 || items[0].(map[string]any)["status"] != "idle" || items[0].(map[string]any)["session_id"] != "stateful" || items[1].(map[string]any)["done"] != true {
+	if len(items) != 2 || items[0].(map[string]any)["status"] != "idle" || items[0].(map[string]any)["session_id"] != "stateful" || items[1].(map[string]any)["status"] != "closed" {
 		t.Fatal(items)
 	}
 }

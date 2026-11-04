@@ -108,8 +108,8 @@ func (p *session) logCommandCompletion(m protocol.Message) {
 	p.commandLog.Log(context.Background(), level, "command completed", "duration_ms", time.Since(p.commandStarted).Milliseconds(), "exit_code", m.ExitCode, "timed_out", m.TimedOut, "canceled", m.Canceled, "has_error", m.Error != "")
 }
 
-// A finished anonymous shell and a stopped terminal remain busy until their
-// actual exit acknowledgment; idle must mean that reuse is possible.
+// Anonymous cleanup and pending stop remain busy; idle must permit reuse.
+// Closed means unavailable, including a lost connection reported via error.
 func (p *session) readStatusLocked() string {
 	if p.done {
 		return "closed"
@@ -199,6 +199,7 @@ func (s *runtimeState) listSessions(secret, clientID string) []sessionInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := make([]sessionInfo, 0)
+	startedAt := make(map[string]time.Time)
 	for id, p := range s.sessions {
 		if p.owner != secret {
 			continue
@@ -210,28 +211,21 @@ func (s *runtimeState) listSessions(secret, clientID string) []sessionInfo {
 			continue
 		}
 		if clientID == "" || clientID == p.client.info.ID {
-			info := sessionInfo{SessionID: p.id, ClientID: p.client.info.ID, Command: p.command,
-				StartedAt: p.started, Status: "running", Done: p.done,
-				Persistent: p.keepAlive, Promoted: p.promoted, CommandID: p.commandID, CommandDone: p.commandDone, SessionAlive: !p.done && !p.stopRequested,
-				OutputStartCursor: p.offset, OutputEndCursor: p.offset + int64(len(p.output))}
-			if p.commandDone {
-				info.Status = "idle"
+			info := sessionInfo{SessionID: p.id, ClientID: p.client.info.ID, Command: p.command, CommandID: p.commandID, Status: p.readStatusLocked()}
+			startedAt[p.id] = p.started
+			if p.commandDone || p.done {
+				info.ExitCode, info.Error = new(p.exitCode), p.err
 			}
-			if p.stopRequested {
-				info.Status = "stopping"
-			}
-			if p.done {
-				info.Status, info.EndedAt, info.ExitCode, info.Error = "finished", new(p.ended), new(p.exitCode), p.err
-			}
+
 			items = append(items, info)
 		}
 		p.mu.Unlock()
 	}
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].StartedAt.Equal(items[j].StartedAt) {
+		if startedAt[items[i].SessionID].Equal(startedAt[items[j].SessionID]) {
 			return items[i].SessionID < items[j].SessionID
 		}
-		return items[i].StartedAt.Before(items[j].StartedAt)
+		return startedAt[items[i].SessionID].Before(startedAt[items[j].SessionID])
 	})
 	return items
 }
@@ -256,11 +250,7 @@ func (s *runtimeState) controlSession(ctx context.Context, in toolRequest[sessio
 	if a.Input != nil {
 		input = *a.Input
 	}
-	out, err := p.requestControl(ctx, a.Action, input)
-	if a.Action == "input" {
-		return sessionWriteResult{Accepted: err == nil}, err
-	}
-	return out, err
+	return p.requestControl(ctx, a.Action, input)
 }
 
 // Controls wait for acknowledgment of the OS operation. Old clients without
@@ -302,7 +292,7 @@ func (p *session) requestControl(ctx context.Context, action, input string) (ses
 		if m.Error != "" {
 			return sessionControlResult{}, fmt.Errorf("%s", m.Error)
 		}
-		return sessionControlResult{Delivered: true}, nil
+		return sessionControlResult{OK: true}, nil
 	case <-ctx.Done():
 		return sessionControlResult{}, i18n.NewError("session.control.unconfirmed", ctx.Err())
 	}
@@ -315,7 +305,6 @@ func (p *session) stop(ctx context.Context, wait time.Duration) (sessionStopResu
 		return sessionStopResult{}, err
 	}
 	p.mu.Lock()
-	alreadyDone := p.done
 	if !p.done && !p.stopRequested {
 		if err := p.client.send(protocol.Message{Type: "cancel", ID: p.id}); err != nil {
 			p.mu.Unlock()
@@ -328,18 +317,15 @@ func (p *session) stop(ctx context.Context, wait time.Duration) (sessionStopResu
 	defer timer.Stop()
 	for {
 		p.mu.Lock()
-		out := sessionStopResult{SessionID: p.id, Accepted: !alreadyDone, AlreadyDone: alreadyDone, Done: p.done, Status: "stopping"}
+		out := sessionStopResult{Status: "running"}
 		if p.done {
-			out.Status = "finished"
-			if p.canceled {
-				out.Status = "stopped"
-			}
-			out.ExitCode, out.TimedOut, out.Canceled = new(p.exitCode), new(p.timedOut), new(p.canceled)
+			out.Status = "closed"
+			out.ExitCode = new(p.exitCode)
 			out.Error = p.err
 		}
 		changed := p.changed
 		p.mu.Unlock()
-		if out.Done || wait <= 0 {
+		if out.Status == "closed" || wait <= 0 {
 			return out, nil
 		}
 		select {

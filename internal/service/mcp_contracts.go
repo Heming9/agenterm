@@ -1,8 +1,6 @@
 package service
 
 import (
-	"time"
-
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -12,7 +10,6 @@ import (
 // explicit schemas by the MCP SDK.
 type clientsResult struct {
 	Clients []clientInfo `json:"clients"`
-	Status  string       `json:"status,omitempty"`
 }
 
 type executeResult = sessionReadResult
@@ -31,47 +28,28 @@ type sessionReadResult struct {
 	Truncated  bool   `json:"truncated,omitempty"`
 }
 
-type sessionWriteResult struct {
-	Accepted bool `json:"accepted"`
-}
-
 type sessionListResult struct {
 	Sessions []sessionInfo `json:"sessions"`
 }
 
 type sessionInfo struct {
-	Persistent        bool       `json:"persistent"`
-	Promoted          bool       `json:"promoted"`
-	CommandID         string     `json:"command_id,omitempty"`
-	CommandDone       bool       `json:"command_done"`
-	SessionAlive      bool       `json:"session_alive"`
-	SessionID         string     `json:"session_id"`
-	ClientID          string     `json:"client_id"`
-	Command           string     `json:"command"`
-	StartedAt         time.Time  `json:"started_at"`
-	EndedAt           *time.Time `json:"ended_at,omitempty"`
-	Status            string     `json:"status"`
-	Done              bool       `json:"done"`
-	OutputStartCursor int64      `json:"output_start_cursor"`
-	OutputEndCursor   int64      `json:"output_end_cursor"`
-	ExitCode          *int       `json:"exit_code,omitempty"`
-	Error             string     `json:"error,omitempty"`
+	SessionID string `json:"session_id"`
+	ClientID  string `json:"client_id"`
+	Command   string `json:"command"`
+	CommandID string `json:"command_id"`
+	Status    string `json:"status"`
+	ExitCode  *int   `json:"exit_code,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type sessionControlResult struct {
-	Delivered bool `json:"delivered"`
+	OK bool `json:"ok"`
 }
 
 type sessionStopResult struct {
-	SessionID   string `json:"session_id"`
-	Accepted    bool   `json:"accepted"`
-	Done        bool   `json:"done"`
-	Status      string `json:"status"`
-	AlreadyDone bool   `json:"already_done"`
-	ExitCode    *int   `json:"exit_code,omitempty"`
-	TimedOut    *bool  `json:"timed_out,omitempty"`
-	Canceled    *bool  `json:"canceled,omitempty"`
-	Error       string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type invitationResult struct {
@@ -107,12 +85,9 @@ func describeResult(schema *jsonschema.Schema) {
 			property.Description = serverText("mcp.execution.status")
 			property.Enum = []any{"running", "idle", "closed"}
 		}
-		if name == "status" && schema.Properties["client_id"] != nil {
-			property.Description = serverText("mcp.client.status")
-			if schema.Properties["session_id"] != nil {
-				property.Description = serverText("mcp.session.status")
-				property.Enum = []any{"idle", "running", "stopping", "finished"}
-			}
+		if name == "status" && schema.Properties["client_id"] != nil && schema.Properties["session_id"] != nil {
+			property.Description = serverText("mcp.execution.status")
+			property.Enum = []any{"running", "idle", "closed"}
 		}
 		describeResult(property)
 	}
@@ -123,31 +98,15 @@ func describeResult(schema *jsonschema.Schema) {
 }
 
 func sessionActionResultSchema() *jsonschema.Schema {
-	// Each action has a distinct closed result shape. In particular an input
-	// acknowledgment cannot be confused with delivery or confirmed termination.
-	output := &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{
-		"action": {Type: "string", Enum: []any{"input", "interrupt", "eof", "stop"}, Description: serverText("mcp.result.action")},
-	}, Required: []string{"action"}}
-	for _, action := range []string{"input", "interrupt", "eof", "stop"} {
-		var branch *jsonschema.Schema
-		switch action {
-		case "input":
-			branch = resultSchema[sessionWriteResult]()
-		case "interrupt", "eof":
-			branch = resultSchema[sessionControlResult]()
-		case "stop":
-			branch = resultSchema[sessionStopResult]()
-			branch.Properties["status"].Enum = []any{"stopping", "stopped", "finished"}
-			branch.Properties["accepted"].Description = serverText("mcp.stop.accepted")
-			branch.Properties["done"].Description = serverText("mcp.stop.done")
-			branch.Properties["status"].Description = serverText("mcp.stop.status")
-		}
-		branch.Properties["action"] = &jsonschema.Schema{Type: "string", Enum: []any{action}, Description: serverText("mcp.result.action")}
-		branch.Required = append(branch.Required, "action")
+	acknowledgment := resultSchema[sessionControlResult]()
+	acknowledgment.Properties["ok"].Enum = []any{true}
+	stopped := resultSchema[sessionStopResult]()
+	stopped.Properties["status"].Enum = []any{"running", "closed"}
+	stopped.Properties["status"].Description = serverText("mcp.stop.status")
+	for _, branch := range []*jsonschema.Schema{acknowledgment, stopped} {
 		branch.AdditionalProperties = &jsonschema.Schema{Not: &jsonschema.Schema{}}
-		output.OneOf = append(output.OneOf, branch)
 	}
-	return output
+	return &jsonschema.Schema{Type: "object", OneOf: []*jsonschema.Schema{acknowledgment, stopped}}
 }
 
 func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Tool {

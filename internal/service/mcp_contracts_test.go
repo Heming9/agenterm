@@ -29,7 +29,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 			t.Fatal(err)
 		}
 		var schema jsonschema.Schema
-		if err := json.Unmarshal(data, &schema); err != nil || len(schema.Properties) == 0 {
+		if err := json.Unmarshal(data, &schema); err != nil || (len(schema.Properties) == 0 && len(schema.OneOf) == 0) {
 			t.Fatalf("%s has no concrete result schema: %s %v", tool.Name, data, err)
 		}
 		if tool.Name == "execute_command" || tool.Name == "session_read" {
@@ -53,6 +53,21 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 			}
 			if !reflect.DeepEqual(schema.Properties["truncated"].Enum, []any{true}) {
 				t.Fatalf("%s permits a redundant false truncation field", tool.Name)
+			}
+		}
+		if tool.Name == "list_clients" && (len(schema.Properties) != 1 || schema.Properties["clients"] == nil) {
+			t.Fatalf("redundant device list fields: %s", data)
+		}
+		if tool.Name == "session_list" {
+			entry := schema.Properties["sessions"].Items
+			if entry.Ref != "" {
+				entry = schema.Defs[strings.TrimPrefix(entry.Ref, "#/$defs/")]
+			}
+			if len(entry.Properties) != 7 || len(entry.Required) != 5 {
+				t.Fatalf("session list is not compact: %s", data)
+			}
+			if !reflect.DeepEqual(entry.Properties["status"].Enum, []any{"running", "idle", "closed"}) {
+				t.Fatalf("inconsistent list states: %s", data)
 			}
 		}
 		var checkDescriptions func(*jsonschema.Schema)
@@ -140,7 +155,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	token := created["client_token"].(string)
 	call("list_clients", map[string]any{"client_token": token})
 	waited := call("list_clients", map[string]any{"client_token": token, "wait_ms": 20})
-	if waited["status"] != "waiting" || len(waited["clients"].([]any)) != 0 {
+	if len(waited) != 1 || len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("unexpected connection timeout result: %v", waited)
 	}
 	ws, clientID := h.connect(t, token, "schema device")
@@ -148,7 +163,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	go serveTestDevice(ws, "schema", nil, nil)
 	call("p2p_transfer_start", map[string]any{"client_token": token, "client_id": clientID})
 	connected := call("list_clients", map[string]any{"client_token": token, "wait_ms": 300000})
-	if connected["status"] != "connected" || len(connected["clients"].([]any)) != 1 {
+	if len(connected) != 1 || len(connected["clients"].([]any)) != 1 {
 		t.Fatalf("unexpected 300-second connection check result: %v", connected)
 	}
 	for _, wait := range []int{-1, 300001} {
@@ -165,7 +180,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	stopped := call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
 	// This fake device reports a normal exit, not cancellation. The server must
 	// expose that distinction even though a stop request preceded completion.
-	if stopped["status"] != "finished" || stopped["canceled"] != false || stopped["done"] != true {
+	if stopped["status"] != "closed" || stopped["exit_code"] != float64(0) {
 		t.Fatal(stopped)
 	}
 	call("session_read", map[string]any{"client_token": token, "session_id": id})

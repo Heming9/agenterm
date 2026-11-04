@@ -182,7 +182,7 @@ func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
 					t.Fatalf("lost canceled execution: %v", items)
 				}
 				item = items[0].(map[string]any)
-				if !retain || item["command_done"] == true {
+				if !retain || item["status"] != "running" {
 					break
 				}
 				if time.Now().After(deadline) {
@@ -190,11 +190,11 @@ func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
-			if (!retain && item["status"] != "running") || (retain && (item["persistent"] != true || item["promoted"] != true || item["session_alive"] != true || item["session_id"] == "")) {
+			if (!retain && item["status"] != "running") || (retain && (item["status"] != "idle" || item["session_id"] == "")) {
 				t.Fatalf("waiter changed execution lifetime: %v", item)
 			}
 			stopped := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": item["session_id"]}, false).(map[string]any)
-			if stopped["done"] != true || stopped["canceled"] != true {
+			if stopped["status"] != "closed" {
 				t.Fatal(stopped)
 			}
 		})
@@ -364,7 +364,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo next"}, false)
 	h.call(t, token, "session_read", map[string]any{"session_id": id, "command_id": started["command_id"]}, true)
 	stopped := h.call(t, token, "session_control", map[string]any{"session_id": id, "action": "stop"}, false).(map[string]any)
-	if stopped["done"] != true || stopped["canceled"] != true {
+	if stopped["status"] != "closed" {
 		t.Fatal(stopped)
 	}
 	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo never"}, true)

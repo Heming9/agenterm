@@ -177,7 +177,7 @@ func TestSessionListIsolationFilterAndDisconnectedHistory(t *testing.T) {
 		t.Fatalf("list order/isolation: %v", items)
 	}
 	info := items[0].(map[string]any)
-	if info["command"] != "first" || info["status"] != "idle" || info["done"] != false || info["started_at"] == "" || info["output_start_cursor"] != float64(0) || info["output_end_cursor"] != float64(len("A:first")) {
+	if info["command"] != "first" || info["status"] != "idle" || info["command_id"] == "" || info["exit_code"] != float64(0) {
 		t.Fatalf("missing session metadata: %v", info)
 	}
 	if len(list(token, map[string]any{"client_id": b})) != 1 || len(list(token, map[string]any{"client_id": otherID})) != 0 || len(list(other, map[string]any{})) != 1 {
@@ -193,8 +193,8 @@ func TestSessionListIsolationFilterAndDisconnectedHistory(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		item := list(token, map[string]any{"client_id": a})[0].(map[string]any)
-		if item["done"] == true {
-			if item["status"] != "finished" || item["ended_at"] == nil || item["exit_code"] != float64(-1) || item["error"] == "" {
+		if item["status"] == "closed" {
+			if item["status"] != "closed" || item["exit_code"] != float64(-1) || item["error"] == "" {
 				t.Fatalf("lost disconnected history: %v", item)
 			}
 			break
@@ -249,7 +249,7 @@ func TestSessionControlAcknowledgmentAndErrors(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	if out, err := p.requestControl(ctx, "interrupt", ""); err == nil || out.Delivered {
+	if out, err := p.requestControl(ctx, "interrupt", ""); err == nil || out.OK {
 		t.Fatal("unacknowledged signal reported as delivered")
 	}
 	p.client.mu.Lock()
@@ -338,10 +338,10 @@ func TestConcurrentSessionControlsMatchTheirAcknowledgments(t *testing.T) {
 	}
 	for range 2 {
 		r := <-results
-		if r.action == "interrupt" && (r.err != nil || !r.out.Delivered) {
+		if r.action == "interrupt" && (r.err != nil || !r.out.OK) {
 			t.Fatalf("interrupt got wrong acknowledgment: %+v", r)
 		}
-		if r.action == "eof" && (r.err == nil || !strings.Contains(r.err.Error(), "EOF rejected") || r.out.Delivered) {
+		if r.action == "eof" && (r.err == nil || !strings.Contains(r.err.Error(), "EOF rejected") || r.out.OK) {
 			t.Fatalf("EOF got wrong acknowledgment: %+v", r)
 		}
 	}

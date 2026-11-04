@@ -5,7 +5,6 @@ import (
 	"agenterm/internal/protocol"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"math/big"
 	"net/http"
 	"slices"
@@ -16,7 +15,6 @@ import (
 )
 
 type clientInfo struct {
-	Status      string            `json:"status"`
 	ID          string            `json:"client_id"`
 	Environment clientEnvironment `json:"client_info"`
 	ConnectedAt time.Time         `json:"connected_at"`
@@ -117,15 +115,7 @@ func (s *runtimeState) listClientsLocked(secret string) []clientInfo {
 	clients := make([]clientInfo, 0)
 	for _, c := range s.clients {
 		if c.secret == secret {
-			info := c.info
-			info.Status = "Connected"
-			c.mu.Lock()
-			latencyMS := c.latencyMS
-			c.mu.Unlock()
-			if latencyMS > 0 {
-				info.Status += fmt.Sprintf(" · %dms", latencyMS)
-			}
-			clients = append(clients, info)
+			clients = append(clients, c.info)
 		}
 	}
 	sort.Slice(clients, func(i, j int) bool {

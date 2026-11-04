@@ -239,7 +239,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			s.closeP2PClientLocked(c, "client disconnected")
 			for _, p := range s.sessions {
 				if p.client == c {
-					p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: serverText("client.disconnected")})
+					p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: serverText("session.disconnected.unconfirmed")})
 				}
 			}
 			if s.clients[id] == c {

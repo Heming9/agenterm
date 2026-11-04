@@ -48,7 +48,7 @@ func TestSessionInterruptAndEOFKeepShellState(t *testing.T) {
 	write("sh -c 'printf \"__%s__\\n\" BUSY; exec sleep 30'\n")
 	wait("__BUSY__")
 	interrupted := h.call(t, token, "session_control", map[string]any{"action": "interrupt", "session_id": id}, false).(map[string]any)
-	if interrupted["delivered"] != true {
+	if interrupted["ok"] != true {
 		t.Fatal(interrupted)
 	}
 	write("printf '__%s__:%s\\n' STILL \"$keep\"\n")
@@ -57,7 +57,7 @@ func TestSessionInterruptAndEOFKeepShellState(t *testing.T) {
 	wait("__CAT__")
 	// EOF must follow queued input and use the terminal's configured VEOF.
 	write("queued-input")
-	if eof := h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, false).(map[string]any); eof["delivered"] != true {
+	if eof := h.call(t, token, "session_control", map[string]any{"action": "eof", "session_id": id}, false).(map[string]any); eof["ok"] != true {
 		t.Fatal(eof)
 	}
 	wait("queued-input")

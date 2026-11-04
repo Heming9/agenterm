@@ -94,7 +94,7 @@ func TestSessionControlRejectsInvalidArgumentsBeforeSending(t *testing.T) {
 	// This final write is a barrier: rejected calls must not have sent anything
 	// to the client, even if their unrelated parameters were empty or zero.
 	result := h.call(t, token, "session_control", map[string]any{"session_id": id, "action": "input", "input": "barrier"}, false).(map[string]any)
-	if result["action"] != "input" || result["accepted"] != true || result["delivered"] != nil || result["done"] != nil {
+	if len(result) != 1 || result["ok"] != true {
 		t.Fatalf("input invented completion fields: %v", result)
 	}
 	select {
@@ -107,33 +107,30 @@ func TestSessionControlRejectsInvalidArgumentsBeforeSending(t *testing.T) {
 	}
 }
 
-func TestSessionControlResultSchemaDiscriminatesActions(t *testing.T) {
+func TestSessionControlResultSchemaSeparatesAcknowledgmentAndStop(t *testing.T) {
 	schema, err := sessionActionResultSchema().Resolve(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, result := range []map[string]any{
-		{"action": "input", "accepted": true},
-		{"action": "interrupt", "delivered": true},
-		{"action": "eof", "delivered": true},
-		{"action": "stop", "session_id": "s", "accepted": true, "done": false, "status": "stopping", "already_done": false},
+		{"ok": true},
+		{"status": "running"},
+		{"status": "closed", "exit_code": 0},
+		{"status": "closed", "error": "connection lost; remote termination unconfirmed"},
 	} {
 		if err := schema.Validate(result); err != nil {
-			t.Fatalf("valid result rejected: %v: %v", result, err)
+			t.Fatalf("valid result rejected: %v %v", result, err)
 		}
 	}
 	for _, result := range []map[string]any{
-		{"accepted": true},
-		{"action": "input", "delivered": true},
-		{"action": "input", "accepted": true, "delivered": true},
-		{"action": "interrupt", "accepted": true},
-		{"action": "eof", "delivered": true, "done": true},
-		{"action": "stop", "delivered": true},
-		{"action": "other", "accepted": true},
-		{"action": "stop", "session_id": "s", "accepted": true, "done": false, "status": "invalid", "already_done": false},
+		{}, {"ok": false}, {"accepted": true}, {"delivered": true},
+		{"action": "input", "ok": true},
+		{"status": "idle"}, {"status": "finished"},
+		{"ok": true, "status": "closed"},
+		{"status": "closed", "done": true},
 	} {
 		if err := schema.Validate(result); err == nil {
-			t.Fatalf("mixed result accepted: %v", result)
+			t.Fatalf("redundant or mixed result accepted: %v", result)
 		}
 	}
 }

@@ -48,7 +48,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 		h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": wait}, true)
 	}
 	first := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": 0}, false).(map[string]any)
-	if first["accepted"] != true || first["done"] != false || first["status"] != "stopping" || first["already_done"] != false {
+	if len(first) != 1 || first["status"] != "running" {
 		t.Fatalf("unconfirmed cancellation: %v", first)
 	}
 	for _, field := range []string{"exit_code", "canceled", "timed_out", "next_action"} {
@@ -67,7 +67,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 	// A pending request must not be sent twice, including while waiting for its
 	// terminal acknowledgement. The bounded wait must not invent completion.
 	again := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id, "wait_ms": 20}, false).(map[string]any)
-	if again["status"] != "stopping" || again["done"] != false {
+	if len(again) != 1 || again["status"] != "running" {
 		t.Fatal(again)
 	}
 	completed := make(chan map[string]any, 1)
@@ -91,7 +91,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 	finish <- protocol.Message{Type: "done", ID: id, ExitCode: -1, Canceled: true}
 	select {
 	case result := <-completed:
-		if result["status"] != "stopped" || result["done"] != true || result["canceled"] != true || result["accepted"] != true || result["exit_code"] != float64(-1) {
+		if len(result) != 2 || result["status"] != "closed" || result["exit_code"] != float64(-1) {
 			t.Fatalf("confirmed cancellation: %v", result)
 		}
 	case err := <-errors:
@@ -100,7 +100,7 @@ func TestStopConfirmationAndIdempotenceThroughMCP(t *testing.T) {
 		t.Fatal("stop did not observe the terminal acknowledgement")
 	}
 	ended := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id}, false).(map[string]any)
-	if ended["already_done"] != true || ended["accepted"] != false || ended["done"] != true || ended["status"] != "stopped" {
+	if len(ended) != 2 || ended["status"] != "closed" || ended["exit_code"] != float64(-1) {
 		t.Fatalf("repeat after completion: %v", ended)
 	}
 	select {
@@ -123,7 +123,7 @@ func TestStopDoesNotMisreportOtherTerminalStates(t *testing.T) {
 			p := &session{id: "finished", changed: make(chan struct{})}
 			p.accept(test.message)
 			out, err := p.stop(context.Background(), time.Second)
-			if err != nil || out.Status != "finished" || !out.Done || !out.AlreadyDone || out.Accepted || out.Canceled == nil || *out.Canceled || *out.ExitCode != test.message.ExitCode || out.Error != test.message.Error {
+			if err != nil || out.Status != "closed" || out.ExitCode == nil || *out.ExitCode != test.message.ExitCode || out.Error != test.message.Error {
 				t.Fatalf("terminal state: %+v err=%v", out, err)
 			}
 		})
@@ -161,7 +161,7 @@ func TestStopDisconnectDoesNotConfirmCancellation(t *testing.T) {
 	}()
 	started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "command": "interactive"}, false).(map[string]any)
 	out := h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": started["session_id"]}, false).(map[string]any)
-	if out["status"] != "finished" || out["done"] != true || out["canceled"] != false || out["accepted"] != true || out["error"] == nil || out["error"] == "" {
+	if out["status"] != "closed" || out["error"] != serverText("session.disconnected.unconfirmed") {
 		t.Fatalf("disconnect was confused with confirmed cancellation: %v", out)
 	}
 }
