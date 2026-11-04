@@ -72,30 +72,12 @@ func (s *runtimeState) closeClients(ctx context.Context, secret string, ids []st
 		_ = c.conn.Close()
 		out.ClientIDs = append(out.ClientIDs, c.info.ID)
 	}
-	cleanup := func() {
-		for _, c := range selected {
-			<-c.done
-		}
-		if ids == nil {
-			s.mu.Lock()
-			s.deleteSessionsLocked(map[string]bool{secret: true})
-			s.mu.Unlock()
-		}
-	}
 	for _, c := range selected {
 		select {
 		case <-c.done:
 		case <-ctx.Done():
-			if ids == nil {
-				go cleanup()
-			}
 			return closeClientResult{}, ctx.Err()
 		}
-	}
-	if ids == nil {
-		s.mu.Lock()
-		s.deleteSessionsLocked(map[string]bool{secret: true})
-		s.mu.Unlock()
 	}
 	if len(closeErrors) != 0 {
 		return closeClientResult{}, errors.Join(closeErrors...)
@@ -104,15 +86,15 @@ func (s *runtimeState) closeClients(ctx context.Context, secret string, ids []st
 }
 
 type clientEnvironment struct {
-	Hostname           string   `json:"hostname"`
-	Platform           string   `json:"platform"`
-	Arch               string   `json:"arch"`
-	Shell              string   `json:"shell"`
-	DefaultCwd         string   `json:"default_cwd"`
-	ClientVersion      string   `json:"client_version"`
-	SessionControls    []string `json:"session_controls"`
-	PersistentSessions bool     `json:"persistent_sessions"`
-	P2P                bool     `json:"p2p"`
+	Hostname        string   `json:"hostname"`
+	Platform        string   `json:"platform"`
+	Arch            string   `json:"arch"`
+	Shell           string   `json:"shell"`
+	DefaultCwd      string   `json:"default_cwd"`
+	ClientVersion   string   `json:"client_version"`
+	SessionControls []string `json:"session_controls"`
+	TerminalAPI     bool     `json:"terminal_api"`
+	P2P             bool     `json:"p2p"`
 }
 
 func sessionControlsHeader(r *http.Request) []string {

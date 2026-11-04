@@ -564,12 +564,12 @@
     "zh-CN": "要在目标设备上执行的 Shell 命令。"
   },
   "mcp.read.new.output.while.the.session.is.running": {
-    "en": "Read paginated output with session_id, command_id, status, output, next_cursor and has_more. status is running (busy), idle (command ended and reusable) or closed (session no longer usable; disconnection does not confirm remote termination). exit_code appears after command completion, error only on failure, and truncated only when true. Supply the previous next_cursor and optionally command_id to reject stale reads. Drain has_more even after idle/closed. Output availability alone never proves completion.",
-    "zh-CN": "分页读取输出，返回 session_id、command_id、status、output、next_cursor、has_more。status 为 running（忙碌）、idle（命令结束且可复用）、closed（会话不可用，断线时远端终止未确认）。命令完成后返回 exit_code，有错误时返回 error，输出丢失时才返回 truncated=true。传入上次 next_cursor，可附带 command_id 拒绝过期读取。idle/closed 后也应读完 has_more，不能仅根据输出判断完成。"
+    "en": "Read paginated output with session_id, command_id, status, output, next_cursor and has_more. status is running (busy), idle (command ended and reusable) or closed (client confirmed shell termination). exit_code appears after command completion, error only on failure, and truncated only when true. Supply the previous next_cursor and optionally command_id to reject stale reads. Drain has_more even after idle/closed. Output availability alone never proves completion.",
+    "zh-CN": "分页读取输出，返回 session_id、command_id、status、output、next_cursor、has_more。status 为 running（忙碌）、idle（命令结束且可复用）、closed（客户端确认 shell 已结束）。命令完成后返回 exit_code，有错误时返回 error，输出丢失时才返回 truncated=true。传入上次 next_cursor，可附带 command_id 拒绝过期读取。idle/closed 后也应读完 has_more，不能仅根据输出判断完成。"
   },
   "mcp.session.identifier": {
-    "en": "Session identifier",
-    "zh-CN": "会话标识"
+    "en": "Client-local session identifier. Multi-device calls also require client_id.",
+    "zh-CN": "客户端内唯一的会话标识；多设备调用还必须提供 client_id。"
   },
   "mcp.byte.cursor.initially.0": {
     "en": "Output byte offset, initially 0; subsequent reads accept the previous next_cursor.",
@@ -644,12 +644,12 @@
     "zh-CN": "没有设备在线时等待连接的最长毫秒数，范围 0–300000。生成连接说明后必须设为 300000（超时 300 秒）。0 表示立即返回快照。"
   },
   "mcp.connection.context": {
-    "en": "Tokens, invitations and connection commands are private credentials. Observe devices through list_client; no background agent notifications are sent. Restarting the server frontend preserves runtime connections and state. Restarting the runtime invalidates tokens, invitations and sessions.",
-    "zh-CN": "Token、邀请和连接命令是私密凭据。通过 list_client 查看设备，无后台 agent 通知。服务端前端重启保留 runtime 中的连接和状态；runtime 重启会使 token、邀请和会话失效。"
+    "en": "Tokens, invitations and connection commands are private credentials. Observe devices through list_client; no background agent notifications are sent. Restarting the server frontend preserves runtime connections and state. Restarting the runtime invalidates tokens and invitations; client terminal state belongs to the client process.",
+    "zh-CN": "Token、邀请和连接命令是私密凭据。通过 list_client 查看设备，无后台 agent 通知。服务端前端重启保留 runtime 中的连接和状态；runtime 重启会使 token 和邀请失效；终端状态属于客户端进程。"
   },
   "mcp.client.id": {
-    "en": "Six lowercase letters or digits from list_client, used to select or filter devices. For multi-device tokens it is required when a specific device must be selected and no existing session_id identifies it. Session-list filtering is optional.",
-    "zh-CN": "list_client 返回的 6 位小写字母或数字 ID，用于选择或筛选设备。多设备模式下，操作需要定位设备且无法由已有 session_id 定位时必须提供；会话列表筛选为可选。"
+    "en": "Six lowercase letters or digits from list_client. Required for execute_command, session_read and session_control on multi-device tokens, including existing sessions. Session-list filtering is optional.",
+    "zh-CN": "list_client 返回的 6 位小写字母或数字 ID。多设备 token 调用 execute_command、session_read 和 session_control 时必须提供，包括操作已有会话；会话列表筛选为可选。"
   },
   "unknown.client.id": {
     "en": "Unknown or offline client_id for this token.",
@@ -696,8 +696,8 @@
     "zh-CN": "setup 所创建终端的初始环境变量，与客户端环境合并；复用后通过 shell 命令修改。"
   },
   "mcp.execution.workflow": {
-    "en": "Execute commands in client-managed terminals. Top-level session_id only reuses an existing terminal and rejects unknown/closed IDs. setup always creates a terminal and contains optional cwd, env and session_id; its ID must be unused. setup with an ID creates a persistent terminal; omit its ID to generate a random anonymous terminal. setup and top-level session_id are mutually exclusive. cwd/env are not top-level arguments. Omit both to create an anonymous terminal. Anonymous terminals close on fast completion or retain the same shell after wait_ms expires. wait_ms defaults to 10000 ms, range 0–20000; 0 retains anonymous terminals immediately. Waiting never kills execution. Returns command_id, status, output, next_cursor and has_more. session_id is returned for named or previously retained terminals, and for anonymous terminals after wait expiry or when output exceeds the response limit or retained history was truncated. Execution returns up to 16 KiB of UTF-8 output; has_more=true means the remaining output is available through session_read. A completed anonymous shell stays closed, but its ID can read client-cached output. status is running (busy), idle (command ended and reusable) or closed (session no longer usable; disconnection does not confirm remote termination). exit_code is present after command completion; error only on failure; truncated only when true. Busy reuse returns session_busy without queueing. The client alone manages terminals and a ten-live-terminal limit; creation fails at capacity, existing-ID reuse remains allowed. Persistent terminals require session_control(action=stop), with no idle expiry. Read output with session_read using next_cursor and drain has_more. exit_code describes the latest command; closed with a disconnection error does not prove the command ended. The client owns result waiting, output history and paginated reads. The server authorizes and routes requests without retaining output. Historical output cannot be read after client disconnection. Commands run with target user permissions; do not override reserved prompt hooks/PS1 or terminal echo settings.",
-    "zh-CN": "在客户端管理的终端中执行命令。顶级 session_id 仅复用已有终端，未知或已关闭 ID 报错。setup 始终创建终端，包含可选 cwd、env 和 session_id；其中的 ID 必须尚未存在。setup 指定 ID 时创建持久终端，省略 ID 时生成随机 ID 并按匿名终端规则执行。setup 和顶级 session_id 互斥。cwd/env 不再是顶级参数。两者均省略也创建匿名终端。匿名终端快速完成自动关闭，wait_ms 到期则保留同一 shell。wait_ms 默认 10000 毫秒，范围 0–20000；0 立即保留匿名终端，等待不会终止命令。返回 command_id、status、output、next_cursor、has_more。具名或已保留终端返回 session_id；匿名终端仅在等待到期、输出超出单次响应上限或保留历史已被截断时返回 session_id。执行结果最多返回 16 KiB UTF-8 输出；has_more=true 表示可通过 session_read 继续读取剩余输出。已完成的匿名 shell 仍然关闭，返回的 ID 可用于读取客户端缓存。status 为 running（忙碌）、idle（命令结束且可复用）、closed（会话不可用，断线时远端终止未确认）；命令完成后返回 exit_code，有错误时返回 error，输出丢失时才返回 truncated=true。复用忙碌终端返回 session_busy，不排队。终端管理及每个进程十个存活终端上限仅由客户端裁决；满额新建报错，已有 ID 仍可复用。持久终端需 session_control(action=stop) 主动关闭，不按空闲时间回收。通过 session_read 按 next_cursor 读完 has_more；exit_code 描述最新命令，断线导致 closed 时不能据此确认命令已结束。客户端负责结果等待、输出历史和分页读取；服务端鉴权并转发请求，不保存输出。客户端断线后无法读取历史输出。命令以目标用户权限执行，不要覆盖保留的提示符钩子、PS1 或终端回显设置。"
+    "en": "Execute commands in client-managed terminals. Top-level session_id only reuses an existing terminal and rejects unknown/closed IDs. setup always creates a terminal and contains optional cwd, env and session_id; its ID must be unused. setup with an ID creates a persistent terminal; omit its ID to generate a random anonymous terminal. setup and top-level session_id are mutually exclusive. cwd/env are not top-level arguments. Omit both to create an anonymous terminal. Anonymous terminals close on fast completion or retain the same shell after wait_ms expires. wait_ms defaults to 10000 ms, range 0–20000; 0 retains anonymous terminals immediately. Waiting never kills execution. Returns command_id, status, output, next_cursor and has_more. session_id is returned for named or previously retained terminals, and for anonymous terminals after wait expiry or when output exceeds the response limit or retained history was truncated. Execution returns up to 16 KiB of UTF-8 output; has_more=true means the remaining output is available through session_read. A completed anonymous shell stays closed, but its ID can read client-cached output. status is running (busy), idle (command ended and reusable) or closed (client confirmed shell termination). exit_code is present after command completion; error only on failure; truncated only when true. Busy reuse returns session_busy without queueing. The client alone manages terminals and a ten-live-terminal limit; creation fails at capacity, existing-ID reuse remains allowed. Persistent terminals require session_control(action=stop), with no idle expiry. Read output with session_read using next_cursor and drain has_more. exit_code describes the latest command; transport errors never fabricate a terminal result. The client owns result waiting, output history and paginated reads. The server authorizes and forwards client API requests without retaining session state. Session IDs are client-local; multi-device execute/read/control calls require client_id. Historical output cannot be read after client disconnection. Commands run with target user permissions; do not override reserved prompt hooks/PS1 or terminal echo settings.",
+    "zh-CN": "在客户端管理的终端中执行命令。顶级 session_id 仅复用已有终端，未知或已关闭 ID 报错。setup 始终创建终端，包含可选 cwd、env 和 session_id；其中的 ID 必须尚未存在。setup 指定 ID 时创建持久终端，省略 ID 时生成随机 ID 并按匿名终端规则执行。setup 和顶级 session_id 互斥。cwd/env 不再是顶级参数。两者均省略也创建匿名终端。匿名终端快速完成自动关闭，wait_ms 到期则保留同一 shell。wait_ms 默认 10000 毫秒，范围 0–20000；0 立即保留匿名终端，等待不会终止命令。返回 command_id、status、output、next_cursor、has_more。具名或已保留终端返回 session_id；匿名终端仅在等待到期、输出超出单次响应上限或保留历史已被截断时返回 session_id。执行结果最多返回 16 KiB UTF-8 输出；has_more=true 表示可通过 session_read 继续读取剩余输出。已完成的匿名 shell 仍然关闭，返回的 ID 可用于读取客户端缓存。status 为 running（忙碌）、idle（命令结束且可复用）、closed（客户端确认 shell 已结束）；命令完成后返回 exit_code，有错误时返回 error，输出丢失时才返回 truncated=true。复用忙碌终端返回 session_busy，不排队。终端管理及每个进程十个存活终端上限仅由客户端裁决；满额新建报错，已有 ID 仍可复用。持久终端需 session_control(action=stop) 主动关闭，不按空闲时间回收。通过 session_read 按 next_cursor 读完 has_more；exit_code 描述最新命令，传输错误不会生成终端结果。客户端负责结果等待、输出历史和分页读取；服务端鉴权并转发 client API，不保存会话状态；会话 ID 在客户端内唯一，多设备执行、读取、控制均须 client_id。客户端断线后无法读取历史输出。命令以目标用户权限执行，不要覆盖保留的提示符钩子、PS1 或终端回显设置。"
   },
   "mcp.connection.wait.failed": {
     "en": "Connection wait failed: %v",
@@ -720,8 +720,8 @@
     "zh-CN": "收到终态结果或设备连接关闭时为 true；status 和 canceled 表示结束原因。"
   },
   "mcp.stop.status": {
-    "en": "running: stop is still pending; closed: session is no longer usable. Inspect error: disconnection does not confirm remote process termination.",
-    "zh-CN": "running：停止尚待确认；closed：会话已不可用。请检查 error，断线不代表远端进程已确认终止。"
+    "en": "running: stop is pending; closed: the client confirmed shell termination. A transport error does not confirm termination.",
+    "zh-CN": "running：停止尚待确认；closed：客户端确认 shell 已结束。传输错误不表示终止。"
   },
   "mcp.result.clients": {
     "en": "Online devices owned by this token; an empty array means none are currently online.",
@@ -772,48 +772,28 @@
     "zh-CN": "设备连接状态显示文本：Connected；有测量值时附带最近一次服务端与客户端之间的心跳往返延迟，例如 Connected · 203ms。"
   },
   "mcp.result.session_id": {
-    "en": "Session identifier used by session_read and session_control.",
-    "zh-CN": "供 session_read 和 session_control 使用的会话标识。"
+    "en": "Client-local session identifier. Multi-device read/control also require client_id.",
+    "zh-CN": "客户端内唯一的会话标识，多设备读取和控制还必须提供 client_id。"
   },
   "mcp.result.output": {
     "en": "Combined terminal output from the requested cursor; may contain echoed input.",
     "zh-CN": "从指定游标开始的终端合并输出，可能包含回显输入。"
   },
   "mcp.result.next_cursor": {
-    "en": "Byte offset immediately after the returned output. Pass it as cursor for the next session_read, including when done=true and has_more=true.",
-    "zh-CN": "本次返回输出之后的字节偏移；下次 session_read 请用它作为 cursor，包括 done=true 且 has_more=true 时。"
+    "en": "Byte offset immediately after the returned output. Pass it as cursor for the next session_read. Continue while has_more=true, including after status becomes idle or closed.",
+    "zh-CN": "本次返回输出之后的字节偏移；下次 session_read 请用它作为 cursor。has_more=true 时应继续读取，包括 status 已为 idle 或 closed 时。"
   },
   "mcp.result.truncated": {
     "en": "Present only as true when the requested cursor predates the oldest retained output. The latest 1 MiB is retained; pagination alone does not truncate.",
     "zh-CN": "仅请求游标早于最早保留输出时返回 true；保留最近 1 MiB，单纯分页不会截断。"
   },
-  "mcp.result.done": {
-    "en": "True when the terminal has ended; a completed command can have done=false and command_done=true.",
-    "zh-CN": "终端已结束时为 true；单条命令完成时可以 done=false 且 command_done=true。"
-  },
   "mcp.result.exit_code": {
-    "en": "Exit code of the latest completed command, or terminal termination if it ended; 0 is success, -1 denotes execution/connection failure. Absent while a command is running.",
-    "zh-CN": "最新完成命令的退出码，或终端结束时的退出码；0 表示成功，-1 表示执行或连接失败。命令执行中不提供此字段。"
-  },
-  "mcp.result.canceled": {
-    "en": "True only when the target reported cancellation; a disconnect alone does not confirm cancellation.",
-    "zh-CN": "仅在目标报告取消时为 true，单纯断线不代表已确认取消。"
-  },
-  "mcp.result.timed_out": {
-    "en": "True if the target reported that the process execution timeout elapsed.",
-    "zh-CN": "目标报告进程执行超时时为 true。"
+    "en": "execute/read/list: the latest completed command exit code, preserved when its shell later ends. stop: the confirmed shell termination code. 0 means success; -1 denotes execution failure. Transport errors never invent a code.",
+    "zh-CN": "execute/read/list：最新完成命令的退出码，shell 后续结束不会覆盖它。stop：已确认的 shell 终止码。0 表示成功，-1 表示执行失败。传输错误不会生成退出码。"
   },
   "mcp.result.error": {
     "en": "Optional execution or connection error. A disconnect does not prove the remote process completed successfully.",
     "zh-CN": "可选的执行或连接错误；断线不能证明远程进程成功完成。"
-  },
-  "mcp.result.accepted": {
-    "en": "Whether the action was sent to the device connection; this does not confirm it was consumed or completed.",
-    "zh-CN": "操作是否已发往设备连接，不代表已被处理或已经完成。"
-  },
-  "mcp.result.already_done": {
-    "en": "True if the session was already ended when this stop call began; no new cancellation request is sent.",
-    "zh-CN": "本次停止调用开始时会话已结束则为 true，此时不会发送新的取消请求。"
   },
   "mcp.result.token_identifier": {
     "en": "Public identifier for recognizing the connection token; not an authentication secret.",
@@ -848,8 +828,8 @@
     "zh-CN": "固定的英文连接模板，命令自带 Markdown 代码块，与工具的文本内容一致。按顺序以用户使用的语言展示所有段落；命令、URL 和令牌保持原样，每条命令必须分别放入 Markdown 代码块。有效期可换算为等价的易读单位；已知用户时区时可换算 expires_at 并标注时区，否则显示 UTC。不得根据语言或服务器设置推测用户时区。"
   },
   "mcp.session.list": {
-    "en": "List this token’s retained sessions in creation order, optionally filtered by client_id. Each entry has session_id, client_id, command, command_id and status (running/idle/closed), with exit_code/error when available. Closed metadata remains discoverable for up to 30 minutes or replacement; result recovery requires the owning client to remain connected. This does not create, close or consume terminals.",
-    "zh-CN": "按创建时间列出此 token 的保留会话，可按 client_id 筛选。每条包含 session_id、client_id、command、command_id、status（running/idle/closed），按需带 exit_code/error。已关闭元数据最多保留 30 分钟或被替换；找回结果要求所属客户端仍在线。查询不会创建、关闭或占用终端。"
+    "en": "Query connected clients for their retained sessions, optionally filtered by client_id. Each client owns session existence, state, history and ordering. Returns session_id, client_id, command, command_id and status (running/idle/closed), plus exit_code/error when available. Closed records are retained by each client for up to 30 minutes and at most 10 records. Offline clients cannot be queried.",
+    "zh-CN": "查询在线客户端的保留会话，可按 client_id 筛选。各客户端管理会话存在性、状态、历史和排序。返回 session_id、client_id、command、command_id、status（running/idle/closed）及按需的 exit_code/error。已关闭记录由各客户端保留，最多 30 分钟、10 条。离线客户端无法查询。"
   },
   "mcp.session.max.bytes": {
     "en": "Maximum output bytes per read, 4–65536; default 16384. May return fewer bytes to preserve UTF-8 boundaries. Continue with next_cursor while has_more=true.",
@@ -863,37 +843,13 @@
     "en": "Retained sessions owned by this client token, optionally filtered by device.",
     "zh-CN": "该客户端 token 拥有的保留会话，可按设备筛选。"
   },
-  "mcp.result.started_at": {
-    "en": "Session creation time in UTC (RFC 3339).",
-    "zh-CN": "会话创建时间，UTC，RFC 3339 格式。"
-  },
-  "mcp.result.ended_at": {
-    "en": "Session completion time in UTC (RFC 3339); present only after the session ends.",
-    "zh-CN": "会话结束时间，UTC，RFC 3339 格式；仅在会话结束后返回。"
-  },
   "mcp.result.command": {
     "en": "Latest command submitted through execute_command for this session; does not track subsequent stdin input.",
     "zh-CN": "此会话最新通过 execute_command 提交的命令，不跟踪后续通过标准输入发送的内容。"
   },
-  "mcp.session.status": {
-    "en": "idle: terminal ready; running: command active; stopping: terminal closing; finished: terminal ended.",
-    "zh-CN": "idle：终端空闲；running：命令执行中；stopping：终端正在关闭；finished：终端已结束。"
-  },
-  "mcp.result.output_start_cursor": {
-    "en": "Earliest retained output byte offset; pass as cursor to read available history.",
-    "zh-CN": "最早保留输出的字节偏移，可作为 cursor 读取现有历史。"
-  },
-  "mcp.result.output_end_cursor": {
-    "en": "Byte offset after the latest retained output; using it as cursor skips existing output and waits for new output.",
-    "zh-CN": "当前保留输出末尾之后的字节偏移；用作 cursor 会跳过现有输出，只读取后续新增内容。"
-  },
   "mcp.result.has_more": {
-    "en": "Whether more retained output remains after next_cursor. May be true even when done=true; continue reading to drain output.",
-    "zh-CN": "next_cursor 之后是否仍有保留输出；即使 done=true 也可能为 true，此时应继续读取。"
-  },
-  "mcp.result.delivered": {
-    "en": "True only after the client confirms it performed the requested signal or EOF operation. Does not guarantee the program consumed it, stopped or exited.",
-    "zh-CN": "仅在客户端确认已执行所请求的信号或 EOF 操作后为 true；不保证程序已处理、停止或退出。"
+    "en": "Whether retained output remains after next_cursor; continue reading even after idle or closed.",
+    "zh-CN": "next_cursor 之后是否还有保留输出；idle 或 closed 后也应继续读取。"
   },
   "session.read.invalid.limit": {
     "en": "max_bytes must be an integer between 4 and 65536.",
@@ -911,14 +867,6 @@
     "en": "This client does not support the requested session operation. Check session_controls and update the client if needed.",
     "zh-CN": "该客户端不支持此会话操作，请检查 session_controls，必要时更新客户端。"
   },
-  "session.control.invalid.response": {
-    "en": "Invalid session control acknowledgment from client.",
-    "zh-CN": "客户端返回了无效的会话控制确认。"
-  },
-  "session.control.unconfirmed": {
-    "en": "Session operation delivery is unconfirmed; it may have been applied. Read session output before retrying: %v",
-    "zh-CN": "尚未确认会话操作的投递状态，操作可能已经执行。重试前请先读取会话输出：%v"
-  },
   "session.control.no.foreground": {
     "en": "The terminal has no foreground process group to interrupt.",
     "zh-CN": "终端没有可中断的前台进程组。"
@@ -932,24 +880,20 @@
     "zh-CN": "会话输入队列已满，此次输入未入队。"
   },
   "mcp.session.control": {
-    "en": "Control an existing session using input, interrupt, eof or stop. Only input accepts input text, without adding a newline; idle sessions reject it. input/interrupt/eof return ok=true after client acknowledgment, not proof the program consumed or handled it. Check client_info.session_controls before interrupt/eof; behavior is platform-dependent. stop closes the terminal and alone accepts wait_ms (default 1000, 0–20000). Its result is status=running while pending or closed when the session is unusable, with exit_code/error when available. A disconnection error leaves remote termination unconfirmed. Repeated stop is safe and does not resend a pending request. Never blindly retry input or signals after uncertain delivery. Read output and final state with session_read.",
-    "zh-CN": "通过 input、interrupt、eof 或 stop 控制已有会话。仅 input 接受 input 文本，不自动加换行；空闲会话拒绝输入。input/interrupt/eof 在客户端确认后返回 ok=true，不保证程序已消费或处理。中断和 EOF 前查看 client_info.session_controls，具体行为因平台而异。stop 关闭终端，仅此操作接受 wait_ms（默认 1000，范围 0–20000）；返回 status=running 表示待确认，closed 表示会话不可用，按需带 exit_code/error。断线错误表示远端终止未确认。重复 stop 不重发待确认请求；投递不确定时勿盲目重试输入或信号。通过 session_read 读取输出及后续状态。"
+    "en": "Control an existing session using input, interrupt, eof or stop. Only input accepts input text, without adding a newline; idle sessions reject it. input/interrupt/eof return ok=true after client acknowledgment, not proof the program consumed or handled it. Check client_info.session_controls before interrupt/eof; behavior is platform-dependent. stop closes the terminal and alone accepts wait_ms (default 1000, 0–20000). Its result is status=running while pending or closed when the session is unusable, with exit_code/error when available. Disconnection returns a transport error and does not invent a closed state. Repeated stop is safe and termination is confirmed by the client. Never blindly retry input or signals after uncertain delivery. Read output and final state with session_read.",
+    "zh-CN": "通过 input、interrupt、eof 或 stop 控制已有会话。仅 input 接受 input 文本，不自动加换行；空闲会话拒绝输入。input/interrupt/eof 在客户端确认后返回 ok=true，不保证程序已消费或处理。中断和 EOF 前查看 client_info.session_controls，具体行为因平台而异。stop 关闭终端，仅此操作接受 wait_ms（默认 1000，范围 0–20000）；返回 status=running 表示待确认，closed 表示会话不可用，按需带 exit_code/error。断线返回传输错误，不会生成 closed 状态。重复 stop 安全，由客户端确认终止；投递不确定时勿盲目重试输入或信号。通过 session_read 读取输出及后续状态。"
   },
   "mcp.session.control.action": {
     "en": "Operation on this session: input sends stdin text (requires input); interrupt signals the foreground task; eof ends input according to platform semantics; stop cancels the entire session (optional wait_ms).",
     "zh-CN": "会话操作：input 发送标准输入（必须带 input）；interrupt 中断前台任务；eof 按平台语义发送输入结束；stop 取消整个会话（可选 wait_ms）。"
-  },
-  "mcp.result.action": {
-    "en": "The session_control action this result describes; determines which acknowledgment or terminal fields apply.",
-    "zh-CN": "本结果对应的 session_control 操作，决定应读取哪些发送确认或终态字段。"
   },
   "session.control.invalid.arguments": {
     "en": "Use action=input with input, interrupt/eof without input or wait_ms, or stop with optional wait_ms (0–20000). A nonempty session_id is required.",
     "zh-CN": "action=input 必须带 input；interrupt/eof 不得带 input 或 wait_ms；stop 仅可附带 wait_ms（0–20000）。session_id 必须非空。"
   },
   "runtime.compatibility.error": {
-    "en": "Incompatible runtime: server %s (API %s), runtime %s (API %s), runtime PID %s.\nThe running runtime will not be stopped or restarted automatically.\nUse a server compatible with runtime API %s to stop this instance, for example:\n  %s\nOr stop runtime manually in the same user and host/container environment:\n  %s\nStopping runtime disconnects clients and clears in-memory credentials and sessions.",
-    "zh-CN": "Runtime 不兼容：server %s（API %s），runtime %s（API %s），runtime PID %s。\n不会自动停止或重启运行中的 runtime。\n请使用兼容 runtime API %s 的 server 停止当前实例，例如：\n  %s\n或在相同用户及主机/容器环境中手动停止 runtime：\n  %s\n停止 runtime 会断开客户端连接，并清空内存中的凭证和会话。"
+    "en": "Incompatible runtime: server %s (API %s), runtime %s (API %s), runtime PID %s.\nThe running runtime will not be stopped or restarted automatically.\nUse a server compatible with runtime API %s to stop this instance, for example:\n  %s\nOr stop runtime manually in the same user and host/container environment:\n  %s\nStopping runtime disconnects clients and clears server credentials.",
+    "zh-CN": "Runtime 不兼容：server %s（API %s），runtime %s（API %s），runtime PID %s。\n不会自动停止或重启运行中的 runtime。\n请使用兼容 runtime API %s 的 server 停止当前实例，例如：\n  %s\n或在相同用户及主机/容器环境中手动停止 runtime：\n  %s\n停止 runtime 会断开客户端连接，并清空服务端凭证。"
   },
   "runtime.compatibility.unknown": {
     "en": "unknown (not reported)",
@@ -991,17 +935,9 @@
     "en": "Whether the client supports built-in p2p-cli initialization.",
     "zh-CN": "客户端是否支持内置 p2p-cli 初始化。"
   },
-  "session.client.upgrade.required": {
-    "en": "This client does not support persistent sessions. Update the client before executing commands.",
-    "zh-CN": "此客户端不支持持续会话，请更新客户端后执行命令。"
-  },
   "session.busy": {
     "en": "session_busy: session %s is running a command. Read or control it, or omit the terminal target for independent work.",
     "zh-CN": "session_busy：会话 %s 正在执行命令，请读取或控制该会话，或不指定终端以独立执行。"
-  },
-  "session.initial.options.only": {
-    "en": "cwd and env initialize a new terminal only. Change a reused shell with cd/export, or create another terminal.",
-    "zh-CN": "cwd 和 env 仅用于初始化新终端；复用时通过 shell 命令修改目录和环境，或新建其他终端。"
   },
   "session.command.changed": {
     "en": "A newer command has started in this session. Use session_read without command_id to read the retained session output.",
@@ -1015,25 +951,13 @@
     "en": "Completion wait in milliseconds, 0–20000; default 10000. Anonymous terminals close if the command finishes first; otherwise the client retains the same shell under a random session_id. 0 retains immediately. Never stops a running command.",
     "zh-CN": "等待命令完成的时间，0–20000 毫秒，默认 10000。匿名终端内命令先完成则自动关闭，否则客户端将同一 shell 保留并返回随机 session_id；0 表示立即保留。不会终止运行中的命令。"
   },
-  "mcp.result.session_alive": {
-    "en": "Whether this terminal can accept another command when idle.",
-    "zh-CN": "此终端在空闲时是否可继续执行命令。"
-  },
-  "mcp.result.command_done": {
-    "en": "Whether the latest command has completed, independently of terminal lifetime.",
-    "zh-CN": "最新命令是否已结束，与终端生命周期独立。"
-  },
   "mcp.result.command_id": {
     "en": "Identity of the latest submitted command.",
     "zh-CN": "最新提交命令的标识。"
   },
-  "mcp.result.persistent_sessions": {
-    "en": "Whether this client supports persistent command sessions.",
-    "zh-CN": "此客户端是否支持持续命令会话。"
-  },
   "mcp.execution.status": {
-    "en": "running: terminal busy or stop pending; idle: command ended and reusable; closed: session is no longer usable. A disconnection error means remote process termination is unconfirmed.",
-    "zh-CN": "running：终端忙碌或停止待确认；idle：命令结束且可复用；closed：会话已不可用。若有断线错误，远端进程是否终止尚未确认。"
+    "en": "running: terminal busy or stop pending; idle: command ended and shell reusable; closed: client confirmed shell termination. Transport errors do not imply termination.",
+    "zh-CN": "running：终端忙碌或停止待确认；idle：命令结束且 shell 可复用；closed：客户端确认 shell 已结束。传输错误不表示终止。"
   },
   "mcp.execution.session.id": {
     "en": "Reuse an existing session only. Unknown or closed IDs are rejected. To create a terminal, use setup instead.",
@@ -1042,14 +966,6 @@
   "session.input.requires.command": {
     "en": "No command is waiting for input. Submit new commands with execute_command.",
     "zh-CN": "当前没有命令可接收输入，请使用 execute_command 执行新命令。"
-  },
-  "mcp.result.persistent": {
-    "en": "Whether the terminal is retained after command completion and requires explicit stop (unless its shell exits or disconnects).",
-    "zh-CN": "终端是否在命令完成后继续保留，需要主动 stop 关闭（shell 自行退出或断线除外）。"
-  },
-  "mcp.result.promoted": {
-    "en": "Whether this terminal began anonymously and was retained when its initial wait elapsed (including wait_ms=0).",
-    "zh-CN": "终端是否从匿名终端在首次等待到期后保留而来，包括 wait_ms=0。"
   },
   "session.setup.conflict": {
     "en": "setup cannot be combined with top-level session_id.",
@@ -1075,10 +991,6 @@
     "en": "The client acknowledged the operation request; does not prove the program consumed input or handled a signal.",
     "zh-CN": "客户端已确认操作请求，不代表程序已消费输入或处理中断。"
   },
-  "session.disconnected.unconfirmed": {
-    "en": "client disconnected; remote process termination is unconfirmed",
-    "zh-CN": "客户端已断开；远端进程是否终止尚未确认"
-  },
   "mcp.close.client": {
     "en": "Close selected online devices for this token. Pass client_ids from list_client to close only those devices. Omit client_ids to close all online devices and revoke the token and its invitations, including when no devices are online. Every ID must belong to this token. Closing a device stops its sessions and active transfers.",
     "zh-CN": "关闭此 token 下选定的在线设备。传入 list_client 返回的 client_ids 时只关闭指定设备；不传则关闭所有在线设备并撤销 token 和其邀请，即使当前没有在线设备也会撤销。所有 ID 必须属于此 token。关闭设备会停止其会话和进行中的传输。"
@@ -1090,5 +1002,13 @@
   "mcp.result.client_ids": {
     "en": "IDs of devices closed by this call.",
     "zh-CN": "本次关闭的设备 ID。"
+  },
+  "client.api.required": {
+    "en": "The peer does not support the required client API version. Update both client and server.",
+    "zh-CN": "对端不支持所需的 client API 版本，请更新客户端和服务端。"
+  },
+  "mcp.result.terminal_api": {
+    "en": "Whether this device supports the terminal client API.",
+    "zh-CN": "此设备是否支持终端 client API。"
   }
 }

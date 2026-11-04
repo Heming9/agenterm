@@ -2,7 +2,6 @@ package client
 
 import (
 	"agenterm/internal/i18n"
-	"agenterm/internal/protocol"
 )
 
 func (t *persistentTerminal) stopRetentionTimerLocked() {
@@ -11,28 +10,22 @@ func (t *persistentTerminal) stopRetentionTimerLocked() {
 		t.retentionTimer = nil
 	}
 }
-func (t *persistentTerminal) lifecycleLocked(m *protocol.Message) {
-	m.SessionPersistent, m.SessionPromoted = t.persistent, t.promoted
-}
 
 // Completion and retention use the same lock: exactly one wins. Once retained,
 // finishing a command leaves the shell alive until explicitly closed or exited.
-func (t *persistentTerminal) retain(commandID string) {
+func (t *persistentTerminal) retain() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.retainLocked(commandID)
+	t.retainLocked()
 }
 
-func (t *persistentTerminal) retainLocked(commandID string) {
+func (t *persistentTerminal) retainLocked() {
 	if t.closed || t.persistent {
 		return
 	}
-	t.persistent, t.promoted = true, true
+	t.persistent = true
 	t.stopRetentionTimerLocked()
-	m := protocol.Message{Type: "session_retained", ID: t.id, RequestID: commandID}
-	t.lifecycleLocked(&m)
-	t.history.Accept(m)
-	_ = t.c.send(m)
+	t.history.retain()
 }
 func (t *persistentTerminal) inputError() error {
 	t.mu.Lock()

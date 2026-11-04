@@ -32,10 +32,8 @@ func TestUnusedTokenCleanupWithAndWithoutQuota(t *testing.T) {
 					t.Fatalf("redeem: %d", response.Code)
 				}
 			}
-			// Cleanup must remove associated output, not just authentication data.
-			s.sessions = map[string]*session{"history": {owner: decoded.Secret, done: true, ended: time.Now()}}
 			s.cleanupTokensLocked(s.clientOwners[decoded.Secret].expires)
-			if len(s.tokens)+len(s.clientOwners)+len(s.multiDevice)+len(s.invitations)+len(s.installCodes)+len(s.sessions) != 0 {
+			if len(s.tokens)+len(s.clientOwners)+len(s.multiDevice)+len(s.invitations)+len(s.installCodes) != 0 {
 				t.Fatalf("quota=%d redeemed=%v: expired token or associated state retained", quota, redeemed)
 			}
 		}
@@ -128,7 +126,6 @@ func TestTokenCleanupRunsWithoutNewRequests(t *testing.T) {
 	s.clientOwners[decoded.Secret].expires = time.Now().Add(-time.Second)
 	// The single startup credential remains reusable for console invitations.
 	s.tokens["startup"] = "startup-secret"
-	s.sessions = map[string]*session{"old": {done: true, ended: time.Now().Add(-time.Hour)}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -141,7 +138,7 @@ func TestTokenCleanupRunsWithoutNewRequests(t *testing.T) {
 		s.mu.Lock()
 		_, expiredRetained := s.tokens[issued["client_token"].(string)]
 		clean := !expiredRetained && len(s.tokens) == 1 && s.tokens["startup"] == "startup-secret" &&
-			len(s.clientOwners)+len(s.invitations)+len(s.installCodes)+len(s.multiDevice)+len(s.sessions) == 0
+			len(s.clientOwners)+len(s.invitations)+len(s.installCodes)+len(s.multiDevice) == 0
 		s.mu.Unlock()
 		if clean {
 			break

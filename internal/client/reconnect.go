@@ -31,12 +31,14 @@ type attemptResult struct {
 }
 
 func reconnect(ctx context.Context, token protocol.Token, log io.Writer, callbacks Callbacks) error {
+	api := NewManager(log, TerminalCallbacks{Command: callbacks.Command, Output: callbacks.Output})
+	defer func() { api.Close(); api.WaitCallbacks() }()
 	delay, attempt := time.Second, 0
 	for ctx.Err() == nil {
 		if callbacks.Connecting != nil {
 			callbacks.Connecting()
 		}
-		result := connectOnce(ctx, token, log, callbacks)
+		result := connectOnce(ctx, token, log, callbacks, api)
 		if ctx.Err() != nil {
 			return nil
 		}

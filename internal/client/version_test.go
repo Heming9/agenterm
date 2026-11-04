@@ -23,7 +23,7 @@ func TestServerVersionCheckedBeforeConnectedCallback(t *testing.T) {
 				if r.Header.Get(version.Header) != version.Current {
 					t.Error("client did not send its version")
 				}
-				ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {peer}})
+				ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{protocol.ClientAPIHeader: {"1"}, version.Header: {peer}})
 				if err == nil {
 					ws.Close()
 				}

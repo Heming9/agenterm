@@ -2,7 +2,6 @@ package service
 
 import (
 	"testing"
-	"time"
 )
 
 func assertCompactReadResult(t *testing.T, r map[string]any) {
@@ -34,36 +33,5 @@ func assertCompactReadResult(t *testing.T, r map[string]any) {
 		}
 	default:
 		t.Fatalf("unknown state: %v", r)
-	}
-}
-
-func TestCompactReadLifecycleStates(t *testing.T) {
-	for _, tc := range []struct {
-		name                                  string
-		done, commandDone, retained, stopping bool
-		want                                  string
-	}{
-		{name: "active", retained: true, want: "running"},
-		{name: "reusable", commandDone: true, retained: true, want: "idle"},
-		{name: "anonymous-closing", commandDone: true, want: "running"},
-		{name: "stop-pending", commandDone: true, retained: true, stopping: true, want: "running"},
-		{name: "exited", done: true, commandDone: true, want: "closed"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p := &session{id: "test", commandID: "command", done: tc.done, commandDone: tc.commandDone, keepAlive: tc.retained, stopRequested: tc.stopping, changed: make(chan struct{})}
-			status := p.readStatusLocked()
-			if status != tc.want {
-				t.Fatalf("status=%s want=%s", status, tc.want)
-			}
-			p.owner = "owner"
-			p.client = &client{info: clientInfo{ID: "device"}}
-			p.ended = time.Now()
-			state := &runtimeState{sessions: map[string]*session{sessionKey(p.owner, p.id): p}}
-			listed := state.listSessions(p.owner, "")
-			if len(listed) != 1 || listed[0].Status != status {
-				t.Fatalf("list/read state mismatch: %v %v", listed, status)
-			}
-
-		})
 	}
 }

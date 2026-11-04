@@ -1,7 +1,6 @@
 package client
 
 import (
-	"agenterm/internal/protocol"
 	"context"
 	"io"
 	"os"
@@ -13,7 +12,7 @@ import (
 // launcher was cmd.exe. It supports dot-sourcing and an explicit prompt hook;
 // cmd.exe cannot reliably report command boundaries through its prompt.
 func persistentShellPath() string {
-	path := getShell().path
+	path := getShell()
 	if strings.Contains(strings.ToLower(path), "powershell") || strings.Contains(strings.ToLower(path), "pwsh") {
 		return path
 	}
@@ -23,7 +22,7 @@ func persistentShellPath() string {
 	return "powershell.exe"
 }
 
-func persistentShellCommand(ctx context.Context, marker string, options protocol.ExecOptions) *exec.Cmd {
+func persistentShellCommand(ctx context.Context, marker string, options ExecOptions) *exec.Cmd {
 	path := persistentShellPath()
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 	// Pipe traffic is UTF-8 in both directions, independent of the user's code

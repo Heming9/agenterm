@@ -1,61 +1,33 @@
 package client
 
 import (
-	"context"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-type commandShell struct {
-	path string
-	flag string
-}
-
 var shellOnce sync.Once
-var selectedShell commandShell
+var selectedShell string
 
 // Shell reports the shell selected for commands in this client process.
 func Shell() string { return persistentShellPath() }
 
-func getShell() commandShell {
+func getShell() string {
 	shellOnce.Do(func() {
 		selectedShell = defaultShell()
 		if path := parentShellPath(); path != "" {
-			if flag := shellFlag(path); flag != "" {
-				selectedShell = commandShell{path, flag}
-			}
+			selectedShell = path
 		}
 	})
 	return selectedShell
 }
 
-func shellFlag(path string) string {
-	name := strings.ToLower(filepath.Base(path))
-	name = strings.TrimSuffix(name, ".exe")
+func isSupportedShell(path string) bool {
+	name := strings.TrimSuffix(strings.ToLower(filepath.Base(path)), ".exe")
 	switch name {
-	case "cmd":
-		return "/C"
-	case "powershell", "pwsh":
-		return "-c"
-	case "sh", "bash", "zsh", "dash", "ksh", "fish", "ash":
-		return "-c"
+	case "cmd", "powershell", "pwsh", "sh", "bash", "zsh", "dash", "ksh", "fish", "ash":
+		return true
 	default:
-		return ""
+		return false
 	}
-}
-
-func shellCommand(ctx context.Context, command string) *exec.Cmd {
-	shell := getShell()
-	return exec.CommandContext(ctx, shell.path, shellArgs(shell, command)...)
-}
-
-func shellArgs(shell commandShell, command string) []string {
-	args := []string{shell.flag, command}
-	name := strings.TrimSuffix(strings.ToLower(filepath.Base(shell.path)), ".exe")
-	if name == "powershell" || name == "pwsh" {
-		args = append([]string{"-NoP"}, args...)
-	}
-	return args
 }

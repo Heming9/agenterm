@@ -3,7 +3,6 @@
 package client
 
 import (
-	"agenterm/internal/protocol"
 	"context"
 	"io"
 	"os/exec"
@@ -22,12 +21,12 @@ func TestPersistentShellAdapters(t *testing.T) {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
-			selectedShell = commandShell{path, "-c"}
+			selectedShell = path
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			dir := t.TempDir()
 			marker := "\x1eadapter-boundary:"
-			cmd := persistentShellCommand(ctx, marker, protocol.ExecOptions{})
+			cmd := persistentShellCommand(ctx, marker, ExecOptions{})
 			configureCommand(cmd, true)
 			input, output, err := startPersistentInteractive(cmd)
 			if err != nil {

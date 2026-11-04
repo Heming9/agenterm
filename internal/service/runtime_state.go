@@ -1,6 +1,7 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
 	"agenterm/internal/i18n"
 	"agenterm/internal/logging"
 	"context"
@@ -69,8 +70,6 @@ type runtimeState struct {
 	clientWaiters   map[string]*clientWaitState // client credential -> active connection waits
 	multiDevice     map[string]bool             // client credential -> multi-device mode
 	mu              sync.Mutex
-	sessions        map[string]*session
-	sessionRequests map[string]*pendingSessionCommand
 	limiter         authLimiter
 	invitations     map[string]invitation
 	installCodes    map[string]string // six-character installer code -> invitation secret
@@ -205,6 +204,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set(protocol.HeartbeatHeader, "1")
+	w.Header().Set(protocol.ClientAPIHeader, terminal.APIVersion)
 	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
 	if err != nil {
 		return
@@ -215,11 +215,11 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		Environment: clientEnvironment{
 			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),
 			Arch: metadataHeader(r, protocol.ArchHeader), Shell: metadataHeader(r, protocol.ShellHeader),
-			DefaultCwd:         metadataHeader(r, protocol.DefaultCwdHeader),
-			ClientVersion:      metadataHeader(r, version.Header),
-			SessionControls:    sessionControlsHeader(r),
-			PersistentSessions: r.Header.Get(protocol.PersistentSessionsHeader) == protocol.PersistentSessionsVersion,
-			P2P:                r.Header.Get(protocol.P2PCapabilityHeader) == "1",
+			DefaultCwd:      metadataHeader(r, protocol.DefaultCwdHeader),
+			ClientVersion:   metadataHeader(r, version.Header),
+			SessionControls: sessionControlsHeader(r),
+			TerminalAPI:     r.Header.Get(protocol.ClientAPIHeader) == terminal.APIVersion,
+			P2P:             r.Header.Get(protocol.P2PCapabilityHeader) == "1",
 		},
 	}}
 	if s.clients == nil {
@@ -246,11 +246,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			stopHeartbeat()
 			s.mu.Lock()
 			s.closeP2PClientLocked(c, "client disconnected")
-			for _, p := range s.sessions {
-				if p.client == c {
-					p.accept(protocol.Message{Type: "done", ExitCode: -1, Error: serverText("session.disconnected.unconfirmed")})
-				}
-			}
+
 			if s.clients[id] == c {
 				delete(s.clients, id)
 				if owner := s.clientOwners[secret]; owner != nil && !s.hasClientLocked(secret) {
@@ -286,18 +282,11 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 				disconnectErr = err
 				return
 			}
-			if m.Type == "command_accepted" {
-				if err := s.bindAcceptedSession(c, m); err != nil {
-					m.Type, m.Error = "command_rejected", err.Error()
-				}
-			}
-			if m.Type == "done" {
+
+			if m.Type == "p2p_done" {
 				s.mu.Lock()
 				s.p2pCommandDoneLocked(c, m)
 				s.mu.Unlock()
-			}
-			if s.acceptSessionEvent(c, m) {
-				continue
 			}
 			c.mu.Lock()
 			ch := c.pending[m.ID]
@@ -305,10 +294,10 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 				select {
 				case ch <- m:
 				default:
-					disconnectErr = fmt.Errorf("output queue full for command %s", m.ID)
-					disconnectReason = "output_queue_full"
+					disconnectErr = fmt.Errorf("response queue full for request %s", m.ID)
+					disconnectReason = "response_queue_full"
 					// A peer can choose message IDs; do not log an unvalidated value.
-					c.logger().Warn("client output queue full")
+					c.logger().Warn("client response queue full")
 					c.mu.Unlock()
 					return
 				}

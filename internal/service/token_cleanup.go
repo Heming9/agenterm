@@ -45,14 +45,6 @@ func (s *runtimeState) cleanupTokensLocked(now time.Time) {
 		}
 	}
 	s.deleteTokensLocked(expired)
-	for id, p := range s.sessions {
-		p.mu.Lock()
-		old := p.done && now.Sub(p.ended) > 30*time.Minute
-		p.mu.Unlock()
-		if old {
-			delete(s.sessions, id)
-		}
-	}
 }
 
 // The caller holds s.mu. Revoke credentials and all associated retained data.
@@ -61,19 +53,9 @@ func (s *runtimeState) deleteTokensLocked(secrets map[string]bool) {
 		return
 	}
 	s.revokeTokensLocked(secrets)
-	s.deleteSessionsLocked(secrets)
-}
-
-func (s *runtimeState) deleteSessionsLocked(secrets map[string]bool) {
-	for id, p := range s.sessions {
-		if secrets[p.owner] {
-			delete(s.sessions, id)
-		}
-	}
 }
 
 // Revoke before disconnecting clients to prevent a concurrent reconnect.
-// Retained sessions can be removed after disconnect cleanup has notified waiters.
 func (s *runtimeState) revokeTokensLocked(secrets map[string]bool) {
 	for key, entry := range s.invitations {
 		if secrets[s.tokens[entry.token]] {

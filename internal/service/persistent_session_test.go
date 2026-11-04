@@ -49,48 +49,16 @@ func TestNamedSessionStateAndFastCommands(t *testing.T) {
 	}
 }
 
-func TestServerCacheCleanupDoesNotCloseClientTerminal(t *testing.T) {
+func TestTokenCleanupDoesNotOwnTerminalHistory(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "kept"}, "command": "echo alive"}, false).(map[string]any)
-	closed := h.call(t, token, "execute_command", map[string]any{"command": "echo closed"}, false).(map[string]any)
-	if closed["status"] != "closed" {
-		t.Fatalf("cleanup control was not closed: %v", closed)
-	}
-	items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
-	closedID := items[1].(map[string]any)["session_id"].(string)
+	started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "kept"}, "command": "echo kept"}, false).(map[string]any)
 	h.s.mu.Lock()
-	h.s.cleanupTokensLocked(time.Now().Add(31 * time.Minute))
-	_, keptPresent := h.s.sessions[sessionKey(h.s.tokens[token], first["session_id"].(string))]
-	_, closedPresent := h.s.sessions[sessionKey(h.s.tokens[token], closedID)]
+	h.s.cleanupTokensLocked(time.Now().Add(48 * time.Hour))
 	h.s.mu.Unlock()
-	if !keptPresent || closedPresent {
-		t.Fatalf("cleanup retained live=%t closed=%t", keptPresent, closedPresent)
-	}
-	next := h.call(t, token, "execute_command", map[string]any{"session_id": "kept", "command": "echo still-alive"}, false).(map[string]any)
-	if next["session_id"] != first["session_id"] || next["status"] != "idle" {
-		t.Fatalf("server cleanup changed terminal lifecycle: %v", next)
-	}
-}
-
-func TestClientReuseIgnoresStaleServerMirror(t *testing.T) {
-	h := newMultiHarness(t, 0)
-	token := h.create(t, false)
-	connectExecutionClient(t, h, token)
-	first := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": "kept"}, "command": "echo default"}, false).(map[string]any)
-	other := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "command": "echo other"}, false).(map[string]any)
-	secret := h.s.tokens[token]
-	a, _ := h.s.getSession(secret, first["session_id"].(string))
-	b, _ := h.s.getSession(secret, other["session_id"].(string))
-	a.mu.Lock()
-	a.keepAlive = false
-	a.mu.Unlock()
-	b.mu.Lock()
-	b.keepAlive = true
-	b.mu.Unlock()
-	selected := h.call(t, token, "execute_command", map[string]any{"session_id": "kept", "command": "echo actual-default"}, false).(map[string]any)
-	if selected["session_id"] != first["session_id"] || selected["status"] != "idle" {
-		t.Fatalf("server mirror selected terminal: %v", selected)
+	out := h.call(t, token, "session_read", map[string]any{"session_id": started["session_id"]}, false).(map[string]any)
+	if !strings.Contains(out["output"].(string), "kept") {
+		t.Fatal(out)
 	}
 }

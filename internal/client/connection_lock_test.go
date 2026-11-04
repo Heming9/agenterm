@@ -194,7 +194,7 @@ func TestInvitationConnectionHoldsLockThroughRedemptionAndConnection(t *testing.
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
 			return
 		}
-		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}})
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{protocol.ClientAPIHeader: {"1"}, version.Header: {version.Current}})
 		if err == nil {
 			defer ws.Close()
 			_, _, _ = ws.ReadMessage()
@@ -251,7 +251,7 @@ func TestConnectionLockReleasedAfterDisconnectOrFailure(t *testing.T) {
 			http.Error(w, "rejected", http.StatusForbidden)
 			return
 		}
-		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}})
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{protocol.ClientAPIHeader: {"1"}, version.Header: {version.Current}})
 		if err == nil {
 			defer ws.Close()
 			_, _, _ = ws.ReadMessage()

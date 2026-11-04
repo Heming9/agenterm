@@ -1,6 +1,7 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
 	"agenterm/internal/version"
 	"bytes"
 	"encoding/json"
@@ -33,7 +34,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	}
 	for i, token := range tokens {
 		secret := s.tokens[token]
-		h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion}}
+		h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
 		raw, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
 		if err != nil {
 			t.Fatal(err)
@@ -41,26 +42,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 		ws := wrapTestDevice(raw)
 		defer ws.Close()
 		label := fmt.Sprintf("client-%d", i)
-		go func() {
-			for {
-				var m protocol.Message
-				if ws.ReadJSON(&m) != nil {
-					return
-				}
-				if m.Type == "session_exec" {
-					m = acceptTestSession(ws, m)
-					if ws.WriteJSON(protocol.Message{Type: "output", ID: m.ID, Output: label}) != nil {
-						return
-					}
-					if ws.WriteJSON(protocol.Message{Type: "command_done", ID: m.ID, RequestID: m.RequestID}) != nil {
-						return
-					}
-					if !m.SessionPersistent {
-						_ = ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID})
-					}
-				}
-			}
-		}()
+		go serveTestDevice(ws, label, nil, nil)
 	}
 	call := func(token, name string, args map[string]any) (int, map[string]any) {
 		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
@@ -111,7 +93,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 		t.Fatalf("owner cannot read: %#v", allowed)
 	}
 	secret := s.tokens[tokens[0]]
-	h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion}}
+	h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
 	_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
 	if err == nil || resp == nil || resp.StatusCode != http.StatusConflict {
 		t.Fatalf("duplicate connection accepted: %v", err)

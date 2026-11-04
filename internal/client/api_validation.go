@@ -1,4 +1,4 @@
-package protocol
+package client
 
 import (
 	"agenterm/internal/i18n"
@@ -8,9 +8,9 @@ import (
 	"unicode/utf8"
 )
 
-// MaxTerminalsPerClient bounds live terminals in a client process. Finished
+// MaxTerminals bounds live terminals in a client process. Finished
 // session records and P2P bootstrap processes do not consume terminal slots.
-const MaxTerminalsPerClient = 10
+const MaxTerminals = 10
 
 // ExecOptions initialize a new terminal. Commands run until they exit or the
 // session is explicitly stopped; a tool's wait_ms never limits execution.
@@ -47,14 +47,14 @@ func ValidateSessionID(name string) error {
 	return nil
 }
 
-// SessionSetup always requests creation. An omitted ID follows the anonymous
+// Setup always requests creation. An omitted ID follows the anonymous
 // terminal lifetime; an explicit ID creates a persistent terminal.
-type SessionSetup struct {
+type Setup struct {
 	SessionID string `json:"session_id,omitempty"`
 	ExecOptions
 }
 
-func ValidateSessionRequest(id string, setup *SessionSetup) error {
+func ValidateSessionRequest(id string, setup *Setup) error {
 	if err := ValidateSessionID(id); err != nil {
 		return err
 	}
@@ -68,4 +68,30 @@ func ValidateSessionRequest(id string, setup *SessionSetup) error {
 		return err
 	}
 	return setup.ExecOptions.Validate()
+}
+
+func (a ControlRequest) Validate() error {
+	if a.SessionID == "" {
+		return i18n.NewError("session.control.invalid.arguments")
+	}
+	if err := ValidateSessionID(a.SessionID); err != nil {
+		return err
+	}
+	switch a.Action {
+	case "input":
+		if a.Input == nil || a.WaitMS != nil {
+			return i18n.NewError("session.control.invalid.arguments")
+		}
+	case "interrupt", "eof":
+		if a.Input != nil || a.WaitMS != nil {
+			return i18n.NewError("session.control.invalid.arguments")
+		}
+	case "stop":
+		if a.Input != nil || (a.WaitMS != nil && (*a.WaitMS < 0 || *a.WaitMS > MaxWaitMS)) {
+			return i18n.NewError("session.control.invalid.arguments")
+		}
+	default:
+		return i18n.NewError("session.control.invalid.arguments")
+	}
+	return nil
 }

@@ -1,6 +1,8 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
+
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -226,14 +228,14 @@ func TestAnonymousLargeOutputComesFromClient(t *testing.T) {
 		t.Fatalf("large execution: failed=%t err=%v", failed, err)
 	}
 	out := result.(map[string]any)
-	if len(out["output"].(string)) != defaultSessionReadBytes || out["session_id"] == nil || out["has_more"] != true || out["status"] != "closed" {
+	if len(out["output"].(string)) != terminal.DefaultReadBytes || out["session_id"] == nil || out["has_more"] != true || out["status"] != "closed" {
 		t.Fatalf("expected completed paged output: size=%d id=%v more=%v status=%v", len(out["output"].(string)), out["session_id"], out["has_more"], out["status"])
 	}
 	var output strings.Builder
 	output.WriteString(out["output"].(string))
 	initial := out
 	for out["has_more"] == true {
-		out = h.call(t, token, "session_read", map[string]any{"session_id": initial["session_id"], "command_id": initial["command_id"], "cursor": out["next_cursor"], "max_bytes": maxSessionReadBytes}, false).(map[string]any)
+		out = h.call(t, token, "session_read", map[string]any{"session_id": initial["session_id"], "command_id": initial["command_id"], "cursor": out["next_cursor"], "max_bytes": terminal.MaxReadBytes}, false).(map[string]any)
 		if out["truncated"] != nil {
 			t.Fatal("lost anonymous output while paging")
 		}

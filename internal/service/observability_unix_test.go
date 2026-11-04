@@ -106,9 +106,9 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	}
 	runtimeLog := filepath.Join(paths.Dir, "runtime.log")
 	commandLogs := readLogRecords(t, runtimeLog, func(entry map[string]any) bool {
-		return entry["msg"] == "command completed" && entry["request_id"] == id
+		return entry["msg"] == "client API completed" && entry["request_id"] == id
 	})
-	if commandLogs[0]["component"] != "runtime" || commandLogs[0]["instance"] != "logging" || commandLogs[0]["command_id"] == nil || commandLogs[0]["client_id"] == nil {
+	if commandLogs[0]["component"] != "runtime" || commandLogs[0]["instance"] != "logging" || commandLogs[0]["method"] != "execute" || commandLogs[0]["client_id"] == nil {
 		t.Fatal(commandLogs)
 	}
 	readLogRecords(t, serverLog, func(entry map[string]any) bool {
@@ -118,10 +118,10 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	sessionID := session["session_id"].(string)
 	h.call(t, token, "session_control", map[string]any{"session_id": sessionID, "action": "input", "input": "private-session-input\n"}, false)
 	sessionLogs := readLogRecords(t, runtimeLog, func(entry map[string]any) bool {
-		return entry["msg"] == "command completed" && entry["session_id"] == sessionID
+		return entry["msg"] == "client API completed" && entry["method"] == "control"
 	})
 	readLogRecords(t, serverLog, func(entry map[string]any) bool {
-		return entry["msg"] == "mcp tool completed" && entry["tool"] == "execute_command" && entry["request_id"] == sessionLogs[0]["request_id"]
+		return entry["msg"] == "mcp tool completed" && entry["tool"] == "session_control" && entry["request_id"] == sessionLogs[0]["request_id"]
 	})
 	first.stop(t, true)
 	response, err = http.Get(origin + "/agenterm/c/private-install-code?secret=private-query")
@@ -141,7 +141,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	waitReady(t, origin+"/healthz", http.DefaultTransport, replacement)
 	h.call(t, token, "execute_command", map[string]any{"command": "printf after-restart"}, false)
 	readLogRecords(t, runtimeLog, func(entry map[string]any) bool {
-		return entry["msg"] == "command completed" && entry["request_id"] != id
+		return entry["msg"] == "client API completed" && entry["request_id"] != id
 	})
 	replacement.stop(t, false)
 	decoded, _ := protocol.Decode(token)

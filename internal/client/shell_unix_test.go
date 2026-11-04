@@ -4,6 +4,7 @@ package client
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +17,11 @@ func TestLaunchingShell(t *testing.T) {
 		if filepath.Base(Shell()) != "bash" {
 			t.Fatalf("selected shell: %q", Shell())
 		}
-		out, err := shellCommand(context.Background(), `[[ abc == a* ]] && printf matched`).CombinedOutput()
-		if err != nil || string(out) != "matched" {
-			t.Fatalf("bash command: output %q, error %v", out, err)
+		manager := NewManager(io.Discard, TerminalCallbacks{})
+		defer func() { manager.Close(); manager.WaitCallbacks() }()
+		out, err := manager.Execute(context.Background(), ExecuteRequest{Command: `[[ abc == a* ]] && printf matched`})
+		if err != nil || out.Output != "matched" {
+			t.Fatalf("bash command: output %q, error %v", out.Output, err)
 		}
 		return
 	}

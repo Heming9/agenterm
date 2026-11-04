@@ -229,30 +229,12 @@ func TestAnonymousExecutionReturnsLargeOutputAndExitStatus(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	ws, _ := h.connect(t, token, "large output")
-	go func() {
-		for {
-			var m protocol.Message
-			if ws.ReadJSON(&m) != nil {
-				return
-			}
-			if m.Type != "session_exec" {
-				continue
-			}
-			m = acceptTestSession(ws, m)
-			for _, reply := range []protocol.Message{
-				{Type: "output", ID: m.ID, Output: strings.Repeat("界", (1<<20)/3+3)},
-				{Type: "command_done", ID: m.ID, RequestID: m.RequestID, ExitCode: 7},
-				{Type: "done", ID: m.ID, ExitCode: 7},
-			} {
-				if ws.WriteJSON(reply) != nil {
-					return
-				}
-			}
-		}
-	}()
+	go serveAPI(ws, testAPI{execute: func(context.Context, remoteclient.ExecuteRequest) (remoteclient.Output, error) {
+		return remoteclient.Output{SessionID: "large", CommandID: "c", Status: "closed", Output: strings.Repeat("界", remoteclient.DefaultReadBytes/3), NextCursor: int64(remoteclient.DefaultReadBytes / 3 * 3), HasMore: true, ExitCode: new(7)}, nil
+	}})
 	session := connectMCPClient(t, h, token)
 	out, isError := callExecution(t, session, map[string]any{"command": "large"})
-	if !isError || out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) != defaultSessionReadBytes-defaultSessionReadBytes%3 || !utf8.ValidString(out.Output) || !out.HasMore || out.SessionID == "" {
+	if !isError || out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) != remoteclient.DefaultReadBytes-remoteclient.DefaultReadBytes%3 || !utf8.ValidString(out.Output) || !out.HasMore || out.SessionID == "" {
 		t.Fatalf("paged anonymous result: %+v", out)
 	}
 }

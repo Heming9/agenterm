@@ -1,10 +1,8 @@
 package client
 
-import "agenterm/internal/protocol"
-
 // Shared by every connection in this process, including CLI and GUI entrypoints.
 // A slot is reserved before starting the shell and released only after it exits.
-var terminalSlots = make(chan struct{}, protocol.MaxTerminalsPerClient)
+var terminalSlots = make(chan struct{}, MaxTerminals)
 
 func acquireTerminalSlot() bool {
 	select {
@@ -16,7 +14,5 @@ func acquireTerminalSlot() bool {
 }
 
 func (p *process) releaseTerminalSlot() {
-	if p.ownsTerminalSlot {
-		p.terminalSlotOnce.Do(func() { <-terminalSlots })
-	}
+	p.terminalSlotOnce.Do(func() { <-terminalSlots })
 }

@@ -4,6 +4,7 @@ import (
 	"agenterm/internal/i18n"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -41,10 +42,8 @@ const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 
 // SessionControlsHeader advertises supported acknowledged session operations.
 const SessionControlsHeader = "X-Agenterm-Session-Controls"
-const PersistentSessionsHeader = "X-Agenterm-Persistent-Sessions"
+const ClientAPIHeader = "X-Agenterm-Client-API"
 
-// Version 6 separates existing-session reuse from explicit setup.
-const PersistentSessionsVersion = "7"
 const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.
@@ -386,41 +385,16 @@ func NormalizePathPrefix(prefix string) (string, error) {
 	return prefix, nil
 }
 
-// SessionReadRequest is evaluated by the terminal-owning client.
-type SessionReadRequest struct {
-	CommandID       string `json:"command_id,omitempty"`
-	Cursor          int64  `json:"cursor"`
-	WaitMS          int    `json:"wait_ms"`
-	MaxBytes        int    `json:"max_bytes,omitempty"`
-	AwaitSettlement bool   `json:"await_settlement,omitempty"`
-}
-
+// Message carries transport requests and bootstrap notifications. Terminal
+// request and result bodies are opaque to this package.
 type Message struct {
-	Cursor int64               `json:"cursor,omitempty"`
-	Read   *SessionReadRequest `json:"read,omitempty"`
-	Result map[string]any      `json:"result,omitempty"`
-
-	Type      string `json:"type"`
-	ID        string `json:"id,omitempty"`
-	RequestID string `json:"request_id,omitempty"`
-	Command   string `json:"command,omitempty"`
-	ExecOptions
-	SessionCreate     bool          `json:"session_create,omitempty"`
-	SessionID         string        `json:"session_id,omitempty"`
-	Setup             *SessionSetup `json:"setup,omitempty"`
-	WaitMS            int           `json:"wait_ms"`
-	SessionPersistent bool          `json:"session_persistent,omitempty"`
-	SessionPromoted   bool          `json:"session_promoted,omitempty"`
-	Interactive       bool          `json:"interactive,omitempty"`
-	Input             string        `json:"input,omitempty"`
-	Output            string        `json:"output,omitempty"`
-	Stream            string        `json:"stream,omitempty"`
-	ExitCode          int           `json:"exit_code,omitempty"`
-	TimedOut          bool          `json:"timed_out,omitempty"`
-	Canceled          bool          `json:"canceled,omitempty"`
-	Error             string        `json:"error,omitempty"`
-	LatencyMS         int64         `json:"latency_ms,omitempty"`
-	P2P               *P2PLaunch    `json:"p2p,omitempty"`
+	Type      string          `json:"type"`
+	ID        string          `json:"id,omitempty"`
+	Request   json.RawMessage `json:"request,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	LatencyMS int64           `json:"latency_ms,omitempty"`
+	P2P       *P2PLaunch      `json:"p2p,omitempty"`
 }
 
 // P2PLaunch runs a built-in bootstrap without putting its short-lived credential

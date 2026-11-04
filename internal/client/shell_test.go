@@ -1,33 +1,18 @@
 package client
 
-import (
-	"reflect"
-	"testing"
-)
+import "testing"
 
-func TestShellFlag(t *testing.T) {
-	for _, tc := range []struct{ name, want string }{
-		{"bash", "-c"}, {"/bin/zsh", "-c"}, {"fish", "-c"},
-		{"pwsh.exe", "-c"}, {"PowerShell.EXE", "-c"}, {"cmd.exe", "/C"},
-		{"WindowsTerminal.exe", ""}, {"", ""},
-	} {
-		if got := shellFlag(tc.name); got != tc.want {
-			t.Errorf("shellFlag(%q) = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
-
-func TestShellArgsSkipPowerShellProfile(t *testing.T) {
+func TestSupportedShell(t *testing.T) {
 	for _, tc := range []struct {
-		shell commandShell
-		want  []string
+		name string
+		want bool
 	}{
-		{commandShell{"powershell.exe", "-c"}, []string{"-NoP", "-c", "whoami"}},
-		{commandShell{"pwsh", "-c"}, []string{"-NoP", "-c", "whoami"}},
-		{commandShell{"cmd.exe", "/C"}, []string{"/C", "whoami"}},
+		{"bash", true}, {"/bin/zsh", true}, {"fish", true},
+		{"pwsh.exe", true}, {"PowerShell.EXE", true}, {"cmd.exe", true},
+		{"WindowsTerminal.exe", false}, {"", false},
 	} {
-		if got := shellArgs(tc.shell, "whoami"); !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("shellArgs(%q) = %v, want %v", tc.shell.path, got, tc.want)
+		if got := isSupportedShell(tc.name); got != tc.want {
+			t.Errorf("isSupportedShell(%q)=%t, want %t", tc.name, got, tc.want)
 		}
 	}
 }

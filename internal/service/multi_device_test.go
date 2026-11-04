@@ -1,6 +1,7 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
@@ -97,7 +98,7 @@ func (h *multiHarness) dial(token, hostname string) (*testDeviceConn, *http.Resp
 	ws, resp, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 		protocol.HostnameHeader: {base64.RawURLEncoding.EncodeToString([]byte(hostname))}, protocol.PlatformHeader: {"linux"},
-		protocol.SessionControlsHeader: {"interrupt,eof"}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion},
+		protocol.SessionControlsHeader: {"interrupt,eof"}, protocol.ClientAPIHeader: {terminal.APIVersion},
 	})
 	if err != nil {
 		return nil, resp, err
@@ -124,93 +125,6 @@ func (h *multiHarness) connect(t *testing.T, token, hostname string) (*testDevic
 			t.Fatal("client not registered")
 		}
 		time.Sleep(time.Millisecond)
-	}
-}
-
-// Simulate creation through setup and reuse through session_id.
-func acceptTestSession(ws *testDeviceConn, m protocol.Message, registries ...map[string]string) protocol.Message {
-	id := m.SessionID
-	created := id == ""
-	explicit := !created
-	if m.Setup != nil {
-		id = m.Setup.SessionID
-		explicit = id != ""
-	}
-	var detail string
-	if len(registries) > 0 {
-		exists := registries[0][id] != ""
-		if created && explicit && exists {
-			detail = "session already exists"
-		}
-		if !created && !exists {
-			detail = "unknown session"
-		}
-	}
-	if detail != "" {
-		_ = ws.WriteJSON(protocol.Message{Type: "command_rejected", ID: m.ID, RequestID: m.RequestID, Error: detail})
-		return protocol.Message{}
-	}
-	if id == "" {
-		id = "client-" + m.ID
-	}
-	if len(registries) > 0 {
-		registries[0][id] = id
-	}
-	persistent := explicit || m.WaitMS == 0
-	_ = ws.WriteJSON(protocol.Message{Type: "command_accepted", ID: m.ID, RequestID: m.RequestID, SessionID: id, SessionCreate: created, SessionPersistent: persistent, SessionPromoted: created && !explicit && m.WaitMS == 0, Command: m.Command})
-	m.ID, m.SessionPersistent = id, persistent
-	return m
-}
-
-func serveTestDevice(ws *testDeviceConn, label string, arrived chan<- string, release <-chan struct{}) {
-	names := make(map[string]string)
-	for {
-		var m protocol.Message
-		if ws.ReadJSON(&m) != nil {
-			return
-		}
-		switch m.Type {
-		case "p2p_start":
-			if registerTestP2P(m.P2P.ConfigBase64) != nil {
-				return
-			}
-		case "session_exec":
-			m = acceptTestSession(ws, m, names)
-			if m.ID == "" {
-				continue
-			}
-			if m.Command == "parallel" {
-				arrived <- label
-				<-release
-			}
-			if ws.WriteJSON(protocol.Message{Type: "output", ID: m.ID, RequestID: m.RequestID, Output: label + ":" + m.Command}) != nil {
-				return
-			}
-			if m.Command != "interactive" {
-				if ws.WriteJSON(protocol.Message{Type: "command_done", ID: m.ID, RequestID: m.RequestID}) != nil {
-					return
-				}
-				if !m.SessionPersistent {
-					_ = ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID})
-				}
-			}
-		case "input":
-			if m.RequestID != "" {
-				_ = ws.WriteJSON(protocol.Message{Type: "control_done", ID: m.RequestID})
-			}
-			if ws.WriteJSON(protocol.Message{Type: "output", ID: m.ID, Output: label + ":" + m.Input}) != nil {
-				return
-			}
-		case "cancel":
-			delete(names, m.ID)
-			if ws.WriteJSON(protocol.Message{Type: "done", ID: m.ID}) != nil {
-				return
-			}
-		case "interrupt", "eof":
-			if ws.WriteJSON(protocol.Message{Type: "control_done", ID: m.RequestID}) != nil {
-				return
-			}
-		}
 	}
 }
 
@@ -279,15 +193,15 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	for _, target := range []struct{ id, label string }{{a, "A"}, {b, "B"}} {
 		sid := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "client_id": target.id, "command": "interactive"}, false).(map[string]any)["session_id"].(string)
 		sessions[target.label] = sid
-		out := h.call(t, token, "session_read", map[string]any{"session_id": sid, "wait_ms": 1000}, false).(map[string]any)
+		out := h.call(t, token, "session_read", map[string]any{"client_id": target.id, "session_id": sid, "wait_ms": 1000}, false).(map[string]any)
 		if out["output"] != target.label+":interactive" {
 			t.Fatal(out)
 		}
-		h.call(t, other, "session_read", map[string]any{"session_id": sid}, true)
-		h.call(t, other, "session_control", map[string]any{"action": "input", "session_id": sid, "input": "bad"}, true)
+		h.call(t, other, "session_read", map[string]any{"client_id": target.id, "session_id": sid}, true)
+		h.call(t, other, "session_control", map[string]any{"client_id": target.id, "action": "input", "session_id": sid, "input": "bad"}, true)
 		h.call(t, other, "session_control", map[string]any{"action": "stop", "session_id": sid}, true)
-		h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": sid, "input": "hello"}, false)
-		out = h.call(t, token, "session_read", map[string]any{"session_id": sid, "cursor": len(target.label + ":interactive"), "wait_ms": 1000}, false).(map[string]any)
+		h.call(t, token, "session_control", map[string]any{"client_id": target.id, "action": "input", "session_id": sid, "input": "hello"}, false)
+		out = h.call(t, token, "session_read", map[string]any{"client_id": target.id, "session_id": sid, "cursor": len(target.label + ":interactive"), "wait_ms": 1000}, false).(map[string]any)
 		if out["output"] != target.label+":hello" {
 			t.Fatal(out)
 		}
@@ -306,7 +220,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	if !strings.HasPrefix(out.(map[string]any)["output"].(string), "B:still online") {
 		t.Fatal(out)
 	}
-	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": sessions["B"]}, false)
+	h.call(t, token, "session_control", map[string]any{"client_id": b, "action": "stop", "session_id": sessions["B"]}, false)
 	_, replacement := h.connect(t, token, "设备 A 重连")
 	if replacement == a {
 		t.Fatal("reconnect reused old ID")

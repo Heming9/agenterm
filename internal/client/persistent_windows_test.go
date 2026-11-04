@@ -1,7 +1,6 @@
 package client
 
 import (
-	"agenterm/internal/protocol"
 	"context"
 	"io"
 	"os/exec"
@@ -17,12 +16,12 @@ func TestPersistentWindowsUnicodeStateAndInput(t *testing.T) {
 		t.Skip("Windows PowerShell is not installed")
 	}
 	original := getShell()
-	selectedShell = commandShell{path, "-c"}
+	selectedShell = path
 	t.Cleanup(func() { selectedShell = original })
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	const marker = "\x1ewindows-output-test:"
-	cmd := persistentShellCommand(ctx, marker, protocol.ExecOptions{})
+	cmd := persistentShellCommand(ctx, marker, ExecOptions{})
 	configureCommand(cmd, true)
 	input, output, err := startPersistentInteractive(cmd)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -43,20 +44,20 @@ func TestReconnectReusesRedeemedTokenAndDoesNotReplayCommands(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer "+decoded.Secret {
 			t.Error("reconnected with invitation instead of token")
 		}
-		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}})
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{protocol.ClientAPIHeader: {"1"}, version.Header: {version.Current}})
 		if err != nil {
 			return
 		}
 		defer ws.Close()
 		n := connections.Add(1)
 		if n == 1 {
-			ws.WriteJSON(protocol.Message{Type: "exec", ID: "once", Command: "echo once"})
+			ws.WriteJSON(protocol.Message{Type: "api_call", ID: "once", Request: json.RawMessage(`{"method":"execute","params":{"command":"echo once"}}`)})
 			for {
 				var m protocol.Message
 				if ws.ReadJSON(&m) != nil {
 					return
 				}
-				if m.Type == "done" {
+				if m.Type == "api_result" {
 					return
 				} // Abrupt EOF forces a reconnect.
 			}
@@ -138,7 +139,7 @@ func TestReconnectHTTPFailuresAndCancellation(t *testing.T) {
 func TestHeartbeatResponseAndLatencyCallback(t *testing.T) {
 	var pong atomic.Bool
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}, protocol.HeartbeatHeader: {"1"}})
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{protocol.ClientAPIHeader: {"1"}, version.Header: {version.Current}, protocol.HeartbeatHeader: {"1"}})
 		if err != nil {
 			return
 		}
@@ -178,5 +179,104 @@ func TestRetryBackoffAndRetryAfter(t *testing.T) {
 		if got := retryAfter(value, now); got != want {
 			t.Errorf("%q: %s != %s", value, got, want)
 		}
+	}
+}
+
+func TestReconnectPreservesTerminalAndCompletedResult(t *testing.T) {
+	isolatedLockHome(t)
+	var connections, started, completed atomic.Int32
+	result := make(chan ReadOutput, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}, protocol.ClientAPIHeader: {APIVersion}})
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+		n := connections.Add(1)
+		method, params := "execute", `{"setup":{"session_id":"survives"},"command":"sleep 0.2; echo preserved","wait_ms":0}`
+		if runtime.GOOS == "windows" {
+			params = `{"setup":{"session_id":"survives"},"command":"Start-Sleep -Milliseconds 200; Write-Output preserved","wait_ms":0}`
+		}
+		if n > 1 {
+			method, params = "read", `{"session_id":"survives"}`
+		}
+		request, err := json.Marshal(APIRequest{Method: method, Params: json.RawMessage(params)})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err := ws.WriteJSON(protocol.Message{Type: "api_call", ID: "state", Request: request}); err != nil {
+			t.Error(err)
+			return
+		}
+		var reply protocol.Message
+		if err := ws.ReadJSON(&reply); err != nil {
+			t.Error(err)
+			return
+		}
+		if reply.Error != "" {
+			t.Error(reply.Error)
+			return
+		}
+		if n == 1 {
+			return
+		} // Drop the transport while the accepted command is active.
+		var read ReadOutput
+		if err := json.Unmarshal(reply.Data, &read); err != nil {
+			t.Error(err)
+			return
+		}
+		result <- read
+		_ = ws.ReadJSON(&reply)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	ended := make(chan error, 1)
+	go func() {
+		ended <- RunWithCallbacks(ctx, connectionToken(t, server.URL, 9), io.Discard, Callbacks{Command: func(e CommandEvent) {
+			if e.Done {
+				completed.Add(1)
+			} else {
+				started.Add(1)
+			}
+		}})
+	}()
+	select {
+	case out := <-result:
+		if out.SessionID != "survives" || out.Status != "idle" || out.ExitCode == nil || *out.ExitCode != 0 || !strings.Contains(out.Output, "preserved") {
+			t.Error(out)
+		}
+	case <-ctx.Done():
+		t.Error("reconnect did not restore state")
+	}
+	cancel()
+	if err := <-ended; err != nil {
+		t.Fatal(err)
+	}
+	if connections.Load() != 2 || started.Load() != 1 || completed.Load() != 1 {
+		t.Fatalf("connections=%d starts=%d completions=%d", connections.Load(), started.Load(), completed.Load())
+	}
+}
+func TestRejectServerWithoutClientAPI(t *testing.T) {
+	for _, apiVersion := range []string{"", "unsupported"} {
+		t.Run(apiVersion, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{version.Header: {version.Current}, protocol.ClientAPIHeader: {apiVersion}})
+				if err == nil {
+					defer ws.Close()
+					var m protocol.Message
+					_ = ws.ReadJSON(&m)
+				}
+			}))
+			defer server.Close()
+			var connected bool
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			err := RunWithCallbacks(ctx, connectionToken(t, server.URL, 5), io.Discard, Callbacks{Connected: func() { connected = true }})
+			if err == nil || connected {
+				t.Fatalf("unsupported API accepted: %v %v", err, connected)
+			}
+		})
 	}
 }

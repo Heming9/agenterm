@@ -19,7 +19,7 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-const controlVersion = "6"
+const controlVersion = "7"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {
@@ -235,29 +235,10 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 	})
 	registerControl(mux, "p2p/start", s.startP2P)
 	registerControl(mux, "p2p/signal", s.p2pSignal)
-	registerControl(mux, "session/execute", s.executeInSession)
-	registerControl(mux, "session/wait", func(ctx context.Context, in toolRequest[waitExecutionArgs]) (map[string]any, error) {
-		p, err := s.getSession(in.Secret, in.Args.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		return p.waitExecution(ctx, in.Args)
-	})
-	registerControl(mux, "session/read", func(ctx context.Context, in toolRequest[readSessionArgs]) (map[string]any, error) {
-		p, err := s.getSession(in.Secret, in.Args.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		limit := defaultSessionReadBytes
-		if in.Args.MaxBytes != nil {
-			limit = *in.Args.MaxBytes
-		}
-		return p.readCommand(ctx, in.Args.Cursor, time.Duration(in.Args.WaitMS)*time.Millisecond, limit, in.Args.CommandID)
-	})
-	registerControl(mux, "session/list", func(_ context.Context, in toolRequest[listSessionsArgs]) (sessionListResult, error) {
-		return sessionListResult{Sessions: s.listSessions(in.Secret, in.Args.ClientID)}, nil
-	})
-	registerControl(mux, "session/control", s.controlSession)
+	registerControl(mux, "terminal/execute", s.executeCommand)
+	registerControl(mux, "terminal/read", s.readSession)
+	registerControl(mux, "terminal/list", s.listSessions)
+	registerControl(mux, "terminal/control", s.controlSession)
 	registerControl(mux, "invitation", func(_ context.Context, in invitationRequest) (installerInvitation, error) {
 		secret := in.Secret
 		s.mu.Lock()

@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func defaultShell() commandShell { return commandShell{"/bin/sh", "-c"} }
+func defaultShell() string { return "/bin/sh" }
 
 func parentShellPath() string {
 	out, err := exec.Command("ps", "-p", strconv.Itoa(os.Getppid()), "-o", "comm=").Output()
@@ -17,7 +17,7 @@ func parentShellPath() string {
 		return ""
 	}
 	path := strings.TrimSpace(string(out))
-	if shellFlag(path) == "" {
+	if !isSupportedShell(path) {
 		return ""
 	}
 	resolved, err := exec.LookPath(path)

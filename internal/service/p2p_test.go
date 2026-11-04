@@ -284,3 +284,30 @@ func TestP2PStartUsesRawTokenSuffixWithoutFormatValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestP2PBootstrapCompletionBeforeRegistrationReportsFailure(t *testing.T) {
+	p2pTestAssets(t)
+	h := newMultiHarness(t, 0)
+	token := h.create(t, false)
+	ws, id := h.connect(t, token, "bootstrap failure")
+	enableP2PTestClient(h, id)
+	go func() {
+		for {
+			var message protocol.Message
+			if ws.ReadJSON(&message) != nil {
+				return
+			}
+			if message.Type == "p2p_start" {
+				_ = ws.WriteJSON(protocol.Message{Type: "p2p_done", ID: message.ID})
+				return
+			}
+		}
+	}()
+	result, failed, err := h.request(token, "p2p_transfer_start", map[string]any{}, 2*time.Second)
+	if err != nil || !failed {
+		t.Fatalf("bootstrap did not report termination: %v failed=%t error=%v", result, failed, err)
+	}
+	if !strings.Contains(result.(map[string]any)["error"].(string), "initialization failed") {
+		t.Fatal(result)
+	}
+}

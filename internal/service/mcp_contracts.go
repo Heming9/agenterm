@@ -1,13 +1,13 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
+
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// These types define the wire contracts, including optional terminal fields.
-// Legacy map-based handlers keep their JSON shape and are checked against these
-// explicit schemas by the MCP SDK.
+// MCP contracts reuse the client API results; device IDs are routing metadata.
 type clientsResult struct {
 	Clients []clientInfo `json:"clients"`
 }
@@ -15,44 +15,16 @@ type closeClientResult struct {
 	ClientIDs []string `json:"client_ids"`
 }
 
-type executeResult struct {
-	SessionID  string `json:"session_id,omitempty"`
-	CommandID  string `json:"command_id"`
-	Status     string `json:"status"`
-	Output     string `json:"output"`
-	NextCursor int64  `json:"next_cursor"`
-	HasMore    bool   `json:"has_more"`
-	ExitCode   *int   `json:"exit_code,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Truncated  bool   `json:"truncated,omitempty"`
-}
-
-// Incremental reads include a session ID. Completion and
-// exceptional output conditions add only the fields needed by the caller.
-type sessionReadResult struct {
-	SessionID  string `json:"session_id"`
-	CommandID  string `json:"command_id"`
-	Status     string `json:"status"`
-	Output     string `json:"output"`
-	NextCursor int64  `json:"next_cursor"`
-	HasMore    bool   `json:"has_more"`
-	ExitCode   *int   `json:"exit_code,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Truncated  bool   `json:"truncated,omitempty"`
-}
+type executeResult = terminal.Output
+type sessionReadResult = terminal.ReadOutput
 
 type sessionListResult struct {
 	Sessions []sessionInfo `json:"sessions"`
 }
 
 type sessionInfo struct {
-	SessionID string `json:"session_id"`
-	ClientID  string `json:"client_id"`
-	Command   string `json:"command"`
-	CommandID string `json:"command_id"`
-	Status    string `json:"status"`
-	ExitCode  *int   `json:"exit_code,omitempty"`
-	Error     string `json:"error,omitempty"`
+	terminal.SessionInfo
+	ClientID string `json:"client_id"`
 }
 
 type sessionControlResult struct {

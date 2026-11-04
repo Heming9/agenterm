@@ -1,8 +1,8 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
 	"agenterm/internal/i18n"
-	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"
@@ -62,33 +62,23 @@ type closeClientArgs struct {
 }
 type executeArgs struct {
 	targetArgs
-	ClientID  string                 `json:"client_id,omitempty"`
-	SessionID string                 `json:"session_id,omitempty"`
-	WaitMS    *int                   `json:"wait_ms,omitempty"`
-	Command   string                 `json:"command"`
-	Setup     *protocol.SessionSetup `json:"setup,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
+	terminal.ExecuteRequest
 }
 type readSessionArgs struct {
 	targetArgs
-	SessionID string `json:"session_id"`
-	CommandID string `json:"command_id,omitempty"`
-	Cursor    int64  `json:"cursor,omitempty"`
-	WaitMS    int    `json:"wait_ms,omitempty"`
-	MaxBytes  *int   `json:"max_bytes,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
+	terminal.ReadRequest
 }
 type listSessionsArgs struct {
 	targetArgs
 	ClientID string `json:"client_id,omitempty"`
 }
 
-// Session actions share a target, but have different argument/result contracts.
-// Pointers preserve presence so unrelated arguments can be rejected.
 type sessionActionArgs struct {
 	targetArgs
-	SessionID string  `json:"session_id"`
-	Action    string  `json:"action"`
-	Input     *string `json:"input,omitempty"`
-	WaitMS    *int    `json:"wait_ms,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
+	terminal.ControlRequest
 }
 type createClientArgs struct {
 	MultiDevice    bool  `json:"multi_device,omitempty"`
@@ -135,16 +125,16 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 		case "cursor":
 			property.Minimum = new(float64(0))
 		case "max_bytes":
-			property.Minimum, property.Maximum = new(float64(4)), new(float64(maxSessionReadBytes))
-			property.Default = json.RawMessage("16384")
+			property.Minimum, property.Maximum = new(float64(terminal.MinReadBytes)), new(float64(terminal.MaxReadBytes))
+			property.Default, _ = json.Marshal(terminal.DefaultReadBytes)
 		case "wait_ms":
-			property.Minimum, property.Maximum, property.Default = new(float64(0)), new(float64(20000)), json.RawMessage("0")
+			property.Minimum, property.Maximum, property.Default = new(float64(0)), new(float64(terminal.MaxWaitMS)), json.RawMessage("0")
 			if name == "list_client" {
 				property.Maximum = new(float64(300000))
 				property.Description = serverText("mcp.wait.for.connection")
 			}
 			if name == "execute_command" {
-				property.Default, _ = json.Marshal(defaultExecutionWaitMS)
+				property.Default, _ = json.Marshal(terminal.DefaultWaitMS)
 				property.Description = serverText("mcp.execution.wait")
 			}
 			if name == "session_control" {
@@ -196,46 +186,6 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 	})
 }
 
-func validateExecution(a executeArgs) error {
-	if a.WaitMS != nil && (*a.WaitMS < 0 || *a.WaitMS > 20000) {
-		return i18n.NewError("session.read.invalid.arguments")
-	}
-	if strings.TrimSpace(a.Command) == "" {
-		return i18n.NewError("command.is.required")
-	}
-	return protocol.ValidateSessionRequest(a.SessionID, a.Setup)
-}
-
-func (a sessionActionArgs) validate() error {
-	if a.SessionID == "" {
-		return i18n.NewError("session.control.invalid.arguments")
-	}
-	switch a.Action {
-	case "input":
-		if a.Input == nil || a.WaitMS != nil {
-			return i18n.NewError("session.control.invalid.arguments")
-		}
-	case "interrupt", "eof":
-		if a.Input != nil || a.WaitMS != nil {
-			return i18n.NewError("session.control.invalid.arguments")
-		}
-	case "stop":
-		if a.Input != nil || (a.WaitMS != nil && (*a.WaitMS < 0 || *a.WaitMS > 20000)) {
-			return i18n.NewError("session.control.invalid.arguments")
-		}
-	default:
-		return i18n.NewError("session.control.invalid.arguments")
-	}
-	return nil
-}
-
-func (s *frontend) sessionControl(ctx context.Context, secret string, a sessionActionArgs) (map[string]any, error) {
-	if err := a.validate(); err != nil {
-		return nil, err
-	}
-	return controlCall[map[string]any](ctx, s.control, "session/control", toolRequest[sessionActionArgs]{Secret: secret, Args: a})
-}
-
 func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 	ms := mcp.NewServer(&mcp.Implementation{Name: "agenterm", Version: version.Current}, &mcp.ServerOptions{Instructions: serverText("mcp.connection.context")})
 	ms.AddReceivingMiddleware(observeMCP)
@@ -255,23 +205,20 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		return nil, out, err
 	})
 	addTargetTool(s, ms, admin, "execute_command", "mcp.execution.workflow", func(ctx context.Context, secret string, a executeArgs) (*mcp.CallToolResult, map[string]any, error) {
-		if err := validateExecution(a); err != nil {
-			return nil, nil, err
-		}
-		out, err := s.executeSession(ctx, secret, a)
+		out, err := controlCall[map[string]any](ctx, s.control, "terminal/execute", toolRequest[executeArgs]{Secret: secret, Args: a})
 		failed := out != nil && (out["error"] != nil || (out["exit_code"] != nil && out["exit_code"] != float64(0)))
 		return &mcp.CallToolResult{IsError: failed}, out, err
 	})
 	addTargetTool(s, ms, admin, "session_read", "mcp.read.new.output.while.the.session.is.running", func(ctx context.Context, secret string, a readSessionArgs) (*mcp.CallToolResult, map[string]any, error) {
-		out, err := controlCall[map[string]any](ctx, s.control, "session/read", toolRequest[readSessionArgs]{Secret: secret, Args: a})
+		out, err := controlCall[map[string]any](ctx, s.control, "terminal/read", toolRequest[readSessionArgs]{Secret: secret, Args: a})
 		return nil, out, err
 	})
 	addTargetTool(s, ms, admin, "session_list", "mcp.session.list", func(ctx context.Context, secret string, a listSessionsArgs) (*mcp.CallToolResult, sessionListResult, error) {
-		out, err := controlCall[sessionListResult](ctx, s.control, "session/list", toolRequest[listSessionsArgs]{Secret: secret, Args: a})
+		out, err := controlCall[sessionListResult](ctx, s.control, "terminal/list", toolRequest[listSessionsArgs]{Secret: secret, Args: a})
 		return nil, out, err
 	})
 	addTargetTool(s, ms, admin, "session_control", "mcp.session.control", func(ctx context.Context, secret string, a sessionActionArgs) (*mcp.CallToolResult, map[string]any, error) {
-		out, err := s.sessionControl(ctx, secret, a)
+		out, err := controlCall[map[string]any](ctx, s.control, "terminal/control", toolRequest[sessionActionArgs]{Secret: secret, Args: a})
 		return nil, out, err
 	})
 	if admin {

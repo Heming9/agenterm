@@ -1,6 +1,7 @@
 package service
 
 import (
+	terminal "agenterm/internal/client"
 	"agenterm/internal/protocol"
 	"context"
 	"testing"
@@ -121,14 +122,14 @@ func TestCloseClientStopsQueuedCommand(t *testing.T) {
 	c.write.Lock()
 	result := make(chan error, 1)
 	go func() {
-		_, err := h.s.executeInSession(context.Background(), toolRequest[executeArgs]{Secret: decoded.Secret, Args: executeArgs{ClientID: id, Command: "must not run"}})
+		_, err := h.s.executeCommand(context.Background(), toolRequest[executeArgs]{Secret: decoded.Secret, Args: executeArgs{ClientID: id, ExecuteRequest: terminal.ExecuteRequest{Command: "must not run"}}})
 		result <- err
 	}()
 	deadline := time.Now().Add(time.Second)
 	for {
-		h.s.mu.Lock()
-		registered := len(h.s.sessionRequests) != 0
-		h.s.mu.Unlock()
+		c.mu.Lock()
+		registered := len(c.pending) != 0
+		c.mu.Unlock()
 		if registered {
 			break
 		}
@@ -147,44 +148,5 @@ func TestCloseClientStopsQueuedCommand(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("queued command did not finish")
-	}
-}
-
-func TestCloseClientCleansSessionsAfterCancellation(t *testing.T) {
-	h := newMultiHarness(t, 0)
-	token := h.create(t, true)
-	_, id := h.connect(t, token, "canceled close")
-	decoded, err := protocol.Decode(token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.s.mu.Lock()
-	c := h.s.clients[id]
-	p := &session{id: "pending", owner: decoded.Secret, client: c, changed: make(chan struct{}), started: time.Now()}
-	if h.s.sessions == nil {
-		h.s.sessions = make(map[string]*session)
-	}
-	h.s.sessions[sessionKey(decoded.Secret, p.id)] = p
-	h.s.mu.Unlock()
-	p.mu.Lock()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = h.s.closeClients(ctx, decoded.Secret, nil)
-	p.mu.Unlock()
-	if err == nil {
-		t.Fatal("expected canceled close to return an error")
-	}
-	deadline := time.Now().Add(time.Second)
-	for {
-		h.s.mu.Lock()
-		_, exists := h.s.sessions[sessionKey(decoded.Secret, p.id)]
-		h.s.mu.Unlock()
-		if !exists {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("session remained after disconnect cleanup")
-		}
-		time.Sleep(time.Millisecond)
 	}
 }

@@ -8,12 +8,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func defaultShell() commandShell {
+func defaultShell() string {
 	path := os.Getenv("ComSpec")
 	if path == "" {
 		path = "cmd.exe"
 	}
-	return commandShell{path, "/C"}
+	return path
 }
 
 func parentShellPath() string {
@@ -29,7 +29,7 @@ func parentShellPath() string {
 			continue
 		}
 		name := windows.UTF16ToString(entry.ExeFile[:])
-		if shellFlag(name) == "" {
+		if !isSupportedShell(name) {
 			return ""
 		}
 		process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, parent)

@@ -3,7 +3,6 @@
 package client
 
 import (
-	"agenterm/internal/protocol"
 	"context"
 	"io"
 	"os"
@@ -14,11 +13,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func persistentShellPath() string { return getShell().path }
+func persistentShellPath() string { return getShell() }
 
-func persistentShellCommand(ctx context.Context, marker string, options protocol.ExecOptions) *exec.Cmd {
+func persistentShellCommand(ctx context.Context, marker string, options ExecOptions) *exec.Cmd {
 	shell := getShell()
-	name := filepath.Base(shell.path)
+	name := filepath.Base(shell)
 	args := []string{"-i"}
 	switch name {
 	case "bash":
@@ -28,7 +27,7 @@ func persistentShellCommand(ctx context.Context, marker string, options protocol
 	case "fish":
 		args = []string{"--no-config", "-i", "--init-command", "function fish_prompt; set -l agenterm_status $status; printf " + shellQuote(marker+"%s\x1f") + " $agenterm_status; end; function fish_right_prompt; end"}
 	}
-	cmd := exec.CommandContext(ctx, shell.path, args...)
+	cmd := exec.CommandContext(ctx, shell, args...)
 	cmd.Dir = options.Cwd
 	cmd.Env = os.Environ()
 	for key, value := range options.Env {
@@ -67,14 +66,14 @@ func persistentCommandLine(dir, command string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if strings.HasSuffix(getShell().path, "/fish") {
+	if strings.HasSuffix(getShell(), "/fish") {
 		return "source " + shellQuote(path) + "\n", nil
 	}
 	return ". " + shellQuote(path) + "\n", nil
 }
 
 func persistentInitLine(marker string) string {
-	name := filepath.Base(getShell().path)
+	name := filepath.Base(getShell())
 	if name == "fish" {
 		return ""
 	}
