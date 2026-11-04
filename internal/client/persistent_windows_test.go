@@ -83,11 +83,15 @@ func TestPersistentWindowsUnicodeStateAndInput(t *testing.T) {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 	run("Write-Error 'expected-error'", "", 1)
+	run("& $env:ComSpec /d /c 'exit 23'", "", 23)
+	run("Write-Output ('last-native=' + $LASTEXITCODE)", "", 0)
+	run("Write-Error 'error-after-native'", "", 1)
+	run("throw 'expected-throw'", "", 1)
 	run("Write-Output 'after-error🙂'", "", 0)
 	mu.Lock()
 	got = text.String()
 	mu.Unlock()
-	if !strings.Contains(got, "expected-error") || !strings.HasSuffix(got, "after-error🙂\r\n") || strings.Contains(got, "CLIXML") {
+	if !strings.Contains(got, "expected-error") || !strings.Contains(got, "last-native=23") || !strings.Contains(got, "expected-throw") || !strings.HasSuffix(got, "after-error🙂\r\n") || strings.Contains(got, "CLIXML") {
 		t.Fatalf("error or recovery output = %q", got)
 	}
 	if err := input.Close(); err != nil {

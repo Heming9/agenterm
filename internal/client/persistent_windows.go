@@ -31,8 +31,8 @@ func persistentShellCommand(ctx context.Context, marker string, options protocol
 	// dot-source line. Programs can still read their own input from the same pipe.
 	script := "$ProgressPreference = 'SilentlyContinue'; $agenterm_utf8 = [System.Text.UTF8Encoding]::new($false); " +
 		"[Console]::InputEncoding = $agenterm_utf8; [Console]::OutputEncoding = $agenterm_utf8; $OutputEncoding = $agenterm_utf8; " +
-		"function global:PSConsoleHostReadLine { $agenterm_line = [Console]::ReadLine(); if ($null -eq $agenterm_line) { exit }; return $agenterm_line }; " +
-		"function global:prompt { $agenterm_ok = $?; $agenterm_code = if ($agenterm_ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }; return (" + quote(marker) + " + $agenterm_code + [char]31) }"
+		"function global:PSConsoleHostReadLine { $agenterm_line = [Console]::ReadLine(); if ($null -eq $agenterm_line) { exit }; $global:agenterm_command_code = $null; $global:agenterm_error_before = $Error[0]; return $agenterm_line }; " +
+		"function global:prompt { $agenterm_ok = $?; $agenterm_code = if ($null -ne $global:agenterm_command_code) { $global:agenterm_command_code } elseif ($agenterm_ok) { 0 } else { 1 }; return (" + quote(marker) + " + $agenterm_code + [char]31) }"
 	// EncodedCommand selects CLIXML for stderr in Windows PowerShell. A normal
 	// command keeps genuine errors as text without serialized progress records.
 	cmd := exec.CommandContext(ctx, path, "-NoLogo", "-NoProfile", "-NoExit", "-Command", script)
@@ -48,7 +48,14 @@ func startPersistentInteractive(cmd *exec.Cmd) (io.WriteCloser, io.ReadCloser, e
 }
 
 func persistentCommandLine(dir, command string) (string, error) {
-	path, err := writeCommandScript(dir, "\ufeff"+command, ".ps1")
+	// Windows PowerShell resets $? when the dot-sourced scriptblock returns.
+	// Capture it inside the script, preserving LASTEXITCODE for the user's next
+	// command while distinguishing new PowerShell errors from native failures.
+	footer := "\n\n$agenterm_command_ok = $?\n" +
+		"$global:agenterm_command_code = if ($agenterm_command_ok) { 0 } " +
+		"elseif ($Error.Count -and $Error[0] -ne $global:agenterm_error_before -and $Error[0].FullyQualifiedErrorId -notlike 'NativeCommandError*') { 1 } " +
+		"elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }"
+	path, err := writeCommandScript(dir, "\ufeff"+command+footer, ".ps1")
 	return ". ([scriptblock]::Create([System.IO.File]::ReadAllText('" + strings.ReplaceAll(path, "'", "''") + "')))\n", err
 }
 
