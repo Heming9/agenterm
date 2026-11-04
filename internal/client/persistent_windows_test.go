@@ -82,6 +82,7 @@ func TestPersistentWindowsUnicodeStateAndInput(t *testing.T) {
 	if got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
+	run("$bbHost=Read-Host; Write-Output ('host-input=' + $bbHost)", "提示🙂\n", 0)
 	run("Write-Error 'expected-error'", "", 1)
 	run("& $env:ComSpec /d /c 'exit 23'", "", 23)
 	run("Write-Output ('last-native=' + $LASTEXITCODE)", "", 0)
@@ -91,15 +92,29 @@ func TestPersistentWindowsUnicodeStateAndInput(t *testing.T) {
 	mu.Lock()
 	got = text.String()
 	mu.Unlock()
-	if !strings.Contains(got, "expected-error") || !strings.Contains(got, "last-native=23") || !strings.Contains(got, "expected-throw") || !strings.HasSuffix(got, "after-error🙂\r\n") || strings.Contains(got, "CLIXML") {
+	if !strings.Contains(got, "host-input=提示🙂") || !strings.Contains(got, "expected-error") || !strings.Contains(got, "last-native=23") || !strings.Contains(got, "expected-throw") || !strings.HasSuffix(got, "after-error🙂\r\n") || strings.Contains(got, "CLIXML") {
 		t.Fatalf("error or recovery output = %q", got)
+	}
+	line, err := persistentCommandLine(dir, "& sort.exe; Write-Output 'after-eof'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(input, line+"beta\r\nalpha\r\n"); err != nil {
+		t.Fatal(err)
 	}
 	if err := input.Close(); err != nil {
 		t.Fatal(err)
 	}
+	wait(0)
 	select {
 	case <-finished:
 	case <-ctx.Done():
 		t.Fatal("shell did not exit after EOF")
+	}
+	mu.Lock()
+	got = text.String()
+	mu.Unlock()
+	if !strings.Contains(got, "alpha\r\nbeta\r\n") || !strings.HasSuffix(got, "after-eof\r\n") {
+		t.Fatalf("native stdin/EOF output = %q", got)
 	}
 }

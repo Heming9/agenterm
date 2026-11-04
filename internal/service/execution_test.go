@@ -112,24 +112,40 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 	}
 	command := `printf '%s\n' "$AGENTERM_EXEC_TEST"; pwd; printf 'stderr only\n' >&2; false`
 	if runtime.GOOS == "windows" {
-		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location; [Console]::Error.WriteLine('stderr only'); cmd /c exit 1`
+		command = `Write-Output $env:AGENTERM_EXEC_TEST; (Get-Location).Path; [Console]::Error.WriteLine('stderr only'); cmd /c exit 1`
 	}
+	t.Cleanup(func() {
+		h.call(t, token, "session_control", map[string]any{"session_id": "options", "action": "stop"}, false)
+	})
 	out, isError := callExecution(t, session, map[string]any{"setup": map[string]any{"session_id": "options", "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "overridden"}}, "command": command})
-	if !isError || out.ExitCode == nil || *out.ExitCode != 1 || out.Status != "idle" || !strings.Contains(out.Output, "overridden") || !strings.Contains(out.Output, dir) || !strings.Contains(out.Output, "stderr only") {
+	if !isError || out.ExitCode == nil || *out.ExitCode != 1 || out.Status != "idle" || !strings.Contains(out.Output, "overridden") || !executionOutputHasDirectory(out.Output, dir) || !strings.Contains(out.Output, "stderr only") {
 		t.Fatalf("result: %+v error=%v", out, isError)
 	}
 	command = `printf '%s\n' "$AGENTERM_EXEC_TEST"; pwd`
 	if runtime.GOOS == "windows" {
-		command = `Write-Output $env:AGENTERM_EXEC_TEST; Get-Location`
+		command = `Write-Output $env:AGENTERM_EXEC_TEST; (Get-Location).Path`
 	}
 	reused, isError := callExecution(t, session, map[string]any{"session_id": "options", "command": command})
-	if isError || reused.SessionID != out.SessionID || reused.Status != "idle" || !strings.Contains(reused.Output, "overridden") || !strings.Contains(reused.Output, dir) {
+	if isError || reused.SessionID != out.SessionID || reused.Status != "idle" || !strings.Contains(reused.Output, "overridden") || !executionOutputHasDirectory(reused.Output, dir) {
 		t.Fatalf("state lost: %+v", reused)
 	}
 	bad, isError := callExecution(t, session, map[string]any{"command": "echo never", "setup": map[string]any{"cwd": filepath.Join(dir, "missing")}})
 	if !isError || bad.ExitCode == nil || *bad.ExitCode != -1 || bad.Error == "" || strings.Contains(bad.Output, "never") {
 		t.Fatalf("missing cwd: %+v", bad)
 	}
+}
+
+func executionOutputHasDirectory(output, directory string) bool {
+	want, err := os.Stat(directory)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if got, err := os.Stat(strings.TrimSpace(line)); err == nil && os.SameFile(want, got) {
+			return true
+		}
+	}
+	return false
 }
 
 func longCommand() string {
@@ -144,13 +160,13 @@ func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
 		t.Run(fmt.Sprintf("retain=%t", retain), func(t *testing.T) {
 			h := newMultiHarness(t, 0)
 			token := h.create(t, false)
-			events := connectExecutionClient(t, h, token)
+			connectExecutionClient(t, h, token)
 			session := connectMCPClient(t, h, token)
 			command, wait := longCommand(), 20000
 			if retain {
-				command, wait = "sleep 0.4; printf finished", 150
+				command, wait = "sleep 1.5; printf finished", 1000
 				if runtime.GOOS == "windows" {
-					command = "Start-Sleep -Milliseconds 400; Write-Output finished"
+					command = "Start-Sleep -Milliseconds 1500; Write-Output finished"
 				}
 			}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -160,11 +176,19 @@ func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
 				_, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "execute_command", Arguments: map[string]any{"command": command, "wait_ms": wait}})
 				finished <- err
 			}()
-			select {
-			case <-events:
-				cancel()
-			case <-time.After(5 * time.Second):
-				t.Fatal("command did not start")
+			// Admission precedes shell startup. Waiting for CommandStarted can
+			// miss the MCP wait deadline entirely on a slower Windows runner.
+			admissionDeadline := time.Now().Add(5 * time.Second)
+			for {
+				items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
+				if len(items) > 0 {
+					cancel()
+					break
+				}
+				if time.Now().After(admissionDeadline) {
+					t.Fatal("command was not admitted")
+				}
+				time.Sleep(10 * time.Millisecond)
 			}
 			select {
 			case err := <-finished:
@@ -174,7 +198,7 @@ func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("waiter did not cancel")
 			}
-			deadline := time.Now().Add(5 * time.Second)
+			deadline := time.Now().Add(10 * time.Second)
 			var item map[string]any
 			for {
 				items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
@@ -345,7 +369,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	command := `printf 'ready\n'; IFS= read -r AGENTERM_REPLY; printf 'received:%s:%s\n' "$AGENTERM_REPLY" "$AGENTERM_EXEC_TEST"; pwd`
 	want := "received:early-input:session-env"
 	if runtime.GOOS == "windows" {
-		command = `Write-Output ready; $reply=Read-Host; Write-Output "received:${reply}:$env:AGENTERM_EXEC_TEST"; Get-Location`
+		command = `Write-Output ready; $reply=Read-Host; Write-Output "received:${reply}:$env:AGENTERM_EXEC_TEST"; (Get-Location).Path`
 	}
 	started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random(), "cwd": dir, "env": map[string]string{"AGENTERM_EXEC_TEST": "session-env"}}, "wait_ms": 0, "command": command}, false).(map[string]any)
 	id := started["session_id"]
@@ -358,7 +382,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	}
 	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "early-input\n"}, false)
 	output, completed := readExecutionToCompletion(t, h, token, started)
-	if completed["exit_code"] != float64(0) || completed["status"] != "idle" || !strings.Contains(output, "ready") || !strings.Contains(output, want) || !strings.Contains(output, dir) {
+	if completed["exit_code"] != float64(0) || completed["status"] != "idle" || !strings.Contains(output, "ready") || !strings.Contains(output, want) || !executionOutputHasDirectory(output, dir) {
 		t.Fatalf("input/options: %v output=%q", completed, output)
 	}
 	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo next"}, false)
