@@ -8,7 +8,7 @@
 | `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
 | `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
 | `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
-| `execute_command` | 通过 setup 创建、session_id 复用；匿名任务快速完成关闭，等待到期保留。 | `session_id`、`command_id`、`status`、`output`、`next_cursor`、`has_more`；按需返回 `exit_code`、`error`、`truncated`。 |
+| `execute_command` | 通过 setup 创建、session_id 复用；匿名任务快速完成关闭，等待到期保留。 | `command_id`、`status`、`output`、`next_cursor`、`has_more`；按需返回 `session_id`、`exit_code`、`error`、`truncated`。 |
 | `session_read` | 分页读取输出，与 execute_command 使用同一返回格式。 | 六个常规字段；命令结束时带 `exit_code`，有错误或丢失输出时带对应字段。 |
 | `session_control` | 用 action 选择输入、中断、EOF 或停止。 | 输入/中断/EOF 返回 `ok:true`；stop 返回 `status` 和可选 `exit_code/error`。 |
 | `session_list` | 按创建顺序找回本 token 的会话，可按 client_id 筛选。 | `sessions`：`session_id`、`client_id`、`command`、`command_id`、`status`；可选 `exit_code/error`。 |
@@ -70,10 +70,10 @@
 | --- | --- |
 | 终端 ID、创建与复用、忙碌和输入校验 | 客户端共用执行核心，CLI/GUI 行为一致 |
 | 10 个存活终端上限、实际进程、等待到期保留与关闭 | 客户端 |
-| 鉴权、设备路由、请求关联、结果等待和输出缓存 | 服务端 |
-| 已结束记录的缓存容量与保留期限 | 服务端，仅清理缓存，不关闭终端 |
+| 鉴权、设备路由、请求关联与会话元数据索引 | 服务端 |
+| 结果等待、输出缓存、分页读取与已结束结果保留 | 客户端，清理结果不会关闭终端 |
 
-客户端先回报实际终端 ID、是否新建和保留策略，服务端再绑定输出缓存。服务端不会依据缓存状态选择终端或决定其生命周期。即使 MCP 等待已取消，后续回执仍可建立缓存，供 session_list 找回。匿名终端的完成关闭、等待到期保留均由客户端裁决；服务端清理记录不会关闭终端。
+客户端在接纳命令时回报实际终端 ID、是否新建、命令输出游标和保留策略。服务端保存路由与状态索引，不保存输出历史；结果等待和输出读取均转发给所属客户端，由客户端从本地内存返回结果。即使 MCP 等待已取消，后续回执仍可供 session_list 找回；取消结果等待不会停止命令。客户端断线后无法读取历史输出，重连会使用新的终端和结果存储。
 
 </details>
 
@@ -86,11 +86,11 @@
 
 `wait_ms` 默认 10000（10 秒），范围 0–20000，从客户端接受开始计时，包括新 shell 的启动时间。0 立即保留匿名终端，仍需等待接受回执。等待到期不会终止命令。执行中返回 status=running，完成且保留 shell 时返回 idle，会话不可用后返回 closed。具名和等待到期保留的终端需 session_control(action=stop) 主动关闭，不按空闲时间回收。MCP 等待取消不会取消已接受任务。
 
-execute_command 与 session_read 统一返回六个常规字段：session_id、command_id、status、output、next_cursor、has_more。status 为 running（终端忙碌，包括停止待确认）、idle（命令结束，终端可复用）、closed（会话不可用；断线时远端终止未确认）。快速匿名命令结束后为 closed，具名或保留终端的命令完成后为 idle。命令完成时额外返回 exit_code，包括成功的 0；仅有错误时返回 error，仅旧输出被丢弃时返回 truncated=true。不再返回 session_created、command_done、done、session_alive、persistent、promoted、timed_out 或 canceled。
+execute_command 返回 command_id、status、output、next_cursor、has_more。具名或已保留终端返回 session_id；匿名终端仅在等待到期、输出超出单次响应上限或保留历史已被截断时返回 session_id。执行结果最多返回 16 KiB UTF-8 输出；has_more=true 表示可通过 session_read 继续读取剩余输出。已完成的匿名 shell 仍然关闭，返回的 ID 可用于读取客户端缓存。session_read 始终返回 session_id。status 为 running（终端忙碌，包括停止待确认）、idle（命令结束，终端可复用）、closed（会话不可用；断线时远端终止未确认）。快速匿名命令结束后为 closed，具名或保留终端的命令完成后为 idle。命令完成时额外返回 exit_code，包括成功的 0；仅有错误时返回 error，仅旧输出被丢弃时返回 truncated=true。不再返回 session_created、command_done、done、session_alive、persistent、promoted、timed_out 或 canceled。
 
 Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道，支持基本输入交互，不模拟完整终端。为保持命令边界可靠，持续终端不加载用户 shell 启动配置；继承客户端环境，并保留提示符钩子、PS1 等供集成使用，请勿覆盖它们或修改终端回显。需要的环境可以在命令中显式初始化。服务端和客户端均需更新，旧客户端会收到升级提示。
 
-每个客户端进程最多 10 个存活终端，启动、运行、空闲和关闭中的 shell 在实际退出前都占名额。CLI/GUI 共用客户端执行层，同一进程内多个连接共享上限；同一 token 下不同进程各自计数。满额时新建匿名终端、创建尚不存在的具名终端均直接报错；明确指定已有 session_id 仍可复用，不自动选择其他终端。已关闭输出记录不占名额。服务端仅清理输出缓存，不检查终端配额或触发空闲关闭。客户端断线会终止该连接的终端，重连不恢复 shell 状态；服务端前端重启不影响 runtime 中已有连接和终端；runtime 重启则丢失令牌、邀请和会话。
+每个客户端进程最多 10 个存活终端，启动、运行、空闲和关闭中的 shell 在实际退出前都占名额。CLI/GUI 共用客户端执行层，同一进程内多个连接共享上限；同一 token 下不同进程各自计数。满额时新建匿名终端、创建尚不存在的具名终端均直接报错；明确指定已有 session_id 仍可复用，不自动选择其他终端。已关闭输出记录不占名额。客户端负责输出缓存的保留，服务端仅清理路由元数据。客户端断线会终止该连接的终端，重连不恢复 shell 状态；服务端前端重启不影响 runtime 中已有连接和终端；runtime 重启则丢失令牌、邀请和会话。
 
 </details>
 
@@ -99,9 +99,9 @@ Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道�
 
 `session_read.max_bytes` 默认 16384，范围 4–65536 字节，输出不会拆开 UTF-8 字符。每次使用 next_cursor 继续读取；即使 status 为 idle/closed，也应读到 has_more=false。没有输出或分页读完不代表命令结束；请检查 status。truncated 仅在旧输出丢失时出现，分页本身不会触发它。
 
-`session_list` 按创建时间升序返回本 token 的保留会话，包括已结束记录，可按 client_id 筛选。每条仅返回 session_id、client_id、command、command_id、status，完成后按需附带 exit_code/error。状态与执行/读取一致：running、idle、closed。时间、输出游标范围及重复布尔状态不再对外返回；已结束记录仍保留最多 30 分钟或在新记录到来时替换，用于找回丢失回执的任务。
+`session_list` 按创建时间升序返回本 token 的保留会话，包括已结束记录，可按 client_id 筛选。每条仅返回 session_id、client_id、command、command_id、status，完成后按需附带 exit_code/error。状态与执行/读取一致：running、idle、closed。时间、输出游标范围及重复布尔状态不再对外返回；已结束记录仍保留最多 30 分钟或在新记录到来时替换，所属客户端仍在线时，可用于找回丢失回执的任务。
 
-`session_read` 可附带 `command_id` 固定读取的命令；若终端已执行下一条命令则报错，避免把新命令的状态当成旧命令结果。不带此字段仍可按字节游标读取整个会话的保留输出。缓冲区保留最近 1 MiB，较旧输出被丢弃时设置 `truncated=true`，单纯分页不会设置它。命令完成后仍应读到 `has_more=false`。
+`session_read` 可附带 `command_id` 固定读取的命令；若终端已执行下一条命令则报错，避免把新命令的状态当成旧命令结果。不带此字段仍可按字节游标读取整个会话的保留输出。客户端为保留终端缓存最近 1 MiB，较旧输出被丢弃时设置 `truncated=true`，单纯分页不会设置它。命令完成后仍应读到 `has_more=false`。
 
 </details>
 

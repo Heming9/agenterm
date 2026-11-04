@@ -44,7 +44,7 @@ const SessionControlsHeader = "X-Agenterm-Session-Controls"
 const PersistentSessionsHeader = "X-Agenterm-Persistent-Sessions"
 
 // Version 6 separates existing-session reuse from explicit setup.
-const PersistentSessionsVersion = "6"
+const PersistentSessionsVersion = "7"
 const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.
@@ -386,7 +386,20 @@ func NormalizePathPrefix(prefix string) (string, error) {
 	return prefix, nil
 }
 
+// SessionReadRequest is evaluated by the terminal-owning client.
+type SessionReadRequest struct {
+	CommandID       string `json:"command_id,omitempty"`
+	Cursor          int64  `json:"cursor"`
+	WaitMS          int    `json:"wait_ms"`
+	MaxBytes        int    `json:"max_bytes,omitempty"`
+	AwaitSettlement bool   `json:"await_settlement,omitempty"`
+}
+
 type Message struct {
+	Cursor int64               `json:"cursor,omitempty"`
+	Read   *SessionReadRequest `json:"read,omitempty"`
+	Result map[string]any      `json:"result,omitempty"`
+
 	Type      string `json:"type"`
 	ID        string `json:"id,omitempty"`
 	RequestID string `json:"request_id,omitempty"`

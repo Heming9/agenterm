@@ -34,10 +34,11 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	for i, token := range tokens {
 		secret := s.tokens[token]
 		h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion}}
-		ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
+		raw, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
 		if err != nil {
 			t.Fatal(err)
 		}
+		ws := wrapTestDevice(raw)
 		defer ws.Close()
 		label := fmt.Sprintf("client-%d", i)
 		go func() {

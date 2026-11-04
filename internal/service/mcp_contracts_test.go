@@ -34,6 +34,9 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		}
 		if tool.Name == "execute_command" || tool.Name == "session_read" {
 			expected := []string{"session_id", "command_id", "status", "output", "next_cursor", "has_more"}
+			if tool.Name == "execute_command" {
+				expected = expected[1:]
+			}
 			if len(schema.Properties) != 9 || len(schema.Required) != len(expected) {
 				t.Fatalf("%s result is not compact: %s", tool.Name, data)
 			}
@@ -146,7 +149,9 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 			t.Fatalf("%s still returns next_action", name)
 		}
 		if name == "execute_command" || name == "session_read" {
-			assertCompactReadResult(t, structured)
+			if name != "execute_command" || structured["session_id"] != nil {
+				assertCompactReadResult(t, structured)
+			}
 		}
 		seen[name] = true
 		return structured

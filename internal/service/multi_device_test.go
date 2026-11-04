@@ -92,16 +92,20 @@ func (h *multiHarness) create(t *testing.T, multi bool) string {
 	return h.call(t, "admin-test", "create_client", map[string]any{"multi_device": multi}, false).(map[string]any)["client_token"].(string)
 }
 
-func (h *multiHarness) dial(token, hostname string) (*websocket.Conn, *http.Response, error) {
+func (h *multiHarness) dial(token, hostname string) (*testDeviceConn, *http.Response, error) {
 	decoded, _ := protocol.Decode(token)
-	return websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
+	ws, resp, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
 		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
 		protocol.HostnameHeader: {base64.RawURLEncoding.EncodeToString([]byte(hostname))}, protocol.PlatformHeader: {"linux"},
 		protocol.SessionControlsHeader: {"interrupt,eof"}, protocol.PersistentSessionsHeader: {protocol.PersistentSessionsVersion},
 	})
+	if err != nil {
+		return nil, resp, err
+	}
+	return wrapTestDevice(ws), resp, nil
 }
 
-func (h *multiHarness) connect(t *testing.T, token, hostname string) (*websocket.Conn, string) {
+func (h *multiHarness) connect(t *testing.T, token, hostname string) (*testDeviceConn, string) {
 	t.Helper()
 	ws, _, err := h.dial(token, hostname)
 	if err != nil {
@@ -124,7 +128,7 @@ func (h *multiHarness) connect(t *testing.T, token, hostname string) (*websocket
 }
 
 // Simulate creation through setup and reuse through session_id.
-func acceptTestSession(ws *websocket.Conn, m protocol.Message, registries ...map[string]string) protocol.Message {
+func acceptTestSession(ws *testDeviceConn, m protocol.Message, registries ...map[string]string) protocol.Message {
 	id := m.SessionID
 	created := id == ""
 	explicit := !created
@@ -158,7 +162,7 @@ func acceptTestSession(ws *websocket.Conn, m protocol.Message, registries ...map
 	return m
 }
 
-func serveTestDevice(ws *websocket.Conn, label string, arrived chan<- string, release <-chan struct{}) {
+func serveTestDevice(ws *testDeviceConn, label string, arrived chan<- string, release <-chan struct{}) {
 	names := make(map[string]string)
 	for {
 		var m protocol.Message
@@ -290,15 +294,13 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	}
 	wsA.Close()
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		out := h.call(t, token, "session_read", map[string]any{"session_id": sessions["A"], "wait_ms": 100}, false).(map[string]any)
-		if out["status"] == "closed" {
-			break
-		}
+	for len(h.s.listClients(h.s.tokens[token])) > 1 {
 		if time.Now().After(deadline) {
-			t.Fatal("disconnected session did not finish")
+			t.Fatal("device did not disconnect")
 		}
+		time.Sleep(time.Millisecond)
 	}
+	h.call(t, token, "session_read", map[string]any{"session_id": sessions["A"], "wait_ms": 100}, true)
 	h.call(t, token, "execute_command", map[string]any{"client_id": a, "command": "stale"}, true)
 	out := h.call(t, token, "execute_command", map[string]any{"client_id": b, "command": "still online"}, false)
 	if !strings.HasPrefix(out.(map[string]any)["output"].(string), "B:still online") {

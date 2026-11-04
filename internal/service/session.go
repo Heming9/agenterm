@@ -9,12 +9,10 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"agenterm/internal/protocol"
 )
 
-const maxSessionOutput = 1 << 20
 const maxFinishedSessionsPerClient = 10
 const defaultSessionReadBytes = 16 << 10
 const maxSessionReadBytes = 64 << 10
@@ -25,8 +23,6 @@ type session struct {
 	owner          string
 	client         *client
 	mu             sync.Mutex
-	output         []byte
-	offset         int64
 	done           bool
 	exitCode       int
 	err            string
@@ -54,16 +50,7 @@ func (p *session) accept(m protocol.Message) {
 	}
 	switch m.Type {
 	case "output":
-		p.output = append(p.output, []byte(m.Output)...)
-		if len(p.output) > maxSessionOutput {
-			n := len(p.output) - maxSessionOutput
-			for n < len(p.output) && !utf8.RuneStart(p.output[n]) {
-				n++
-			}
-			p.output = append([]byte(nil), p.output[n:]...)
-			p.offset += int64(n)
-		}
-		p.signal()
+		// Output is owned by the client; unsolicited bytes are never cached.
 	case "session_retained":
 		p.keepAlive, p.promoted = m.SessionPersistent, m.SessionPromoted
 		p.signal()
@@ -127,56 +114,47 @@ func (p *session) readCommand(ctx context.Context, cursor int64, wait time.Durat
 	if cursor < 0 || wait < 0 || wait > 20*time.Second {
 		return nil, i18n.NewError("session.read.invalid.arguments")
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	for {
-		p.mu.Lock()
-		if commandID != "" && p.commandID != commandID {
-			p.mu.Unlock()
-			return nil, i18n.NewError("session.command.changed")
-		}
-		end := p.offset + int64(len(p.output))
-		if cursor > end {
-			p.mu.Unlock()
-			return nil, i18n.NewError("cursor.is.beyond.available.output")
-		}
-		truncated := cursor < p.offset
-		if truncated {
-			cursor = p.offset
-		}
-		if cursor < end || p.done || p.commandDone || wait == 0 {
-			if cursor < end && !utf8.RuneStart(p.output[cursor-p.offset]) {
-				p.mu.Unlock()
-				return nil, i18n.NewError("session.cursor.invalid.boundary")
-			}
-			next := min(end, cursor+int64(maxBytes))
-			for next < end && !utf8.RuneStart(p.output[next-p.offset]) {
-				next--
-			}
-			text := string(p.output[cursor-p.offset : next-p.offset])
-			result := map[string]any{"session_id": p.id, "command_id": p.commandID, "status": p.readStatusLocked(), "output": text, "next_cursor": next, "has_more": next < end}
-			if truncated {
-				result["truncated"] = true
-			}
-			if p.done || p.commandDone {
-				result["exit_code"] = p.exitCode
-				if p.err != "" {
-					result["error"] = p.err
-				}
-			}
+	return p.readFromClient(ctx, "session_read", protocol.SessionReadRequest{Cursor: cursor, WaitMS: int(wait / time.Millisecond), MaxBytes: maxBytes, CommandID: commandID})
+}
 
-			p.mu.Unlock()
-			return result, nil
+// Only the in-flight response passes through the server. No output history is
+// kept here, and a disconnected owner cannot supply a result.
+func (p *session) readFromClient(ctx context.Context, kind string, read protocol.SessionReadRequest) (map[string]any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	c := p.client
+	id := random()
+	replies := make(chan protocol.Message, 1)
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, i18n.NewError("client.disconnected")
+	}
+	c.pending[id] = replies
+	c.mu.Unlock()
+	defer func() { c.mu.Lock(); delete(c.pending, id); c.mu.Unlock() }()
+	if err := c.send(protocol.Message{Type: kind, ID: id, SessionID: p.id, Read: &read}); err != nil {
+		return nil, err
+	}
+	select {
+	case reply, ok := <-replies:
+		if !ok {
+			return nil, i18n.NewError("client.disconnected")
 		}
-		changed := p.changed
-		p.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-timer.C:
-			wait = 0
-		case <-changed:
+		if reply.Type != "session_result" {
+			return nil, i18n.NewError("session.control.invalid.response")
 		}
+		if reply.Error != "" {
+			return nil, fmt.Errorf("%s", reply.Error)
+		}
+		if reply.Result == nil {
+			return nil, i18n.NewError("session.control.invalid.response")
+		}
+		return reply.Result, nil
+	case <-ctx.Done():
+		_ = c.send(protocol.Message{Type: "session_read_cancel", ID: id})
+		return nil, ctx.Err()
 	}
 }
 

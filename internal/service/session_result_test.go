@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -52,31 +51,17 @@ func TestCompactReadLifecycleStates(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &session{id: "test", commandID: "command", done: tc.done, commandDone: tc.commandDone, keepAlive: tc.retained, stopRequested: tc.stopping, changed: make(chan struct{})}
-			r, err := p.readCommand(context.Background(), 0, 0, defaultSessionReadBytes, "command")
-			if err != nil {
-				t.Fatal(err)
-			}
-			assertCompactReadResult(t, r)
-			if r["status"] != tc.want {
-				t.Fatal(r)
-			}
-			wantFields := 6
-			if tc.done || tc.commandDone {
-				wantFields++
-				if r["exit_code"] != 0 {
-					t.Fatal(r)
-				}
-			}
-			if len(r) != wantFields {
-				t.Fatalf("redundant fields: %v", r)
+			status := p.readStatusLocked()
+			if status != tc.want {
+				t.Fatalf("status=%s want=%s", status, tc.want)
 			}
 			p.owner = "owner"
 			p.client = &client{info: clientInfo{ID: "device"}}
 			p.ended = time.Now()
 			state := &runtimeState{sessions: map[string]*session{sessionKey(p.owner, p.id): p}}
 			listed := state.listSessions(p.owner, "")
-			if len(listed) != 1 || listed[0].Status != r["status"] {
-				t.Fatalf("list/read state mismatch: %v %v", listed, r)
+			if len(listed) != 1 || listed[0].Status != status {
+				t.Fatalf("list/read state mismatch: %v %v", listed, status)
 			}
 
 		})

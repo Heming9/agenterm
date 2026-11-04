@@ -225,7 +225,7 @@ func TestExecutionWaitCancellationDoesNotCancelSession(t *testing.T) {
 	}
 }
 
-func TestExecutionOutputLimitKeepsExitStatus(t *testing.T) {
+func TestAnonymousExecutionReturnsLargeOutputAndExitStatus(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	ws, _ := h.connect(t, token, "large output")
@@ -240,7 +240,7 @@ func TestExecutionOutputLimitKeepsExitStatus(t *testing.T) {
 			}
 			m = acceptTestSession(ws, m)
 			for _, reply := range []protocol.Message{
-				{Type: "output", ID: m.ID, Output: strings.Repeat("界", maxSessionOutput/3+3)},
+				{Type: "output", ID: m.ID, Output: strings.Repeat("界", (1<<20)/3+3)},
 				{Type: "command_done", ID: m.ID, RequestID: m.RequestID, ExitCode: 7},
 				{Type: "done", ID: m.ID, ExitCode: 7},
 			} {
@@ -252,8 +252,8 @@ func TestExecutionOutputLimitKeepsExitStatus(t *testing.T) {
 	}()
 	session := connectMCPClient(t, h, token)
 	out, isError := callExecution(t, session, map[string]any{"command": "large"})
-	if !isError || !out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) > defaultSessionReadBytes || !utf8.ValidString(out.Output) || !out.HasMore {
-		t.Fatalf("paged result: %+v", out)
+	if !isError || out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) != defaultSessionReadBytes-defaultSessionReadBytes%3 || !utf8.ValidString(out.Output) || !out.HasMore || out.SessionID == "" {
+		t.Fatalf("paged anonymous result: %+v", out)
 	}
 }
 

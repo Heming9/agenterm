@@ -15,9 +15,19 @@ type closeClientResult struct {
 	ClientIDs []string `json:"client_ids"`
 }
 
-type executeResult = sessionReadResult
+type executeResult struct {
+	SessionID  string `json:"session_id,omitempty"`
+	CommandID  string `json:"command_id"`
+	Status     string `json:"status"`
+	Output     string `json:"output"`
+	NextCursor int64  `json:"next_cursor"`
+	HasMore    bool   `json:"has_more"`
+	ExitCode   *int   `json:"exit_code,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Truncated  bool   `json:"truncated,omitempty"`
+}
 
-// Execution and incremental reads share six regular fields. Completion and
+// Incremental reads include a session ID. Completion and
 // exceptional output conditions add only the fields needed by the caller.
 type sessionReadResult struct {
 	SessionID  string `json:"session_id"`

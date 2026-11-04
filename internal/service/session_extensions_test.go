@@ -2,6 +2,7 @@ package service
 
 import (
 	"agenterm/internal/protocol"
+	"agenterm/internal/terminalhistory"
 	"agenterm/internal/version"
 	"context"
 	"net"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 )
@@ -42,7 +42,7 @@ func TestPersistentProtocolCapability(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.accepted {
-				go serveTestDevice(ws, "compatible", nil, nil)
+				go serveTestDevice(wrapTestDevice(ws), "compatible", nil, nil)
 			}
 			out := h.call(t, token, "execute_command", map[string]any{"command": "probe", "wait_ms": 0}, !tc.accepted).(map[string]any)
 			h.s.mu.Lock()
@@ -74,70 +74,27 @@ func TestPersistentProtocolCapability(t *testing.T) {
 	}
 }
 
-func TestSessionReadUTF8PaginationAfterExit(t *testing.T) {
-	p := &session{id: "utf8", changed: make(chan struct{})}
-	want := "abc你好🙂xyz"
-	p.accept(protocol.Message{Type: "output", Output: want})
-	p.accept(protocol.Message{Type: "done", ExitCode: 7})
-	var got strings.Builder
-	var cursor int64
-	for {
-		r, err := p.readCommand(context.Background(), cursor, 0, 4, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		output := r["output"].(string)
-		if len(output) > 4 || !utf8.ValidString(output) || r["status"] != "closed" || r["exit_code"] != 7 || r["truncated"] != nil {
-			t.Fatalf("invalid page: %v", r)
-		}
-		next := r["next_cursor"].(int64)
-		if next != cursor+int64(len(output)) || next <= cursor {
-			t.Fatalf("cursor did not advance by returned bytes: %v", r)
-		}
-		got.WriteString(output)
-		cursor = next
-		if r["has_more"] == false {
-			break
-		}
-	}
-	if got.String() != want || cursor != int64(len(want)) {
-		t.Fatalf("lost output: %q", got.String())
-	}
-	if _, err := p.readCommand(context.Background(), 4, 0, 4, ""); err == nil {
-		t.Fatal("accepted a cursor inside a multibyte character")
-	}
-	for _, limit := range []int{0, 1, 3, maxSessionReadBytes + 1} {
-		if _, err := p.readCommand(context.Background(), 0, 0, limit, ""); err == nil {
-			t.Fatalf("accepted invalid limit %d", limit)
-		}
-	}
-	if _, err := p.readCommand(context.Background(), -1, 0, 4, ""); err == nil {
-		t.Fatal("accepted negative cursor")
-	}
-	if _, err := p.readCommand(context.Background(), cursor+1, 0, 4, ""); err == nil {
-		t.Fatal("accepted cursor beyond output")
-	}
-}
-
-func TestSessionTruncationPreservesUTF8Boundary(t *testing.T) {
-	p := &session{id: "utf8", changed: make(chan struct{})}
-	p.accept(protocol.Message{Type: "output", Output: strings.Repeat("你", maxSessionOutput/3+2)})
-	r, err := p.readCommand(context.Background(), 0, 0, 4, "")
-	if err != nil || r["truncated"] != true || r["output"] != "你" || !utf8.Valid(p.output) || p.offset%3 != 0 {
-		t.Fatalf("invalid truncated page: %v err=%v offset=%d", r, err, p.offset)
-	}
-}
-
 func TestSessionReadLimitThroughMCP(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
+	ws, _ := h.connect(t, token, "paged")
+	record := terminalhistory.New("paged")
+	record.Begin("command", "test", true)
+	record.Accept(protocol.Message{Type: "output", Output: strings.Repeat("x", 2*maxSessionReadBytes)})
+	record.Accept(protocol.Message{Type: "done", ExitCode: 7})
+	ws.history["paged"] = record
 	decoded, _ := protocol.Decode(token)
-	p := &session{id: "paged", owner: decoded.Secret, changed: make(chan struct{})}
-	p.accept(protocol.Message{Type: "output", Output: strings.Repeat("x", 2*maxSessionReadBytes)})
-	p.accept(protocol.Message{Type: "done", ExitCode: 0})
-	h.s.mu.Lock()
-	h.s.sessions = map[string]*session{sessionKey(p.owner, p.id): p}
-	h.s.mu.Unlock()
+	c := h.s.clients[h.s.listClients(decoded.Secret)[0].ID]
+	h.s.sessions = map[string]*session{sessionKey(decoded.Secret, "paged"): {id: "paged", owner: decoded.Secret, client: c, changed: make(chan struct{})}}
+	go func() {
+		for {
+			var m protocol.Message
+			if ws.ReadJSON(&m) != nil {
+				return
+			}
+		}
+	}()
+	p := &session{id: "paged"}
 	r := h.call(t, token, "session_read", map[string]any{"session_id": p.id}, false).(map[string]any)
 	if len(r["output"].(string)) != defaultSessionReadBytes || r["has_more"] != true || r["status"] != "closed" {
 		t.Fatalf("default paging: %v", r)
@@ -274,7 +231,7 @@ func TestSessionControlsRequireAdvertisedCapabilities(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer ws.Close()
-			go serveTestDevice(ws, "capabilities", nil, nil)
+			go serveTestDevice(wrapTestDevice(ws), "capabilities", nil, nil)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			clients, err := h.s.waitForClients(ctx, decoded.Secret, time.Second)

@@ -110,15 +110,13 @@ func (s *runtimeState) executeInSession(ctx context.Context, in toolRequest[exec
 		if reply.Type != "command_accepted" || request.session == nil {
 			return sessionExecution{}, i18n.NewError("session.control.invalid.response")
 		}
-		return sessionExecution{SessionID: reply.SessionID, CommandID: id, Cursor: request.cursor, AwaitSettlement: !reply.SessionPersistent}, nil
+		return sessionExecution{SessionID: reply.SessionID, CommandID: id, Cursor: reply.Cursor, AwaitSettlement: !reply.SessionPersistent}, nil
 	case <-ctx.Done():
 		return sessionExecution{}, ctx.Err()
 	}
 }
 
-// Called synchronously by the WebSocket reader before routing this admission.
-// That ordering ensures output sent immediately after the client acknowledgment
-// has a cache destination, even when its original MCP waiter has disappeared.
+// Bind the client-selected ID before routing admission or later lifecycle events.
 func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error {
 	if m.SessionID == "" || m.RequestID != m.ID {
 		return i18n.NewError("session.control.invalid.response")
@@ -151,7 +149,7 @@ func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error 
 	p.keepAlive, p.promoted = m.SessionPersistent, m.SessionPromoted
 	p.commandDone, p.done, p.stopRequested = false, false, false
 	p.commandID, p.command = m.RequestID, m.Command
-	commandStart := p.offset + int64(len(p.output))
+	commandStart := m.Cursor
 	p.exitCode, p.err, p.canceled, p.timedOut = 0, "", false, false
 	p.commandStarted = time.Now()
 	p.commandLog = p.log.With("command_id", m.RequestID)
@@ -164,8 +162,7 @@ func (s *runtimeState) bindAcceptedSession(c *client, m protocol.Message) error 
 	return nil
 }
 
-// The WebSocket reader applies terminal events before reading the next frame.
-// Admission must observe every earlier output byte when recording its cursor.
+// The WebSocket reader applies lifecycle metadata in client event order.
 func (s *runtimeState) acceptSessionEvent(c *client, m protocol.Message) bool {
 	switch m.Type {
 	case "output", "command_done", "session_retained", "done":
@@ -182,7 +179,7 @@ func (s *runtimeState) acceptSessionEvent(c *client, m protocol.Message) bool {
 	return true
 }
 
-// Server-owned storage retention only. This never sends a cancellation and
+// Server-owned routing metadata retention only. This never sends a cancellation and
 // never evicts a live terminal merely to satisfy a cache size preference.
 func (s *runtimeState) pruneSessionHistoryLocked(c *client) {
 	var finished []struct {
@@ -213,35 +210,7 @@ func (s *runtimeState) pruneSessionHistoryLocked(c *client) {
 }
 
 func (p *session) waitExecution(ctx context.Context, a waitExecutionArgs) (map[string]any, error) {
-	timer := time.NewTimer(time.Duration(a.WaitMS) * time.Millisecond)
-	defer timer.Stop()
-	for {
-		p.mu.Lock()
-		if p.commandID != a.CommandID {
-			p.mu.Unlock()
-			return nil, i18n.NewError("session.command.changed")
-		}
-		finished, changed := p.commandDone || p.done, p.changed
-		if a.AwaitSettlement {
-			finished = p.done || p.keepAlive
-		}
-		p.mu.Unlock()
-		if finished || (!a.AwaitSettlement && a.WaitMS == 0) {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-timer.C:
-			a.WaitMS = 0
-			// Anonymous lifetime is decided and acknowledged by the client.
-			// Its retention event or actual shell exit settles this waiter.
-		case <-changed:
-		}
-	}
-	// Pin the command identity through the snapshot so a concurrent new command
-	// cannot relabel the output of this execution.
-	return p.readCommand(ctx, a.Cursor, 0, defaultSessionReadBytes, a.CommandID)
+	return p.readFromClient(ctx, "session_wait", protocol.SessionReadRequest{CommandID: a.CommandID, Cursor: a.Cursor, WaitMS: a.WaitMS, AwaitSettlement: a.AwaitSettlement})
 }
 
 func (s *frontend) executeSession(ctx context.Context, secret string, a executeArgs) (map[string]any, error) {

@@ -58,10 +58,12 @@ func TestServerCacheCleanupDoesNotCloseClientTerminal(t *testing.T) {
 	if closed["status"] != "closed" {
 		t.Fatalf("cleanup control was not closed: %v", closed)
 	}
+	items := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
+	closedID := items[1].(map[string]any)["session_id"].(string)
 	h.s.mu.Lock()
 	h.s.cleanupTokensLocked(time.Now().Add(31 * time.Minute))
 	_, keptPresent := h.s.sessions[sessionKey(h.s.tokens[token], first["session_id"].(string))]
-	_, closedPresent := h.s.sessions[sessionKey(h.s.tokens[token], closed["session_id"].(string))]
+	_, closedPresent := h.s.sessions[sessionKey(h.s.tokens[token], closedID)]
 	h.s.mu.Unlock()
 	if !keptPresent || closedPresent {
 		t.Fatalf("cleanup retained live=%t closed=%t", keptPresent, closedPresent)

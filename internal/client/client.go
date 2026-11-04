@@ -4,6 +4,7 @@ import (
 	"agenterm/internal/i18n"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
+	"agenterm/internal/terminalhistory"
 	"agenterm/internal/version"
 	"context"
 	"encoding/base64"
@@ -53,6 +54,8 @@ type connection struct {
 	write sync.Mutex
 	mu    sync.Mutex
 
+	history  map[string]*terminalhistory.Record
+	readers  map[string]context.CancelFunc
 	running  map[string]*process
 	log      io.Writer
 	command  func(CommandEvent)
@@ -234,6 +237,9 @@ func (c *connection) forwardOutput(m protocol.Message, commandID string, data []
 	} else {
 		_, _ = c.log.Write(data)
 	}
+	if m.Stream == "terminal" {
+		return nil
+	}
 	m.Output = string(data)
 	return c.send(m)
 }
@@ -412,6 +418,9 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 		// next connection can start. Commands are never replayed on reconnect.
 		ws.Close()
 		c.mu.Lock()
+		for _, cancel := range c.readers {
+			cancel()
+		}
 		for _, p := range c.running {
 			p.stop()
 		}
@@ -420,6 +429,20 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	}()
 	closed := make(chan struct{})
 	defer close(closed)
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-closed:
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				c.pruneHistoryLocked()
+				c.mu.Unlock()
+			}
+		}
+	}()
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -465,6 +488,14 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			if callbacks.Latency != nil && m.LatencyMS >= 0 && m.LatencyMS <= protocol.HeartbeatTimeout.Milliseconds() {
 				callbacks.Latency(time.Duration(m.LatencyMS) * time.Millisecond)
 			}
+		case "session_wait", "session_read":
+			c.startHistoryRead(m)
+		case "session_read_cancel":
+			c.mu.Lock()
+			if cancel := c.readers[m.ID]; cancel != nil {
+				cancel()
+			}
+			c.mu.Unlock()
 		case "session_exec":
 			c.runPersistent(m)
 		case "exec":
@@ -480,6 +511,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			if p != nil {
 				if p.terminal != nil {
 					p.terminal.mu.Lock()
+					p.terminal.history.StopRequested()
 					p.terminal.closed = true
 					p.terminal.stopRetentionTimerLocked()
 					p.terminal.mu.Unlock()

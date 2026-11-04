@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -13,38 +12,18 @@ import (
 	"agenterm/internal/protocol"
 )
 
-func TestSessionEventsPrecedeNextAdmission(t *testing.T) {
+func TestSessionAdmissionUsesClientCursor(t *testing.T) {
 	c := &client{secret: "owner"}
 	request := &pendingSessionCommand{client: c, log: slog.Default()}
 	s := &runtimeState{sessionRequests: map[string]*pendingSessionCommand{"new": request}}
-	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "old", RequestID: "old", SessionID: "terminal", SessionPersistent: true}); err != nil {
+	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "new", RequestID: "new", SessionID: "terminal", SessionPersistent: true, Cursor: 42}); err != nil {
 		t.Fatal(err)
 	}
-	for _, event := range []protocol.Message{
-		{Type: "output", ID: "terminal", RequestID: "old", Output: "OLD"},
-		{Type: "command_done", ID: "terminal", RequestID: "old", ExitCode: 7},
-	} {
-		if !s.acceptSessionEvent(c, event) {
-			t.Fatalf("terminal event was not applied: %v", event)
-		}
-	}
-	if err := s.bindAcceptedSession(c, protocol.Message{Type: "command_accepted", ID: "new", RequestID: "new", SessionID: "terminal", SessionPersistent: true}); err != nil {
-		t.Fatal(err)
-	}
-	if request.cursor != 3 {
-		t.Fatalf("new command cursor = %d; want 3 after previous output", request.cursor)
+	if request.cursor != 42 {
+		t.Fatalf("cursor=%d", request.cursor)
 	}
 	if s.acceptSessionEvent(&client{secret: c.secret}, protocol.Message{Type: "output", ID: "terminal", Output: "FOREIGN"}) {
-		t.Fatal("another connection appended terminal output")
-	}
-	s.acceptSessionEvent(c, protocol.Message{Type: "output", ID: "terminal", RequestID: "new", Output: "NEW"})
-	s.acceptSessionEvent(c, protocol.Message{Type: "command_done", ID: "terminal", RequestID: "new"})
-	out, err := request.session.waitExecution(context.Background(), waitExecutionArgs{sessionExecution: sessionExecution{CommandID: "new", Cursor: request.cursor}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out["output"] != "NEW" || out["exit_code"] != 0 || out["status"] != "idle" {
-		t.Fatalf("new command contains previous output or completion: %v", out)
+		t.Fatal("foreign event accepted")
 	}
 }
 
@@ -88,6 +67,12 @@ func TestZeroWaitStillWaitsForClientAdmission(t *testing.T) {
 		received <- request
 		<-release
 		_ = acceptTestSession(ws, request)
+		for {
+			var m protocol.Message
+			if ws.ReadJSON(&m) != nil {
+				return
+			}
+		}
 	}()
 	type outcome struct {
 		result any
@@ -207,52 +192,5 @@ func TestConcurrentSessionStartsRespectLimit(t *testing.T) {
 				t.Fatalf("accepted=%d want=%d sessions=%v", accepted, want, items)
 			}
 		})
-	}
-}
-
-func TestSessionIncrementalReadAndExit(t *testing.T) {
-	s := &session{id: "test", changed: make(chan struct{})}
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		s.accept(protocol.Message{Type: "output", Output: "prompt> "})
-	}()
-	first, err := s.readCommand(context.Background(), 0, time.Second, defaultSessionReadBytes, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first["output"] != "prompt> " || first["status"] == "closed" {
-		t.Fatalf("unexpected first read: %#v", first)
-	}
-	cursor := first["next_cursor"].(int64)
-	s.accept(protocol.Message{Type: "output", Output: "answer"})
-	s.accept(protocol.Message{Type: "done", ExitCode: 7})
-	last, err := s.readCommand(context.Background(), cursor, 0, defaultSessionReadBytes, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if last["output"] != "answer" || last["status"] != "closed" || last["exit_code"] != 7 {
-		t.Fatalf("unexpected final read: %#v", last)
-	}
-}
-func TestSessionBufferReportsTruncation(t *testing.T) {
-	s := &session{id: "test", changed: make(chan struct{})}
-	s.accept(protocol.Message{Type: "output", Output: strings.Repeat("x", maxSessionOutput+10)})
-	r, err := s.readCommand(context.Background(), 0, 0, maxSessionReadBytes, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r["truncated"] != true || len(r["output"].(string)) != maxSessionReadBytes || r["next_cursor"] != int64(maxSessionReadBytes+10) || r["has_more"] != true {
-		t.Fatalf("bad retained output metadata")
-	}
-	retained := len(r["output"].(string))
-	for r["has_more"] == true {
-		r, err = s.readCommand(context.Background(), r["next_cursor"].(int64), 0, maxSessionReadBytes, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		retained += len(r["output"].(string))
-	}
-	if retained != maxSessionOutput || r["next_cursor"] != int64(maxSessionOutput+10) {
-		t.Fatal("lost retained output across pages")
 	}
 }

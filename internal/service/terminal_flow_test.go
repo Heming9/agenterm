@@ -60,6 +60,9 @@ func TestAnonymousCommandsCloseAndReleaseSlots(t *testing.T) {
 		if failed {
 			wantCode = 1
 		}
+		if _, exists := result["session_id"]; exists {
+			t.Fatalf("one-shot result included session_id: %v", result)
+		}
 		if result["status"] != "closed" || result["exit_code"] != wantCode || result["output"] != "unset" {
 			t.Fatalf("iteration %d: %v", i, result)
 		}
@@ -187,10 +190,13 @@ func TestSetupWithoutIDUsesAnonymousLifetimeAndInitialOptions(t *testing.T) {
 				command = "Write-Output $env:SETUP_TEST_VALUE; Get-Location"
 			}
 			started := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"cwd": dir, "env": map[string]string{"SETUP_TEST_VALUE": "initialized"}}, "command": command, "wait_ms": wait}, false).(map[string]any)
-			if started["session_id"] == "" {
+			if _, exists := started["session_id"]; exists != (wait == 0) {
 				t.Fatal(started)
 			}
-			output, completed := readExecutionToCompletion(t, h, token, started)
+			output, completed := started["output"].(string), started
+			if wait == 0 {
+				output, completed = readExecutionToCompletion(t, h, token, started)
+			}
 			if !strings.Contains(output, "initialized") || !strings.Contains(output, dir) {
 				t.Fatalf("setup lost: %v output=%q", completed, output)
 			}
@@ -207,4 +213,35 @@ func TestSetupWithoutIDUsesAnonymousLifetimeAndInitialOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAnonymousLargeOutputComesFromClient(t *testing.T) {
+	requirePOSIXFlow(t)
+	h := newMultiHarness(t, 0)
+	token := h.create(t, false)
+	connectExecutionClient(t, h, token)
+	const size = 17 << 20
+	result, failed, err := h.request(token, "execute_command", map[string]any{"command": `head -c 17825792 /dev/zero | tr '\000' x`}, 20*time.Second)
+	if err != nil || failed {
+		t.Fatalf("large execution: failed=%t err=%v", failed, err)
+	}
+	out := result.(map[string]any)
+	if len(out["output"].(string)) != defaultSessionReadBytes || out["session_id"] == nil || out["has_more"] != true || out["status"] != "closed" {
+		t.Fatalf("expected completed paged output: size=%d id=%v more=%v status=%v", len(out["output"].(string)), out["session_id"], out["has_more"], out["status"])
+	}
+	var output strings.Builder
+	output.WriteString(out["output"].(string))
+	initial := out
+	for out["has_more"] == true {
+		out = h.call(t, token, "session_read", map[string]any{"session_id": initial["session_id"], "command_id": initial["command_id"], "cursor": out["next_cursor"], "max_bytes": maxSessionReadBytes}, false).(map[string]any)
+		if out["truncated"] != nil {
+			t.Fatal("lost anonymous output while paging")
+		}
+		output.WriteString(out["output"].(string))
+	}
+	text := output.String()
+	if len(text) != size || strings.Trim(text, "x") != "" || out["exit_code"] != float64(0) {
+		t.Fatalf("incomplete output: size=%d exit=%v", len(text), out["exit_code"])
+	}
+	h.call(t, token, "execute_command", map[string]any{"session_id": initial["session_id"], "command": "echo must-not-run"}, true)
 }

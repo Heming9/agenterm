@@ -31,6 +31,7 @@ func (t *persistentTerminal) retainLocked(commandID string) {
 	t.stopRetentionTimerLocked()
 	m := protocol.Message{Type: "session_retained", ID: t.id, RequestID: commandID}
 	t.lifecycleLocked(&m)
+	t.history.Accept(m)
 	_ = t.c.send(m)
 }
 func (t *persistentTerminal) inputError() error {
