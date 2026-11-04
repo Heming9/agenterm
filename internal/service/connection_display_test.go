@@ -56,7 +56,7 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 			text := structured["display_text"].(string)
-			if !strings.HasPrefix(text, "Windows one-click connection command:\n") || !strings.Contains(text, "How to connect:") || !strings.Contains(text, "Invitation validity: 120 seconds") {
+			if !strings.HasPrefix(text, "Windows one-click connection command:\n```\n"+structured["windows_powershell_command"].(string)+"\n```") || !strings.Contains(text, "macOS / Linux one-click connection command:\n```\n"+structured["macos_linux_command"].(string)+"\n```") || !strings.Contains(text, "How to connect:") || !strings.Contains(text, "Invitation validity: 120 seconds") {
 				t.Fatal("retained runtime did not receive the new frontend template")
 			}
 			if strings.Contains(text, "Multi-device mode:") != multi {

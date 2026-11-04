@@ -156,10 +156,10 @@ func TestCreateClientDisplayText(t *testing.T) {
 		}
 	}
 	sections := strings.Split(display, "\n\n")
-	if len(sections) != 5 || sections[0] != "Windows one-click connection command:\n"+result["windows_powershell_command"].(string) || sections[1] != "macOS / Linux one-click connection command:\n"+result["macos_linux_command"].(string) || sections[2] != "Connection token:\n"+result["client_token"].(string) {
+	if len(sections) != 5 || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token:\n"+result["client_token"].(string) {
 		t.Fatalf("incorrect connection instructions order or line breaks: %s", display)
 	}
-	if strings.ContainsAny(display, "`*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
+	if strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
 		t.Fatalf("unexpected formatting or multi-device notice: %s", display)
 	}
 	for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
@@ -182,7 +182,7 @@ func TestCreateClientDisplayText(t *testing.T) {
 	}
 }
 
-func TestCreateClientPlainTextLocalesAndModes(t *testing.T) {
+func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 	for _, lang := range []string{"zh-CN", "en"} {
 		for _, multi := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/multi=%t", lang, multi), func(t *testing.T) {
@@ -205,8 +205,8 @@ func TestCreateClientPlainTextLocalesAndModes(t *testing.T) {
 					t.Fatal("MCP text must contain exactly the connection instructions")
 				}
 				display := structured.DisplayText
-				if !strings.HasPrefix(display, "Windows one-click connection command:\n"+structured.WindowsPowerShellCommand+"\n\n") || !strings.Contains(display, "How to connect:\n1.") || !strings.Contains(display, "Invitation validity: 120 seconds") || strings.ContainsAny(display, "`*\r\x1b") || strings.Contains(display, "%!") {
-					t.Fatalf("invalid English plain-text instructions: %s", display)
+				if !strings.HasPrefix(display, "Windows one-click connection command:\n```\n"+structured.WindowsPowerShellCommand+"\n```\n\n") || !strings.Contains(display, "How to connect:\n1.") || !strings.Contains(display, "Invitation validity: 120 seconds") || strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") {
+					t.Fatalf("invalid English connection instructions: %s", display)
 				}
 				sections := strings.Split(display, "\n\n")
 				if (!multi && len(sections) != 5) || (multi && (len(sections) != 6 || !strings.HasPrefix(sections[5], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {

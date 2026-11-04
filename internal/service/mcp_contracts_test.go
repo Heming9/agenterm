@@ -134,7 +134,7 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		content := result.Content[0].(*mcp.TextContent).Text
 		if name == "create_client" {
 			if content != structured["display_text"] || !strings.HasPrefix(content, "Windows one-click connection command:\n") {
-				t.Fatalf("create_client must return display_text as plain text: %s", content)
+				t.Fatalf("create_client must return display_text as text: %s", content)
 			}
 		} else if json.Unmarshal([]byte(content), &text) != nil || !reflect.DeepEqual(structured, text) {
 			t.Fatalf("%s text and structured results differ", name)
