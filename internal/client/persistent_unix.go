@@ -78,12 +78,14 @@ func persistentInitLine(marker string) string {
 	if name == "fish" {
 		return ""
 	}
-	prompt := marker + "${?}\x1f"
 	if name == "zsh" {
-		prompt = marker + "%?\x1f"
+		prompt := strings.NewReplacer("\x1e", "\\036", "\x1f", "\\037").Replace(marker + "%?\x1f")
+		return "unset PS1 PS2 PROMPT_COMMAND; PS1=$(printf '%b' " + shellQuote(prompt) + "); PS2=''\n"
 	}
-	// Unset before assigning so prompt frames are not exported into nested
-	// shells, whose prompts must never complete the parent command.
-	encoded := strings.NewReplacer("\x1e", "\\036", "\x1f", "\\037").Replace(prompt)
-	return "unset PS1 PS2 PROMPT_COMMAND; PS1=$(printf '%b' " + shellQuote(encoded) + "); PS2=''\n"
+	// Dash automatically exports PS1 even after unset. Keep the random prefix
+	// in an unexported ordinary variable, and expand the whole frame only when
+	// that variable exists. Nested shells inherit a harmless empty prompt.
+	prefix := strings.ReplaceAll(marker, "\x1e", "\\036")
+	prompt := "${agenterm_prompt:+${agenterm_prompt}${?}\\037}"
+	return "unset PS1 PS2 PROMPT_COMMAND agenterm_prompt; agenterm_prompt=$(printf '%b' " + shellQuote(prefix) + "); PS1=$(printf '%b' " + shellQuote(prompt) + "); PS2=''\n"
 }

@@ -85,10 +85,26 @@ func TestPersistentShellAdapters(t *testing.T) {
 					wait(0)
 				}
 			}
+			line, err := persistentCommandLine(dir, "/bin/sh -i")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.WriteString(input, line); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case code := <-codes:
+				t.Fatalf("nested shell inherited the parent prompt frame: exit=%d", code)
+			case <-time.After(100 * time.Millisecond):
+			}
+			if _, err := io.WriteString(input, "printf '%s' nested; exit\n"); err != nil {
+				t.Fatal(err)
+			}
+			wait(0)
 			mu.Lock()
 			got := text.String()
 			mu.Unlock()
-			if !strings.Contains(got, "preserved") {
+			if !strings.Contains(got, "preserved") || !strings.Contains(got, "nested") {
 				t.Fatalf("state lost: %q", got)
 			}
 		})
