@@ -6,6 +6,10 @@ on:
       source_ref:
         type: string
         required: true
+      skip_checks:
+        description: 'The caller already passed Build checks for source_ref'
+        type: boolean
+        default: false
   workflow_dispatch:
   pull_request:
     paths:
@@ -21,11 +25,13 @@ on:
       - 'go.sum'
       - 'scripts/build_components.py'
       - 'scripts/build_p2p_cli.py'
+      - 'scripts/p2p_cache.py'
       - 'scripts/build_server.py'
       - 'scripts/test_*.py'
       - 'scripts/release/**'
       - '.github/workflows/p2p-cli.yml'
       - '.github/workflows/release.yml'
+      - '.github/workflows/checks.yml'
   push:
     paths:
       - 'tools/p2p-cli/**'
@@ -40,17 +46,27 @@ on:
       - 'go.sum'
       - 'scripts/build_components.py'
       - 'scripts/build_p2p_cli.py'
+      - 'scripts/p2p_cache.py'
       - 'scripts/build_server.py'
       - 'scripts/test_*.py'
       - 'scripts/release/**'
       - '.github/workflows/p2p-cli.yml'
       - '.github/workflows/release.yml'
+      - '.github/workflows/checks.yml'
 
 permissions:
   contents: read
 
 jobs:
+  checks:
+    if: ${{ !inputs.skip_checks }}
+    uses: ./.github/workflows/checks.yml
+    with:
+      source_ref: ${{ inputs.source_ref || github.sha }}
+
   native:
+    needs: checks
+    if: always() && !cancelled() && (needs.checks.result == 'success' || (inputs.skip_checks && needs.checks.result == 'skipped'))
     strategy:
       fail-fast: false
       matrix:
@@ -89,6 +105,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       P2P_CLI_BINARY: tools/p2p-cli/target/${{ matrix.target }}/release/p2p-cli${{ matrix.extension }}
+      P2P_RUST_VERSION: '1.99.1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,34 +116,67 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Fingerprint native build and validation inputs
+        if: hashFiles('scripts/p2p_cache.py') != ''
+        id: native-key
+        shell: bash
+        run: |
+          native_key=$(python scripts/p2p_cache.py key --target '${{ matrix.target }}' --rust "$P2P_RUST_VERSION" --runner '${{ matrix.os }}')
+          echo "key=$native_key" >> "$GITHUB_OUTPUT"
+      - name: Restore verified native component
+        if: steps.native-key.outputs.key != ''
+        uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: .p2p-native-cache
+          key: ${{ steps.native-key.outputs.key }}
+      - name: Verify cached build inputs, version, target and checksum
+        if: steps.native-cache.outputs.cache-hit == 'true'
+        id: reuse
+        shell: bash
+        run: python scripts/p2p_cache.py restore --target '${{ matrix.target }}' --rust "$P2P_RUST_VERSION" --runner '${{ matrix.os }}' --binary "$P2P_CLI_BINARY"
       - name: Check Windows bootstrap before native compilation
         if: matrix.platform == 'windows'
         shell: bash
         run: |
           go test ./internal/p2p -run '^TestP2PBootstrapPowerShell' -count=1 -timeout=3m
       - name: Install Linux static-link tools
-        if: matrix.platform == 'linux'
+        if: matrix.platform == 'linux' && steps.reuse.outputs.usable != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools
       - name: Install pinned Rust tools
+        if: steps.reuse.outputs.usable != 'true'
         shell: bash
         run: |
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target '${{ matrix.target }}'
-          rustup default 1.99.1
+          rustup toolchain install "$P2P_RUST_VERSION" --profile minimal --component rustfmt --component clippy --target '${{ matrix.target }}'
+          rustup default "$P2P_RUST_VERSION"
+      - name: Cache Cargo dependencies and compilation
+        if: steps.reuse.outputs.usable != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/p2p-cli/target
+          key: p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-${{ hashFiles('tools/p2p-cli/Cargo.lock') }}-${{ steps.native-key.outputs.key || hashFiles('tools/p2p-cli/src/**') }}
+          restore-keys: |
+            p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-${{ hashFiles('tools/p2p-cli/Cargo.lock') }}-
+            p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-
       - name: Check and build native component
+        if: steps.reuse.outputs.usable != 'true'
         shell: bash
         run: |
-          cargo fmt --manifest-path tools/p2p-cli/Cargo.toml --check
+          cargo +"$P2P_RUST_VERSION" fmt --manifest-path tools/p2p-cli/Cargo.toml --check
           if [ '${{ matrix.platform }}' = linux ]; then
             export CC=musl-gcc
           fi
           if [ '${{ matrix.platform }}' = windows ]; then
             export RUSTFLAGS='-C target-feature=+crt-static'
           fi
-          cargo clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets --target '${{ matrix.target }}' --locked -- -D warnings
-          cargo test --manifest-path tools/p2p-cli/Cargo.toml --target '${{ matrix.target }}' --locked
-          cargo build --manifest-path tools/p2p-cli/Cargo.toml --release --target '${{ matrix.target }}' --locked
+          cargo +"$P2P_RUST_VERSION" clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets --target '${{ matrix.target }}' --locked -- -D warnings
+          cargo +"$P2P_RUST_VERSION" test --manifest-path tools/p2p-cli/Cargo.toml --target '${{ matrix.target }}' --locked
+          cargo +"$P2P_RUST_VERSION" build --manifest-path tools/p2p-cli/Cargo.toml --release --target '${{ matrix.target }}' --locked
           python scripts/build_p2p_cli.py --target '${{ matrix.target }}' --binary "$P2P_CLI_BINARY" --output dist/p2p-assets
       - name: Test component extraction, downloads, and build scripts
         shell: bash
@@ -134,13 +184,25 @@ jobs:
           go test ./internal/components ./internal/installer
           python -m unittest discover -s scripts -p 'test_*.py'
           python -m unittest discover -s scripts/release -p 'test_*.py'
-      - name: Exercise persistent connections and builtin bootstrap
+      - name: Exercise native persistent connections
+        if: steps.reuse.outputs.usable != 'true'
+        shell: bash
+        run: python tools/p2p-cli/daemon_e2e.py "$P2P_CLI_BINARY"
+      - name: Prepare successfully validated native cache
+        if: steps.native-key.outputs.key != '' && steps.native-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: python scripts/p2p_cache.py store --target '${{ matrix.target }}' --rust "$P2P_RUST_VERSION" --runner '${{ matrix.os }}'
+      - name: Save verified native component
+        if: steps.native-key.outputs.key != '' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .p2p-native-cache
+          key: ${{ steps.native-key.outputs.key }}
+      - name: Exercise current Go builtin bootstrap
         shell: bash
         run: |
           python - <<'PY'
           import os, pathlib, subprocess
-          binary = pathlib.Path(os.environ['P2P_CLI_BINARY'])
-          subprocess.run(['python', 'tools/p2p-cli/daemon_e2e.py', str(binary)], check=True)
           env = dict(os.environ, P2P_CLI_TEST_ASSETS=str(pathlib.Path('dist/p2p-assets').resolve()))
           subprocess.run(['go', 'test', './internal/client', './internal/p2p', './internal/service', '-run', 'TestP2P|TestManifest', '-count=1'], env=env, check=True)
           PY

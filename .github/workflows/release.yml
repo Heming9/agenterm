@@ -69,8 +69,14 @@ jobs:
           path: release-plan/
           if-no-files-found: error
 
-  macos:
+  checks:
     needs: plan
+    uses: ./.github/workflows/checks.yml
+    with:
+      source_ref: ${{ needs.plan.outputs.sha }}
+
+  macos:
+    needs: [plan, checks]
     if: needs.plan.outputs.gui == 'true'
     runs-on: macos-15
     steps:
@@ -96,27 +102,8 @@ jobs:
           path: agenterm-client-gui-macos-arm64
           if-no-files-found: error
 
-  windows-tests:
-    needs: plan
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.plan.outputs.sha }}
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.10'
-      - name: Test Windows installer and connection probes
-        run: go test ./internal/service -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
-      - name: Test Windows CLI client and reconnection
-        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./internal/client
-      - name: Test MCP execution and session lifecycle on Windows
-        run: go test ./internal/service -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
-      - name: Test deterministic download archives on Windows
-        run: go test ./internal/installer -run 'TestDownload|TestBundle'
-
   windows:
-    needs: plan
+    needs: [plan, checks]
     if: needs.plan.outputs.gui == 'true'
     runs-on: windows-latest
     steps:
@@ -148,15 +135,16 @@ jobs:
           if-no-files-found: error
 
   p2p:
-    needs: plan
+    needs: [plan, checks]
     if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified == 'true'
     uses: ./.github/workflows/p2p-cli.yml
     with:
       source_ref: ${{ needs.plan.outputs.sha }}
+      skip_checks: true
 
   server:
-    needs: [plan, p2p]
-    if: always() && needs.plan.result == 'success' && (needs.p2p.result == 'success' || needs.p2p.result == 'skipped')
+    needs: [plan, checks, p2p]
+    if: always() && !cancelled() && needs.plan.result == 'success' && needs.checks.result == 'success' && (needs.p2p.result == 'success' || needs.p2p.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -186,8 +174,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xz-utils
-      - name: Test CLI, server, and installers
-        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./cmd/agenterm-server ./internal/...
       - name: Build or reuse CLI, bundle it, then build servers
         if: needs.plan.outputs.server == 'true'
         env:
@@ -253,12 +239,12 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [plan, macos, windows, windows-tests, server]
+    needs: [plan, checks, macos, windows, server]
     # GUI jobs may be intentionally skipped; failures must still block publication.
     if: >-
       always() && !cancelled() &&
       needs.plan.result == 'success' && needs.server.result == 'success' &&
-      needs.windows-tests.result == 'success' &&
+      needs.checks.result == 'success' &&
       (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
       (needs.windows.result == 'success' || needs.windows.result == 'skipped')
     runs-on: ubuntu-latest

@@ -1,0 +1,49 @@
+name: Build checks
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Test CLI, server, and installers
+        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./cmd/agenterm-server ./internal/...
+      - name: Test build and release scripts
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 -m unittest discover -s scripts/release -p 'test_*.py'
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - name: Test Windows installer and connection probes
+        run: go test ./internal/service -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
+      - name: Test Windows CLI client and reconnection
+        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./internal/client
+      - name: Test MCP execution and session lifecycle on Windows
+        run: go test ./internal/service -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
+      - name: Test deterministic download archives on Windows
+        run: go test ./internal/installer -run 'TestDownload|TestBundle'

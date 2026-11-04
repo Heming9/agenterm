@@ -29,6 +29,7 @@ Thumbs.db
 /release-base/
 /release-plan/
 /release-files/
+/.p2p-native-cache/
 /components.tar.xz
 /.components-*.tar.xz
 /internal/installer/assets/*

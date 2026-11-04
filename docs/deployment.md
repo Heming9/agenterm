@@ -100,6 +100,14 @@ go build -o agenterm-server ./cmd/agenterm-server
 
 After building, deploy using the direct or systemd instructions above.
 
+## Release pipeline
+
+The [release workflow](../.github/workflows/release.yml) first runs the shared Linux and Windows [build checks](../.github/workflows/checks.yml). GUI and native P2P builds start after both pass. Server packaging waits for the P2P distribution; generated client downloads are still checked before publication.
+
+Native P2P caches require an exact fingerprint of the component source, native validation scripts, packaging workflow, Rust version, runner and target. Restored artifacts are checked for component version, executable architecture and SHA-256 before use. Missing or invalid caches trigger a full native build; Cargo dependencies and compilation outputs have a separate cache.
+
+The native cache is saved after Rust and native end-to-end checks pass, so later Go integration failures do not force another Rust build. Current Go bootstrap tests always run, including on native cache hits. The standalone P2P workflow uses the same early checks; a release skips that duplicate gate only after its own shared checks pass. Older source refs without the native cache helper retain the full build path. The first run remains a cold build; warm-cache runtime must be measured in Actions.
+
 ## 📖 Server commands and options
 
 ```sh
