@@ -139,5 +139,7 @@ try {
     } else {
       & $program -token=
     }
+    $clientExitCode = $LASTEXITCODE
   } finally { $env:AGENTERM_LANG = $previousLanguage }
 } finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }
+if ($clientExitCode -ne 0) { exit $clientExitCode }

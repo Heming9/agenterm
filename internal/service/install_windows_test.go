@@ -23,8 +23,8 @@ func TestPowerShellInvitationInstaller(t *testing.T) {
 	name := "agenterm-client-cli-windows-" + runtime.GOARCH + ".exe"
 	source := filepath.Join(root, "main.go")
 	if err := os.WriteFile(source, []byte(`package main
-import ("fmt"; "os")
-func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invitation=%s consent=%s lang=%s\n", args[0], args[1], args[2], os.Getenv("AGENTERM_LANG")) }
+import ("fmt"; "os"; "strconv")
+func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invitation=%s consent=%s lang=%s\n", args[0], args[1], args[2], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -146,6 +146,13 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $env:AGENTERM_LANG = 'zh-CN'; `
 	if out, err := run(); err != nil || !strings.Contains(out, "是否允许连接？") || !strings.Contains(out, "lang=zh-CN") || !strings.Contains(out, "restored-lang=zh-CN") {
 		t.Fatalf("explicit language override: %v\n%s", err, out)
+	}
+	customPrefix = ""
+	customPrefix = `$env:AGENTERM_TEST_CLIENT_EXIT = '7'; `
+	if out, err := run(); err == nil {
+		t.Fatalf("client failure returned success: %s", out)
+	} else if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 7 {
+		t.Fatalf("client exit code not propagated: %v\n%s", err, out)
 	}
 	customPrefix = ""
 	cached := filepath.Join(root, "local", "Agenterm", "cache", installerTestTag, "windows-"+runtime.GOARCH, name)
