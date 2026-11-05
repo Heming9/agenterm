@@ -170,6 +170,7 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
 	done = make(chan error, 1)
 	go func() {
 		done <- remoteclient.RunWithCallbacks(ctx, redeemed, io.Discard, remoteclient.Callbacks{Connected: func() {
