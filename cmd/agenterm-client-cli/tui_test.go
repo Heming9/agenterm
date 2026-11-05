@@ -3,7 +3,9 @@ package main
 import (
 	"agenterm/internal/client"
 	"agenterm/internal/logview"
+	"agenterm/internal/protocol"
 	"context"
+	"encoding/base64"
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -307,5 +309,26 @@ func TestConnectedFooterAndDisconnect(t *testing.T) {
 	m.Update(tuiEvent{finished: true})
 	if m.state != "disconnected" || m.input.Value() != "saved-token" {
 		t.Fatal("disconnection should return to the input with the token retained")
+	}
+}
+
+func TestTUIShowsIdentifierForTokenAndRedeemedCode(t *testing.T) {
+	token, err := protocol.Encode(protocol.Token{URL: "ws://127.0.0.1:1/agenterm/client", Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize)), Identifier: "abc123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTUI(token)
+	defer m.cancel()
+	m.connect()
+	if !strings.HasSuffix(m.address, "/client/abc123") {
+		t.Fatalf("token address: %s", m.address)
+	}
+	redeemed, err := protocol.Encode(protocol.Token{URL: "wss://target.example/agenterm/client", Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize)), Identifier: "def456"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tuiEvent{generation: m.generation, redeemed: redeemed})
+	if m.address != "wss://target.example/agenterm/client/def456" {
+		t.Fatalf("redeemed address: %s", m.address)
 	}
 }

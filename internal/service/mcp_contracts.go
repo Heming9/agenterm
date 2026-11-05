@@ -44,6 +44,9 @@ type invitationResult struct {
 	MultiDevice              bool   `json:"multi_device"`
 	Invitation               string `json:"invitation"`
 	ExpiresAt                string `json:"expires_at"`
+	ShortCode                string `json:"short_code,omitempty"`
+	ShortCodeExpiresAt       string `json:"short_code_expires_at,omitempty"`
+	TokenInitialExpiresAt    string `json:"token_initial_expires_at"`
 	MacOSLinuxCommand        string `json:"macos_linux_command"`
 	WindowsPowerShellCommand string `json:"windows_powershell_command"`
 	DisplayText              string `json:"display_text"`

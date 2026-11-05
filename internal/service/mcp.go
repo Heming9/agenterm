@@ -246,7 +246,19 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if timeoutSeconds == 0 {
 				timeoutSeconds = defaultInvitationTimeoutSeconds
 			}
-			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), timeoutSeconds, expires, out["multi_device"].(bool))
+			var codeExpires time.Time
+			code, _ := out["short_code"].(string)
+			if code != "" {
+				codeExpires, err = time.Parse(time.RFC3339, out["short_code_expires_at"].(string))
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+			tokenExpires, err := time.Parse(time.RFC3339, out["token_initial_expires_at"].(string))
+			if err != nil {
+				return nil, nil, err
+			}
+			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, timeoutSeconds, expires, codeExpires, tokenExpires, out["multi_device"].(bool))
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})
 	}

@@ -66,13 +66,8 @@ func Redeem(ctx context.Context, value string) (string, error) {
 	if err := json.NewDecoder(io.LimitReader(res.Body, 4096)).Decode(&result); err != nil {
 		return "", err
 	}
-	decoded, err := protocol.Decode(result.Token)
-	if err != nil {
+	if _, err := protocol.Decode(result.Token); err != nil {
 		return "", err
-	}
-	source, _ := protocol.Decode(value)
-	if decoded.URL != source.URL || decoded.Identifier != source.Identifier {
-		return "", i18n.NewError("invitation.response.points.to.a.different.server")
 	}
 	return result.Token, nil
 }

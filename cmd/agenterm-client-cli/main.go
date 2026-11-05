@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -35,6 +36,7 @@ func main() {
 			tokenProvided = true
 		}
 	})
+	input := bufio.NewReader(os.Stdin)
 	token := options.Token
 	if options.Invitation != "" {
 		endpoint, _, err := invite.Endpoint(options.Invitation)
@@ -43,7 +45,7 @@ func main() {
 		}
 		if !options.ConsentConfirmed {
 			fmt.Printf(tr("remote.control.authorization.prompt"), strings.TrimSuffix(endpoint, "/invite/redeem"))
-			answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			answer, _ := input.ReadString('\n')
 			if strings.ToLower(strings.TrimSpace(answer)) != "y" {
 				fmt.Println(tr("connection.cancelled"))
 				return
@@ -60,11 +62,17 @@ func main() {
 	}
 	if token == "" && !tokenProvided {
 		fmt.Print(tr("connection.token.2"))
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		line, err := input.ReadString('\n')
 		if err != nil && err != io.EOF {
 			log.Fatal(err)
 		}
 		token = strings.TrimSpace(line)
+	}
+	if options.Invitation == "" && client.IsShortCode(token) {
+		token, err = selectPlainServer(input, os.Stdout, token)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	if options.Invitation == "" {
 		fmt.Println(tr("connecting.once.connected.the.server.can.execute"))
@@ -75,7 +83,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	if err := run(ctx, token, os.Stdout, client.Callbacks{Connected: func() {
+	serverAddress, _, _ := client.ConnectionAddress(token)
+	if err := run(ctx, token, os.Stdout, client.Callbacks{Redeemed: func(token string) {
+		if target, _, err := client.ConnectionAddress(token); err == nil {
+			serverAddress = target
+		}
+	}, Connected: func() {
+		_ = client.RememberServer(serverAddress)
 		if options.Invitation != "" {
 			fmt.Println(progressConnected + tr("close.the.client.to.disconnect"))
 		} else {
@@ -84,4 +98,29 @@ func main() {
 	}}); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func selectPlainServer(input *bufio.Reader, output io.Writer, code string) (string, error) {
+	servers, err := client.ServerHistory()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", tr("history.server.failed"), err)
+	}
+	if len(servers) == 0 {
+		return "", fmt.Errorf("%s", tr("history.server.empty"))
+	}
+	fmt.Fprintln(output, tr("select.history.server"))
+	for i, server := range servers {
+		fmt.Fprintf(output, "%d. %s\n", i+1, server)
+	}
+	fmt.Fprint(output, tr("history.server.plain.prompt"))
+	answer, err := input.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	answer = strings.TrimSpace(answer)
+	index, err := strconv.Atoi(answer)
+	if err != nil || index < 1 || index > len(servers) {
+		return "", fmt.Errorf("%s", tr("history.server.choose"))
+	}
+	return client.ShortCodeForServer(servers[index-1], code)
 }

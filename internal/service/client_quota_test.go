@@ -88,8 +88,7 @@ func TestQuotaReclaimsOldestUnusedAndExpired(t *testing.T) {
 	if _, ok := s.tokens[first["client_token"].(string)]; ok {
 		t.Fatal("oldest token retained")
 	}
-	firstInvite, _ := protocol.Decode(first["invitation"].(string))
-	if _, ok := s.installCodes[installCode(firstInvite.Secret)]; ok {
+	if _, ok := s.shortCodes[first["short_code"].(string)]; ok {
 		t.Fatal("reclaimed invitation retained its short code")
 	}
 	for _, item := range []map[string]any{second, third, other} {
@@ -101,13 +100,14 @@ func TestQuotaReclaimsOldestUnusedAndExpired(t *testing.T) {
 	entry := s.invitations[decoded.Secret]
 	entry.expires = time.Now().Add(-time.Second)
 	s.invitations[decoded.Secret] = entry
+	s.clientOwners[s.tokens[third["client_token"].(string)]].expires = entry.expires
 	if _, err := s.createClient("192.0.2.2"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := s.tokens[third["client_token"].(string)]; ok {
 		t.Fatal("expired unused token retained")
 	}
-	if _, ok := s.installCodes[installCode(decoded.Secret)]; ok {
+	if _, ok := s.shortCodes[third["short_code"].(string)]; ok {
 		t.Fatal("expired invitation retained its short code")
 	}
 }

@@ -286,3 +286,114 @@ func TestConnectionLockReleasedAfterDisconnectOrFailure(t *testing.T) {
 	}
 	lock.Close()
 }
+
+func TestRedeemedTokenUsesTargetServerLock(t *testing.T) {
+	for _, kind := range []string{"short-code", "invitation"} {
+		t.Run(kind, func(t *testing.T) {
+			isolatedLockHome(t)
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				headers := http.Header{protocol.ClientAPIHeader: {APIVersion}, version.Header: {version.Current}}
+				ws, err := (&websocket.Upgrader{}).Upgrade(w, r, headers)
+				if err == nil {
+					defer ws.Close()
+					_, _, _ = ws.ReadMessage()
+				}
+			}))
+			defer target.Close()
+			targetAddress := "ws" + strings.TrimPrefix(target.URL, "http") + protocol.ClientPath
+			token, err := protocol.Encode(protocol.Token{URL: targetAddress, Secret: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, protocol.TokenSecretSize)), Identifier: "abc123"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var sourceAddress string
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				lock, err := acquireConnectionLock(sourceAddress)
+				if err == nil {
+					lock.Close()
+					t.Error("source lock was not held during redemption")
+				}
+				w.Header().Set(version.Header, version.Current)
+				_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
+			}))
+			defer source.Close()
+			sourceAddress = "ws" + strings.TrimPrefix(source.URL, "http") + protocol.ClientPath
+			value := source.URL + "/agenterm/c/ABC123"
+			run := RunWithCallbacks
+			if kind == "invitation" {
+				value, err = protocol.Encode(protocol.Token{URL: sourceAddress, Secret: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{2}, protocol.TokenSecretSize)), Identifier: "xyz123"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				run = RunInvitationWithCallbacks
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var gotToken, connected bool
+			err = run(ctx, value, io.Discard, Callbacks{
+				Redeemed: func(got string) { gotToken = got == token },
+				Connected: func() {
+					connected = true
+					targetLock, err := acquireConnectionLock(targetAddress)
+					if err == nil {
+						targetLock.Close()
+						t.Error("target lock was not held")
+					}
+					sourceLock, err := acquireConnectionLock(sourceAddress)
+					if err != nil {
+						t.Errorf("source lock was not released: %v", err)
+					} else {
+						sourceLock.Close()
+					}
+					cancel()
+				},
+			})
+			if err != nil || !gotToken || !connected {
+				t.Fatalf("connected=%v redeemed=%v err=%v", connected, gotToken, err)
+			}
+		})
+	}
+}
+
+func TestRedeemedTokenDoesNotBypassTargetLock(t *testing.T) {
+	isolatedLockHome(t)
+	targetAddress := "wss://target.example/agenterm/client"
+	held, err := acquireConnectionLock(targetAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	token, err := protocol.Encode(protocol.Token{URL: targetAddress, Secret: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, protocol.TokenSecretSize))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(version.Header, version.Current)
+		_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
+	}))
+	defer source.Close()
+	var redeemed string
+	err = RunWithCallbacks(context.Background(), source.URL+"/agenterm/c/ABC123", io.Discard, Callbacks{Redeemed: func(value string) { redeemed = value }})
+	requireDuplicateConnection(t, err)
+	if redeemed != token {
+		t.Fatal("redeemed token was lost when the target lock was busy")
+	}
+	sourceLock, err := acquireConnectionLock("ws" + strings.TrimPrefix(source.URL, "http") + protocol.ClientPath)
+	if err != nil {
+		t.Fatalf("source lock leaked: %v", err)
+	}
+	sourceLock.Close()
+}
+
+func TestConnectionLockKeyNormalizesDefaultPortAndCase(t *testing.T) {
+	a, err := connectionLockKey("wss://EXAMPLE.COM:443/agenterm/client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := connectionLockKey("wss://example.com/agenterm/client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Fatal("equivalent server addresses have different lock keys")
+	}
+}

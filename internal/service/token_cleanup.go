@@ -32,11 +32,12 @@ func (s *runtimeState) cleanupTokensLocked(now time.Time) {
 	expired := make(map[string]bool)
 	for key, entry := range s.invitations {
 		if !now.Before(entry.expires) {
-			s.deleteInvitation(key)
-			secret := s.tokens[entry.token]
-			if owner := s.clientOwners[secret]; owner != nil && !owner.used && !online[secret] {
-				expired[secret] = true
-			}
+			delete(s.invitations, key)
+		}
+	}
+	for code, entry := range s.shortCodes {
+		if !now.Before(entry.expires) {
+			delete(s.shortCodes, code)
 		}
 	}
 	for secret, owner := range s.clientOwners {
@@ -59,7 +60,12 @@ func (s *runtimeState) deleteTokensLocked(secrets map[string]bool) {
 func (s *runtimeState) revokeTokensLocked(secrets map[string]bool) {
 	for key, entry := range s.invitations {
 		if secrets[s.tokens[entry.token]] {
-			s.deleteInvitation(key)
+			delete(s.invitations, key)
+		}
+	}
+	for code, entry := range s.shortCodes {
+		if secrets[s.tokens[entry.token]] {
+			delete(s.shortCodes, code)
 		}
 	}
 	for token, secret := range s.tokens {

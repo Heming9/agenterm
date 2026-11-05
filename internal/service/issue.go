@@ -63,6 +63,24 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	if err != nil {
 		return nil, err
 	}
+	valueExpires := expires
+	var code string
+	var codeExpires time.Time
+	if !multiDevice {
+		if s.shortCodes == nil {
+			s.shortCodes = make(shortCodeStore)
+		}
+		code, err = s.shortCodes.issue(token, time.Now())
+		if err != nil {
+			decoded, _ := protocol.Decode(value)
+			delete(s.invitations, decoded.Secret)
+			return nil, err
+		}
+		codeExpires = s.shortCodes[code].expires
+		if codeExpires.After(expires) {
+			expires = codeExpires
+		}
+	}
 	s.multiDevice[secret] = multiDevice
 	s.tokens[token] = secret
 	// Track lifecycle even when IP quotas are disabled.
@@ -71,19 +89,32 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	}
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires}
-	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
-	shell, powershell := installCommands(value)
+	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": valueExpires.UTC().Format(time.RFC3339), "token_initial_expires_at": expires.UTC().Format(time.RFC3339)}
+	if code != "" {
+		result["short_code"] = code
+		result["short_code_expires_at"] = codeExpires.UTC().Format(time.RFC3339)
+	}
+	shell, powershell := installCommands(token)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
-	result["display_text"] = connectionDisplayText(token, shell, powershell, timeoutSeconds, expires, multiDevice)
+	result["display_text"] = connectionDisplayText(token, shell, powershell, code, timeoutSeconds, valueExpires, codeExpires, expires, multiDevice)
 	return result, nil
 }
 
 // Presentation belongs to the replaceable frontend too: a retained runtime may
 // still return an older display_text while its credentials and commands remain
 // valid. Never reconstruct or change those credentials when updating the prose.
-func connectionDisplayText(token, shell, powershell string, timeoutSeconds int64, expires time.Time, multiDevice bool) string {
-	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
+func connectionDisplayText(token, shell, powershell, code string, timeoutSeconds int64, expires, codeExpires, tokenExpires time.Time, multiDevice bool) string {
+	shortSection, shortUsage := "", ""
+	if code != "" {
+		shortSection = "\n\nShort Code:\n" + code
+		shortUsage = i18n.Text("en", "connection.short.code.usage")
+	}
+	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, shortSection, shortUsage, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
+	if code != "" {
+		text += fmt.Sprintf("\nShort Code validity: 3 minutes, single use (expires at %s UTC).", codeExpires.UTC().Format("2006-01-02 15:04:05"))
+	}
+	text += fmt.Sprintf("\nBefore the first connection, the connection token and one-click commands expire at %s UTC.", tokenExpires.UTC().Format("2006-01-02 15:04:05"))
 	if multiDevice {
 		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
 	}

@@ -7,11 +7,10 @@ import (
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
-	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -25,35 +24,15 @@ const downloadTag = "v" + version.Current
 var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 var validInstallCredential = regexp.MustCompile(`^(?:[A-Z0-9]{6}|[A-Za-z0-9_-]{14})$`)
 
-// Six uppercase base36 characters carry about 31 random bits. The URL is itself
-// an invitation credential, protected by expiry and the failure limiter.
-const installCodeLength = 6
+const shortCodeLength = 6
 
-// Use the last six base36 digits of the full random invitation secret.
-// This keeps command formatting deterministic without exposing base64 symbols.
-func installCode(secret string) string {
-	raw, err := base64.RawURLEncoding.DecodeString(secret)
-	if err != nil || len(raw) != protocol.TokenSecretSize {
-		return ""
-	}
-	code := strings.Repeat("0", installCodeLength) + strings.ToUpper(new(big.Int).SetBytes(raw).Text(36))
-	return code[len(code)-installCodeLength:]
-}
-
-// The caller holds s.mu. Retry collisions before publishing either credential.
+// The caller holds s.mu.
 func (s *runtimeState) newInvitation(token, identifier string, expires time.Time) (string, error) {
 	if s.invitations == nil {
 		s.invitations = make(map[string]invitation)
 	}
-	if s.installCodes == nil {
-		s.installCodes = make(map[string]string)
-	}
 	for {
 		secret := randomBytes(protocol.TokenSecretSize)
-		code := installCode(secret)
-		if _, exists := s.installCodes[code]; exists {
-			continue
-		}
 		if _, exists := s.invitations[secret]; exists {
 			continue
 		}
@@ -62,27 +41,16 @@ func (s *runtimeState) newInvitation(token, identifier string, expires time.Time
 			return "", err
 		}
 		s.invitations[secret] = invitation{token: token, expires: expires}
-		s.installCodes[code] = secret
 		return value, nil
 	}
 }
 
-// The caller holds s.mu. Remove short URLs with their underlying invitation.
-func (s *runtimeState) deleteInvitation(secret string) {
-	delete(s.invitations, secret)
-	if code := installCode(secret); code != "" && s.installCodes[code] == secret {
-		delete(s.installCodes, code)
-	}
-}
-
-func installCommands(invitation string) (string, string) {
-	endpoint, secret, err := invite.Endpoint(invitation)
+func installCommands(token string) (string, string) {
+	endpoint, secret, err := invite.Endpoint(token)
 	if err != nil {
 		return "", ""
 	}
-	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + installCode(secret)
-	// Command substitution leaves stdin connected to the terminal for consent.
-	// Keep curl failure visible, rather than successfully executing an empty script.
+	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + secret
 	shell := fmt.Sprintf("s=$(curl -fsS -m15 %s)&&sh -c \"$s\"", shQuote(base))
 	powershell := fmt.Sprintf("powershell -NoP -c \"iex(irm -TimeoutSec 15 %s)\"", psQuote(base+".ps1"))
 	return shell, powershell
@@ -91,15 +59,15 @@ func installCommands(invitation string) (string, string) {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// Resolve short installer codes without changing the full invitation format.
-// URLs carrying the full invitation secret are also supported.
+// GET serves the installer; POST resolves an independent short code to a token.
+// GET also accepts a client-token secret or a legacy full invitation secret.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodPost {
+			w.Header().Set("Allow", "GET, HEAD, POST")
 			http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
 			return
 		}
@@ -108,11 +76,23 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		credential, powershell := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/c/"), ".ps1")
-		if !validInstallCredential.MatchString(credential) {
+		if !validInstallCredential.MatchString(credential) || (r.Method == http.MethodPost && (powershell || len(credential) != shortCodeLength)) {
 			http.NotFound(w, r)
 			return
 		}
-		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential})
+		if r.Method == http.MethodPost && !acceptClientVersion(w, r) {
+			return
+		}
+		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential, Consume: r.Method == http.MethodPost})
+		if r.Method == http.MethodPost {
+			if err != nil {
+				writeControlError(w, err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
+			return
+		}
 		value := ""
 		clientURL := s.clientURL
 		if err != nil {
@@ -125,7 +105,23 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			source, decodeErr := protocol.Decode(entry.Token)
 			if decodeErr == nil {
 				clientURL = source.URL
-				value, decodeErr = protocol.Encode(protocol.Token{URL: source.URL, Secret: entry.Secret, Identifier: source.Identifier})
+				if len(credential) == shortCodeLength {
+					u, e := url.Parse(source.URL)
+					decodeErr = e
+					if e == nil {
+						if u.Scheme == "wss" {
+							u.Scheme = "https"
+						} else {
+							u.Scheme = "http"
+						}
+						u.Path = strings.TrimSuffix(u.Path, "/client") + "/c/" + credential
+						value = u.String()
+					}
+				} else if entry.DeviceToken {
+					value = entry.Token
+				} else {
+					value, decodeErr = protocol.Encode(protocol.Token{URL: source.URL, Secret: entry.Secret, Identifier: source.Identifier})
+				}
 			}
 			if decodeErr != nil {
 				http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
@@ -154,10 +150,14 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		body := strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)
+		kind := "invitation"
+		if entry.DeviceToken {
+			kind = "token"
+		}
 		if powershell {
-			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + "\n"
+			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + " " + psQuote(kind) + "\n"
 		} else {
-			body = "#!/bin/sh\nset -- " + shQuote(value) + " " + shQuote(base) + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n")
+			body = "#!/bin/sh\nset -- " + shQuote(value) + " " + shQuote(base) + " " + shQuote(kind) + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n")
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if r.Method == http.MethodGet {

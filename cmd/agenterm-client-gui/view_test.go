@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"image/color"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -79,7 +82,7 @@ func TestInterfaceFontCoversChineseWithoutFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const labels = "Agenterm 粘贴 Server 生成的连接 Token 已执行 0 条 平均耗时 — 执行记录 命令与输出 等待连接 后，命令和输出将显示在这里。断开连接 清空 正在执行"
+	const labels = "Agenterm 粘贴连接 Token、短码或短码地址 已执行 0 条 平均耗时 — 执行记录 命令与输出 等待连接 后，命令和输出将显示在这里。断开连接 清空 正在执行"
 	for _, r := range labels {
 		if _, ok := face.NominalGlyph(r); !ok {
 			t.Errorf("UI character %q would require a different fallback font", r)
@@ -214,5 +217,97 @@ func TestMonochromeTheme(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestShortCodePromptsForHistoricalServer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := client.RememberServer("ws://first.example/custom/client"); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.RememberServer("wss://second.example/agenterm/client"); err != nil {
+		t.Fatal(err)
+	}
+	app := test.NewApp()
+	defer app.Quit()
+	win := app.NewWindow("Agenterm")
+	defer win.Close()
+	v := newClientView(win)
+	defer v.close()
+	win.SetContent(v.content)
+	win.Resize(fyne.NewSize(700, 420))
+	v.token.SetText("ABC123")
+	v.connect()
+	if v.serverDialog == nil || v.connecting || v.connected {
+		t.Fatal("short code must prompt before connecting")
+	}
+	if path := os.Getenv("AGENTERM_SCREENSHOTS"); path != "" {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(filepath.Join(path, "server-history.png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(f, win.Canvas().Capture()); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		f.Close()
+	}
+	list, ok := win.Canvas().Focused().(*serverSelectionList)
+	if !ok {
+		t.Fatal("server list is not focused")
+	}
+	list.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if v.serverDialog != nil || v.connecting {
+		t.Fatal("escape did not dismiss the server list")
+	}
+}
+
+func TestServerChoiceConnectsOnlySelectedServer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	var other atomic.Int32
+	selected := make(chan struct{}, 1)
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		other.Add(1)
+		http.Error(w, "invalid", http.StatusUnauthorized)
+	}))
+	defer a.Close()
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		selected <- struct{}{}
+		http.Error(w, "invalid", http.StatusUnauthorized)
+	}))
+	defer b.Close()
+	for _, server := range []string{a.URL, b.URL} {
+		if err := client.RememberServer("ws" + strings.TrimPrefix(server, "http") + "/agenterm/client"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := test.NewApp()
+	defer app.Quit()
+	win := app.NewWindow("Agenterm")
+	defer win.Close()
+	v := newClientView(win)
+	defer v.close()
+	win.SetContent(v.content)
+	v.token.SetText("ABC123")
+	v.connect()
+	list, ok := win.Canvas().Focused().(*serverSelectionList)
+	if !ok {
+		t.Fatal("server list is not focused")
+	}
+	list.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	select {
+	case <-selected:
+	case <-time.After(3 * time.Second):
+		t.Fatal("selected server was not contacted")
+	}
+	if other.Load() != 0 {
+		t.Fatal("contacted an unselected server")
 	}
 }

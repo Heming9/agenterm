@@ -7,6 +7,7 @@ set -eu
 version='@RELEASE_TAG@'
 invitation=${1:-}
 base=${2:-}
+credential_kind=${3:-invitation}
 origin=${base%/downloads/*}
 locale=${AGENTERM_LANG:-}
 if [ -z "$locale" ] || [ "$locale" = auto ]; then
@@ -128,7 +129,7 @@ else
   say installer.client.verified
 fi
 if [ -n "$invitation" ]; then
-  "$binary" -invite "$invitation" -consent-confirmed
+  case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" -token "$invitation";; *) "$binary" -invite "$invitation" -consent-confirmed;; esac
 else
   "$binary" -token ""
 fi

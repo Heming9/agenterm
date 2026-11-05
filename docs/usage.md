@@ -41,17 +41,19 @@ For self-hosting, replace the URL with the MCP address shown after deployment an
 ## 🤝 Start a remote assistance session
 
 1. Describe the task to your agent and ask it to create an invitation for the target computer.
-2. Privately share the connection command with the person at that computer.
+2. Privately share the connection command or short-code address with the person at that computer. The short-code address can be used once and expires after 3 minutes. The connection command follows the connection token’s lifetime.
 3. They run the command for their operating system, read the notice, and authorize access.
 4. Keep the agent conversation active while the device connects, then start the task. The other person can see commands and output in the client and disconnect at any time.
 5. Close or disconnect the client when finished.
 
-To connect several computers, ask the agent for a multi-device invitation and identify the target before each operation.
+To connect several computers, ask the agent for a multi-device invitation and identify the target before each operation. Multi-device tokens do not have short codes.
+
+After a successful connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, enter the full short-code address.
 
 ## 💻 Client controls
 
-- 🖥️ **Terminal client:** Use the arrow keys or mouse wheel to browse, drag to select and copy text, press `c` to clear the display, and `q` to disconnect and exit.
-- 🪟 **Desktop client:** Paste a connection token, connect or disconnect, and view live commands and output. Change the interface language from **Language / 语言** in the app menu, then restart the app.
+- 🖥️ **Terminal client:** Paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to browse, drag to select and copy text, press `c` to clear the display, and `q` to disconnect and exit.
+- 🪟 **Desktop client:** Paste a connection token or short-code address (for example, `https://example.com/agenterm/c/XXXXXX`), connect or disconnect, and view live commands and output. Change the interface language from **Language / 语言** in the app menu, then restart the app.
 
 The one-command connection stores a client in a local cache. You can delete it after closing the client:
 

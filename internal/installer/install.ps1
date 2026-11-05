@@ -2,7 +2,7 @@
 # Project: https://github.com/Heming9/agenterm
 # SPDX-License-Identifier: Apache-2.0
 # License: https://www.apache.org/licenses/LICENSE-2.0
-param([AllowEmptyString()][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base)
+param([AllowEmptyString()][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base, [string]$CredentialKind = "invitation")
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
@@ -135,7 +135,7 @@ try {
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
     if ($Invitation) {
-      & $program -invite $Invitation -consent-confirmed
+      if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program -token $Invitation } else { & $program -invite $Invitation -consent-confirmed }
     } else {
       & $program -token=
     }

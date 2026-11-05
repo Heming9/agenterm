@@ -87,11 +87,11 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 				t.Fatal(err)
 			}
 			value := issued["invitation"].(string)
-			decoded, _ := protocol.Decode(value)
 			base := origin + prefix
-			shell, powershell := installCommands(value)
+			decoded, _ := protocol.Decode(issued["client_token"].(string))
+			shell, powershell := installCommands(issued["client_token"].(string))
 			for i, command := range []string{shell, powershell} {
-				path := "/c/" + installCode(decoded.Secret)
+				path := "/c/" + decoded.Secret
 				if i == 1 {
 					path += ".ps1"
 				}
@@ -104,7 +104,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 				}
 				body, err := io.ReadAll(res.Body)
 				res.Body.Close()
-				if err != nil || res.StatusCode != 200 || !strings.Contains(string(body), value) || !strings.Contains(string(body), base+"/downloads/v1.2.3") {
+				if err != nil || res.StatusCode != 200 || !strings.Contains(string(body), issued["client_token"].(string)) || !strings.Contains(string(body), base+"/downloads/v1.2.3") {
 					t.Fatalf("installer lost invitation or prefix: status=%d err=%v", res.StatusCode, err)
 				}
 			}
@@ -139,7 +139,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 				time.Sleep(time.Millisecond)
 			}
 			if prefix != protocol.PathPrefix {
-				res, err = ts.Client().Get(origin + protocol.PathPrefix + "/c/" + installCode(decoded.Secret))
+				res, err = ts.Client().Get(origin + protocol.PathPrefix + "/c/" + issued["short_code"].(string))
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -71,7 +71,7 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		t.Fatal(err)
 	}
 	value := issued["invitation"].(string)
-	_, command := installCommands(value)
+	_, command := installCommands(issued["client_token"].(string))
 	forcedFormat := ""
 	customPrefix := ""
 	runWithInput := func(input string) (string, error) {
@@ -121,14 +121,14 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	run := func() (string, error) { return runWithInput("y\n") }
 	for i, message := range []string{"正在下载客户端", "本地客户端校验通过，跳过下载"} {
 		out, err := run()
-		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-invite invitation="+value+" consent=-consent-confirmed") {
+		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-token invitation="+issued["client_token"].(string)) {
 			t.Fatalf("run %d: %v\n%s", i, err, out)
 		}
 		if strings.Count(out, "是否允许连接？[y/N]") != 1 || !strings.Contains(out, "请确保你信任对方") {
 			t.Fatalf("missing or duplicate consent prompt: %s", out)
 		}
 		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[1/4]", "[2/4]", "arg=-invite"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[1/4]", "[2/4]", "arg=-token"} {
 			index := strings.Index(out, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", out)
@@ -164,16 +164,14 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		if err := os.WriteFile(cached, []byte("corrupted"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if out, err := run(); err != nil || !strings.Contains(out, "arg=-invite invitation="+value) || choice.count.Load() != before+1 {
+		if out, err := run(); err != nil || !strings.Contains(out, "arg=-token invitation="+issued["client_token"].(string)) || choice.count.Load() != before+1 {
 			t.Fatalf("%s fallback failed: %v %s", choice.format, err, out)
 		}
 	}
 	forcedFormat = ""
-	decoded, _ := protocol.Decode(value)
+	_, _ = protocol.Decode(value)
 	state.mu.Lock()
-	entry := state.invitations[decoded.Secret]
-	entry.expires = time.Now().Add(-time.Second)
-	state.invitations[decoded.Secret] = entry
+	state.clientOwners[state.tokens[issued["client_token"].(string)]].expires = time.Now().Add(-time.Second)
 	state.mu.Unlock()
 	state.mu.Lock()
 	state.cleanupTokensLocked(time.Now())

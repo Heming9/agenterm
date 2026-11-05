@@ -100,7 +100,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	invitation := issued["invitation"].(string)
-	command, _ := installCommands(invitation)
+	command, _ := installCommands(issued["client_token"].(string))
 	cache := filepath.Join(root, "cache")
 	// Cancellation must happen before probing, creating a cache, or downloading.
 	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
@@ -130,7 +130,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command failed: %v\n%s", err, out)
 		}
-		if !strings.Contains(string(out), "arg=-invite invitation="+invitation+" consent=-consent-confirmed") {
+		if !strings.Contains(string(out), "arg=-token invitation="+issued["client_token"].(string)) {
 			t.Fatalf("unexpected client output: %s", out)
 		}
 		output := string(out)
@@ -138,7 +138,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 			t.Fatalf("missing or duplicate consent prompt: %s", output)
 		}
 		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[2/4]", "arg=-invite"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[2/4]", "arg=-token"} {
 			index := strings.Index(output, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", output)
@@ -192,16 +192,14 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
-	if err == nil || strings.Contains(string(out), "arg=-invite") {
+	if err == nil || strings.Contains(string(out), "arg=-token") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
 	}
-	// An expired invitation still launches the client with the original value.
+	// An expired token launches the client without credentials.
 	write(cached, client, 0o700)
-	decoded, _ := protocol.Decode(invitation)
+	_, _ = protocol.Decode(invitation)
 	state.mu.Lock()
-	entry := state.invitations[decoded.Secret]
-	entry.expires = time.Now().Add(-time.Second)
-	state.invitations[decoded.Secret] = entry
+	state.clientOwners[state.tokens[issued["client_token"].(string)]].expires = time.Now().Add(-time.Second)
 	state.cleanupTokensLocked(time.Now())
 	state.mu.Unlock()
 	cmd = exec.Command("sh", "-c", command)

@@ -19,7 +19,7 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-const controlVersion = "8"
+const controlVersion = "12"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {
@@ -140,11 +140,13 @@ type createRequest struct {
 type invitationRequest struct {
 	Identity requestIdentity
 	Secret   string
+	Consume  bool
 }
 
 type installerInvitation struct {
-	Token  string
-	Secret string
+	Token       string
+	Secret      string
+	DeviceToken bool
 }
 
 func registerControl[I, O any](mux *http.ServeMux, method string, f func(context.Context, I) (O, error)) {
@@ -246,18 +248,40 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 	registerControl(mux, "invitation", func(_ context.Context, in invitationRequest) (installerInvitation, error) {
 		secret := in.Secret
 		s.mu.Lock()
-		if len(secret) == installCodeLength {
-			secret = s.installCodes[secret]
+		var entry installerInvitation
+		var exists bool
+		if len(secret) == shortCodeLength {
+			entry.Token, exists = s.shortCodes.lookup(secret, time.Now())
+			if exists {
+				candidate, ok := s.tokens[entry.Token]
+				exists = ok && !s.multiDevice[candidate] && s.tokenUnexpiredLocked(candidate)
+			}
+		} else {
+			for token, candidate := range s.tokens {
+				if candidate == secret && s.tokenUnexpiredLocked(candidate) {
+					entry = installerInvitation{Token: token, DeviceToken: true}
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				invitation, ok := s.invitations[secret]
+				exists = ok && time.Now().Before(invitation.expires)
+				entry = installerInvitation{Token: invitation.token, Secret: secret}
+			}
 		}
-		entry, exists := s.invitations[secret]
-		s.mu.Unlock()
-		if status, err := s.authorize(in.Identity.request(), exists && time.Now().Before(entry.expires)); err != nil {
+		if status, err := s.authorize(in.Identity.request(), exists); err != nil {
+			s.mu.Unlock()
 			if status == http.StatusUnauthorized {
 				err = i18n.NewError("invitation.invalid.expired.or.already.used")
 			}
 			return installerInvitation{}, &controlError{Status: status, Message: err.Error()}
 		}
-		return installerInvitation{Token: entry.token, Secret: secret}, nil
+		if in.Consume && len(secret) == shortCodeLength {
+			delete(s.shortCodes, secret)
+		}
+		s.mu.Unlock()
+		return entry, nil
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setRuntimeIdentityHeaders(w.Header())

@@ -10,10 +10,10 @@ import (
 	"agenterm/internal/client"
 	"agenterm/internal/i18n"
 	"agenterm/internal/logview"
-	"agenterm/internal/protocol"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -70,20 +70,21 @@ type clientView struct {
 	empty                           *fyne.Container
 	scroll                          *container.Scroll
 
-	buffer     *logBuffer
-	logText    string
-	logSpans   []logSpan
-	decoder    logview.Decoder
-	stats      commandStats
-	cancel     context.CancelFunc
-	connected  bool
-	connecting bool
-	closed     bool
-	generation uint64
-	ticker     *time.Ticker
-	done       chan struct{}
-	invitation string
-	latency    time.Duration
+	buffer       *logBuffer
+	logText      string
+	logSpans     []logSpan
+	decoder      logview.Decoder
+	stats        commandStats
+	cancel       context.CancelFunc
+	connected    bool
+	connecting   bool
+	closed       bool
+	generation   uint64
+	ticker       *time.Ticker
+	done         chan struct{}
+	invitation   string
+	serverDialog dialog.Dialog
+	latency      time.Duration
 }
 
 func padded(object fyne.CanvasObject, top, bottom, left, right float32) *fyne.Container {
@@ -189,8 +190,77 @@ func newClientView(win fyne.Window) *clientView {
 }
 
 func (v *clientView) connect() {
+	if v.closed || v.connecting || v.connected {
+		return
+	}
 	value := strings.TrimSpace(v.token.Text)
+	if client.IsShortCode(value) {
+		if v.serverDialog != nil {
+			return
+		}
+		servers, err := client.ServerHistory()
+		if err != nil {
+			v.showConnectionError(tr("history.server.failed"))
+			return
+		}
+		if len(servers) == 0 {
+			v.showConnectionError(tr("history.server.empty"))
+			return
+		}
+		v.chooseServer(value, servers)
+		return
+	}
 	v.connectValue(value, value != "" && value == v.invitation)
+}
+
+// serverSelectionList allows keyboard navigation and dismissing the picker
+// without adding actions alongside the server choices.
+type serverSelectionList struct {
+	widget.List
+	highlighted widget.ListItemID
+	dismiss     func()
+}
+
+func (l *serverSelectionList) TypedKey(event *fyne.KeyEvent) {
+	switch event.Name {
+	case fyne.KeyEscape:
+		l.dismiss()
+	case fyne.KeyReturn, fyne.KeyEnter:
+		l.Select(l.highlighted)
+	default:
+		l.List.TypedKey(event)
+	}
+}
+
+func (v *clientView) chooseServer(code string, servers []string) {
+	var picker *dialog.CustomDialog
+	list := &serverSelectionList{}
+	list.Length = func() int { return len(servers) }
+	list.CreateItem = func() fyne.CanvasObject { return widget.NewLabel("") }
+	list.UpdateItem = func(id widget.ListItemID, item fyne.CanvasObject) { item.(*widget.Label).SetText(servers[id]) }
+	list.OnHighlighted = func(id widget.ListItemID) { list.highlighted = id }
+	list.OnSelected = func(id widget.ListItemID) {
+		if id < 0 || id >= len(servers) {
+			return
+		}
+		address, err := client.ShortCodeForServer(servers[id], code)
+		if err != nil {
+			picker.Hide()
+			v.showConnectionError(tr("history.server.choose"))
+			return
+		}
+		picker.Hide()
+		v.token.SetText(address)
+		v.connectValue(address, false)
+	}
+	list.ExtendBaseWidget(list)
+	picker = dialog.NewCustomWithoutButtons(tr("select.history.server"), list, v.window)
+	list.dismiss = picker.Hide
+	v.serverDialog = picker
+	picker.SetOnClosed(func() { v.serverDialog = nil })
+	picker.Resize(fyne.NewSize(440, float32(100+min(len(servers), 6)*40)))
+	picker.Show()
+	v.window.Canvas().Focus(list)
 }
 
 func (v *clientView) connectValue(value string, invitation bool) {
@@ -200,17 +270,17 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	if invitation {
 		v.invitation = value
 	}
-	decoded, err := protocol.Decode(value)
+	address, identifier, err := client.ConnectionAddress(value)
 	if err != nil {
 		v.showConnectionError(client.TokenValidationError().Error())
 		v.window.Canvas().Focus(v.token)
 		return
 	}
-	serverURL, _ := url.Parse(decoded.URL)
+	serverURL, _ := url.Parse(address)
 	// Show only the host, never the secret or any URL credentials/query string.
 	host := serverURL.Host
-	if decoded.Identifier != "" {
-		host += "/" + decoded.Identifier
+	if identifier != "" {
+		host += "/" + identifier
 	}
 	v.generation++
 	current := v.generation
@@ -239,6 +309,15 @@ func (v *clientView) connectValue(value string, invitation bool) {
 		hasConnected := false // Accessed only on the Fyne UI thread.
 		err := run(ctx, value, buffer, client.Callbacks{
 			Redeemed: func(token string) {
+				if target, id, err := client.ConnectionAddress(token); err == nil {
+					address = target
+					if targetURL, err := url.Parse(target); err == nil {
+						host = targetURL.Host
+						if id != "" {
+							host += "/" + id
+						}
+					}
+				}
 				fyne.Do(func() {
 					if !v.closed && current == v.generation {
 						v.invitation = ""
@@ -273,6 +352,7 @@ func (v *clientView) connectValue(value string, invitation bool) {
 				})
 			},
 			Connected: func() {
+				_ = client.RememberServer(address)
 				fyne.Do(func() {
 					if v.closed || current != v.generation || ctx.Err() != nil {
 						return

@@ -44,8 +44,11 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			entry := h.s.invitations[decoded.Secret]
 			ownerExpiry := h.s.clientOwners[h.s.tokens[created["client_token"].(string)]].expires
 			h.s.mu.Unlock()
-			if entry.expires.Before(before.Add(tc.want)) || entry.expires.After(after.Add(tc.want)) || !ownerExpiry.Equal(entry.expires) {
+			if entry.expires.Before(before.Add(tc.want)) || entry.expires.After(after.Add(tc.want)) || ownerExpiry.Before(entry.expires) || (!isMulti(tc.args) && ownerExpiry.Before(before.Add(shortCodeTTL))) {
 				t.Fatalf("invitation expiry %s, owner expiry %s, want lifetime %s", entry.expires, ownerExpiry, tc.want)
+			}
+			if isMulti(tc.args) && !ownerExpiry.Equal(entry.expires) {
+				t.Fatal("multi-device token expiry was extended for a nonexistent short code")
 			}
 			expires, err := time.Parse(time.RFC3339, created["expires_at"].(string))
 			if err != nil || !expires.Equal(entry.expires.Truncate(time.Second)) {
@@ -61,17 +64,19 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			h.s.mu.Lock()
 			h.s.cleanupTokensLocked(entry.expires.Add(-time.Nanosecond))
 			_, retained := h.s.invitations[decoded.Secret]
-			h.s.cleanupTokensLocked(entry.expires)
-			remaining := len(h.s.invitations) + len(h.s.installCodes) + len(h.s.tokens) + len(h.s.clientOwners)
+			h.s.cleanupTokensLocked(ownerExpiry)
+			remaining := len(h.s.invitations) + len(h.s.shortCodes) + len(h.s.tokens) + len(h.s.clientOwners)
 			h.s.mu.Unlock()
 			if !retained || remaining != 0 {
 				t.Fatalf("expiry cleanup: retained before=%v remaining at deadline=%d", retained, remaining)
 			}
-			for _, suffix := range []string{"", ".ps1"} {
-				w := httptest.NewRecorder()
-				h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+installCode(decoded.Secret)+suffix, nil))
-				if w.Code != http.StatusOK || strings.Contains(w.Body.String(), created["invitation"].(string)) {
-					t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
+			if code, ok := created["short_code"].(string); ok {
+				for _, suffix := range []string{"", ".ps1"} {
+					w := httptest.NewRecorder()
+					h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil))
+					if w.Code != http.StatusOK || strings.Contains(w.Body.String(), created["invitation"].(string)) {
+						t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
+					}
 				}
 			}
 			if _, err := invite.Redeem(context.Background(), created["invitation"].(string)); err == nil {
@@ -81,6 +86,8 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 	}
 }
 
+func isMulti(args map[string]any) bool { value, _ := args["multi_device"].(bool); return value }
+
 func TestCreateClientRejectsInvalidTimeout(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	for _, value := range []any{0, -1, 1.5, "60", maxInvitationTimeoutSeconds + 1} {
@@ -88,7 +95,7 @@ func TestCreateClientRejectsInvalidTimeout(t *testing.T) {
 	}
 	h.s.mu.Lock()
 	defer h.s.mu.Unlock()
-	if len(h.s.tokens)+len(h.s.invitations)+len(h.s.installCodes)+len(h.s.clientOwners) != 0 {
+	if len(h.s.tokens)+len(h.s.invitations)+len(h.s.shortCodes)+len(h.s.clientOwners) != 0 {
 		t.Fatal("invalid timeout created credentials")
 	}
 }
@@ -156,7 +163,7 @@ func TestCreateClientDisplayText(t *testing.T) {
 		}
 	}
 	sections := strings.Split(display, "\n\n")
-	if len(sections) != 5 || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token:\n"+result["client_token"].(string) {
+	if len(sections) != 6 || sections[3] != "Short Code:\n"+result["short_code"].(string) || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token:\n"+result["client_token"].(string) {
 		t.Fatalf("incorrect connection instructions order or line breaks: %s", display)
 	}
 	if strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
@@ -165,11 +172,12 @@ func TestCreateClientDisplayText(t *testing.T) {
 	for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
 		command := result[key].(string)
 		decoded, _ := protocol.Decode(result["invitation"].(string))
-		code := installCode(decoded.Secret)
+		code := result["short_code"].(string)
 		if !regexp.MustCompile(`^[A-Z0-9]{6}$`).MatchString(code) {
 			t.Fatalf("invalid invitation code: %q", code)
 		}
-		url := "https://example.com/agenterm/c/" + code
+		clientToken, _ := protocol.Decode(result["client_token"].(string))
+		url := "https://example.com/agenterm/c/" + clientToken.Secret
 		if key == "windows_powershell_command" {
 			url += ".ps1"
 			if !strings.HasPrefix(command, `powershell -NoP -c "iex(irm -TimeoutSec 15 `) {
@@ -201,6 +209,34 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 				if err := json.Unmarshal(data, &structured); err != nil {
 					t.Fatal(err)
 				}
+				var fields map[string]any
+				if err := json.Unmarshal(data, &fields); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := fields["short_code_url"]; ok {
+					t.Fatal("short_code_url must not be returned")
+				}
+				_, hasCode := fields["short_code"]
+				_, hasExpiry := fields["short_code_expires_at"]
+				if multi {
+					if hasCode || hasExpiry || structured.ShortCode != "" || strings.Contains(structured.DisplayText, "Short Code:") || strings.Contains(structured.DisplayText, "5. For clients") {
+						t.Fatal("multi-device output includes a short code")
+					}
+				} else {
+					if !hasCode || !hasExpiry || structured.ShortCode == "" {
+						t.Fatal("single-device output lacks short code or expiry")
+					}
+					expected := "Connection token:\n" + structured.ClientToken + "\n\nShort Code:\n" + structured.ShortCode
+					if !strings.Contains(structured.DisplayText, expected) {
+						t.Fatal("short code is not directly after the token")
+					}
+					if !strings.Contains(structured.DisplayText, "5. For clients that already know the server address, using the short code is recommended.\n\nInvitation validity:") {
+						t.Fatal("short code recommendation is not at the end of the usage instructions")
+					}
+					if strings.Contains(structured.DisplayText, "Client connection address (single use") {
+						t.Fatal("obsolete short-code URL section remains in display text")
+					}
+				}
 				if len(result.Content) != 1 || result.Content[0].(*mcp.TextContent).Text != structured.DisplayText {
 					t.Fatal("MCP text must contain exactly the connection instructions")
 				}
@@ -209,7 +245,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 					t.Fatalf("invalid English connection instructions: %s", display)
 				}
 				sections := strings.Split(display, "\n\n")
-				if (!multi && len(sections) != 5) || (multi && (len(sections) != 6 || !strings.HasPrefix(sections[5], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
+				if (!multi && len(sections) != 6) || (multi && (len(sections) != 6 || !strings.HasPrefix(sections[5], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
 					t.Fatalf("incorrect multi-device notice: %s", display)
 				}
 			})

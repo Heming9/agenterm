@@ -23,9 +23,31 @@ func acquireConnectionLock(serverURL string) (*os.File, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, i18n.NewError("client.connection.lock.failed", err)
 	}
-	u, err := url.Parse(serverURL)
+	key, err := connectionLockKey(serverURL)
 	if err != nil {
 		return nil, err
+	}
+	file, err := os.OpenFile(filepath.Join(directory, key+".lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, i18n.NewError("client.connection.lock.failed", err)
+	}
+	if err := tryConnectionLock(file); err != nil {
+		file.Close()
+		if connectionLockBusy(err) {
+			return nil, i18n.NewError("client.already.connected.to.server")
+		}
+		return nil, i18n.NewError("client.connection.lock.failed", err)
+	}
+	// Closing the handle releases the OS lock, including on process termination.
+	// Never unlink the file: another process could still hold its inode open.
+	return file, nil
+}
+
+// connectionLockKey identifies the connection endpoint independently of URL spelling.
+func connectionLockKey(serverURL string) (string, error) {
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		return "", err
 	}
 	port := u.Port()
 	if port == "" {
@@ -41,18 +63,5 @@ func acquireConnectionLock(serverURL string) (*os.File, error) {
 		address += u.Path
 	}
 	key := sha256.Sum256([]byte(address))
-	file, err := os.OpenFile(filepath.Join(directory, hex.EncodeToString(key[:])+".lock"), os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return nil, i18n.NewError("client.connection.lock.failed", err)
-	}
-	if err := tryConnectionLock(file); err != nil {
-		file.Close()
-		if connectionLockBusy(err) {
-			return nil, i18n.NewError("client.already.connected.to.server")
-		}
-		return nil, i18n.NewError("client.connection.lock.failed", err)
-	}
-	// Closing the handle releases the OS lock, including on process termination.
-	// Never unlink the file: another process could still hold its inode open.
-	return file, nil
+	return hex.EncodeToString(key[:]), nil
 }

@@ -70,7 +70,7 @@ var keyNormalizer = strings.NewReplacer("_", "", "-", "", ".", "")
 func sensitive(key string) bool {
 	key = strings.ToLower(keyNormalizer.Replace(key))
 	switch key {
-	case "authorization", "password", "passwd", "adminkey", "managementkey", "secret", "token", "clienttoken", "controltoken", "controlkey", "invitation", "installcode", "command", "args", "cwd", "input", "output", "stdout", "stderr", "env", "headers", "body", "payload":
+	case "authorization", "password", "passwd", "adminkey", "managementkey", "secret", "token", "clienttoken", "controltoken", "controlkey", "invitation", "installcode", "shortcode", "shortcodeurl", "command", "args", "cwd", "input", "output", "stdout", "stderr", "env", "headers", "body", "payload":
 		return true
 	}
 	return false

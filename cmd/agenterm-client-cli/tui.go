@@ -89,6 +89,9 @@ type tuiModel struct {
 	latency                 time.Duration
 	retryDelay              time.Duration
 	everConnected           bool
+	serverChoices           []string
+	serverIndex             int
+	selectingServer         bool
 }
 
 func newTUI(token string) *tuiModel {
@@ -125,14 +128,31 @@ func (m *tuiModel) send(generation uint64, e tuiEvent) {
 	}
 }
 func (m *tuiModel) connect() tea.Cmd {
-	t, err := protocol.Decode(strings.TrimSpace(m.input.Value()))
+	value := strings.TrimSpace(m.input.Value())
+	if client.IsShortCode(value) {
+		servers, err := client.ServerHistory()
+		if err != nil {
+			m.message = tr("history.server.failed")
+			return nil
+		}
+		if len(servers) == 0 {
+			m.message = tr("history.server.empty")
+			return nil
+		}
+		m.serverChoices, m.serverIndex, m.selectingServer, m.message = servers, 0, true, ""
+		return nil
+	}
+	address, identifier, err := client.ConnectionAddress(value)
 	if err != nil {
 		m.message = client.TokenValidationError().Error()
 		return nil
 	}
 	m.generation++
 	generation := m.generation
-	m.address = cleanText(t.ConnectionURL())
+	m.address = cleanText(address)
+	if identifier != "" {
+		m.address += "/" + identifier
+	}
 	m.message = ""
 	m.state = "connecting"
 	m.latency = -1
@@ -157,9 +177,14 @@ func (m *tuiModel) connect() tea.Cmd {
 	go func() {
 		defer connectionCancel()
 		err := run(connectionCtx, token, io.Discard, client.Callbacks{
-			Redeemed:     func(token string) { m.send(generation, tuiEvent{redeemed: token}) },
+			Redeemed: func(token string) {
+				if target, _, err := client.ConnectionAddress(token); err == nil {
+					address = target
+				}
+				m.send(generation, tuiEvent{redeemed: token})
+			},
 			Connecting:   func() { m.send(generation, tuiEvent{connecting: true}) },
-			Connected:    func() { m.send(generation, tuiEvent{connected: true}) },
+			Connected:    func() { _ = client.RememberServer(address); m.send(generation, tuiEvent{connected: true}) },
 			Reconnecting: func(e client.ReconnectEvent) { m.send(generation, tuiEvent{retry: &e}) },
 			Latency:      func(d time.Duration) { m.send(generation, tuiEvent{latency: &d}) },
 			Command:      func(e client.CommandEvent) { m.send(generation, tuiEvent{command: &e}) },
@@ -284,6 +309,30 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.selectingServer {
+			switch msg.String() {
+			case "up", "k":
+				if m.serverIndex > 0 {
+					m.serverIndex--
+				}
+			case "down", "j":
+				if m.serverIndex+1 < len(m.serverChoices) {
+					m.serverIndex++
+				}
+			case "esc", "ctrl+c":
+				m.selectingServer = false
+			case "enter":
+				address, err := client.ShortCodeForServer(m.serverChoices[m.serverIndex], m.input.Value())
+				m.selectingServer = false
+				if err != nil {
+					m.message = client.TokenValidationError().Error()
+					return m, nil
+				}
+				m.input.SetValue(address)
+				return m, m.connect()
+			}
+			return m, nil
+		}
 		if m.selection != nil {
 			if (msg.String() == "ctrl+c" || msg.String() == "ctrl+shift+c") && m.selection.dragged {
 				return m, m.copySelection()
@@ -324,6 +373,12 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitEvent()
 		}
 		if msg.redeemed != "" {
+			if target, identifier, err := client.ConnectionAddress(msg.redeemed); err == nil {
+				m.address = cleanText(target)
+				if identifier != "" {
+					m.address += "/" + identifier
+				}
+			}
 			m.input.SetValue(msg.redeemed)
 			m.invitation = ""
 		}
@@ -472,6 +527,19 @@ func (m *tuiModel) footerWithLeft(left string) string {
 }
 func (m *tuiModel) connectionView() string {
 	content := " " + tr("connection.token") + "\n " + m.input.View()
+	if m.selectingServer {
+		content += "\n\n " + tr("select.history.server")
+		available := max(1, m.viewport.Height-5)
+		start := max(0, m.serverIndex-available+1)
+		for i := start; i < len(m.serverChoices) && i < start+available; i++ {
+			marker := "  "
+			if i == m.serverIndex {
+				marker = "> "
+			}
+			content += "\n " + marker + cleanText(m.serverChoices[i])
+		}
+		content += "\n " + tr("history.server.select.help")
+	}
 	if m.message != "" {
 		content += "\n\n " + logStyles["error"].Render(m.message)
 	}

@@ -285,8 +285,8 @@ func TestTokenValidationMessages(t *testing.T) {
 	t.Setenv("AGENTERM_LANG", "zh-CN")
 	isolatedLockHome(t)
 	for _, tc := range []struct{ value, want string }{
-		{"", "无效的 Agenterm 令牌, 请检查格式"},
-		{"bad-token", "无效的 Agenterm 令牌, 请检查格式"},
+		{"", "连接令牌或短码地址无效，请检查格式。"},
+		{"bad-token", "连接令牌或短码地址无效，请检查格式。"},
 	} {
 		err := RunWithCallbacks(context.Background(), tc.value, io.Discard, Callbacks{})
 		if err == nil || err.Error() != tc.want {

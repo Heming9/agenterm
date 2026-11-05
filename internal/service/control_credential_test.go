@@ -27,12 +27,12 @@ func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
 	if !strings.HasPrefix(control, token+":") || strings.Contains(issued["display_text"].(string), control) || strings.Contains(issued["macos_linux_command"].(string), control) {
 		t.Fatal("control credential missing or exposed to device")
 	}
-	invitation, err := protocol.Decode(issued["invitation"].(string))
+	_, err = protocol.Decode(issued["invitation"].(string))
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+installCode(invitation.Secret), nil))
+	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string), nil))
 	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), strings.TrimPrefix(control, token+":")) {
 		t.Fatal("installer exposes control key")
 	}
@@ -85,17 +85,17 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	rawToken := issued["client_token"].(string)
 	control := issued["control_token"].(string)
 	invitation := issued["invitation"].(string)
-	decoded, err := protocol.Decode(invitation)
+	_, err := protocol.Decode(invitation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := http.Get(h.ts.URL + "/agenterm/c/" + installCode(decoded.Secret))
+	response, err := http.Get(h.ts.URL + "/agenterm/c/" + issued["short_code"].(string))
 	if err != nil {
 		t.Fatal(err)
 	}
 	script, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(script), invitation) || strings.Contains(string(script), strings.TrimPrefix(control, rawToken+":")) {
+	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(script), h.ts.URL+"/agenterm/c/"+issued["short_code"].(string)) || strings.Contains(string(script), strings.TrimPrefix(control, rawToken+":")) {
 		t.Fatal("installer did not deliver only the device invitation")
 	}
 	redeemed, err := invite.Redeem(context.Background(), invitation)
@@ -107,7 +107,7 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	connected := make(chan struct{}, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- remoteclient.RunWithCallbacks(ctx, redeemed, io.Discard, remoteclient.Callbacks{Connected: func() {
+		done <- remoteclient.RunWithCallbacks(ctx, h.ts.URL+"/agenterm/c/"+issued["short_code"].(string), io.Discard, remoteclient.Callbacks{Connected: func() {
 			select {
 			case connected <- struct{}{}:
 			default:

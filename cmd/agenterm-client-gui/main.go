@@ -43,7 +43,7 @@ func main() {
 	view.startUpdates()
 	if options.Token != "" {
 		view.token.SetText(options.Token)
-		view.connectValue(options.Token, false)
+		view.connect()
 	}
 	if invitation != "" {
 		endpoint, _, err := invite.Endpoint(invitation)

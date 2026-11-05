@@ -74,7 +74,7 @@ type runtimeState struct {
 	mu              sync.Mutex
 	limiter         authLimiter
 	invitations     map[string]invitation
-	installCodes    map[string]string // six-character installer code -> invitation secret
+	shortCodes      shortCodeStore // independently expiring code -> connection token
 	maxClientsPerIP int
 	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
 	nextClientOrder uint64
@@ -108,7 +108,7 @@ func (s *runtimeState) redeemInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !s.multiDevice[s.tokens[entry.token]] {
-		s.deleteInvitation(secret)
+		delete(s.invitations, secret)
 	}
 	s.mu.Unlock()
 	w.Header().Set("Cache-Control", "no-store")

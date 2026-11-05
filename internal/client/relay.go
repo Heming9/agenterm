@@ -57,7 +57,7 @@ func (c *connection) send(m protocol.Message) error {
 
 // TokenValidationError gives users a consistent message for malformed or empty credentials.
 func TokenValidationError() error {
-	return i18n.NewError("invalid.agenterm.token.format")
+	return i18n.NewError("invalid.agenterm.connection.address.or.token")
 }
 
 // RunWithCallbacks runs a connection with structured lifecycle notifications for
@@ -74,11 +74,11 @@ func RunInvitationWithCallbacks(ctx context.Context, invitation string, logWrite
 }
 
 func runWithCallbacks(ctx context.Context, token string, invitation bool, logWriter io.Writer, callbacks Callbacks) error {
-	t, err := protocol.Decode(token)
+	address, _, err := ConnectionAddress(token)
 	if err != nil {
-		return TokenValidationError()
+		return err
 	}
-	lock, err := acquireConnectionLock(t.URL)
+	lock, err := acquireConnectionLock(address)
 	if err != nil {
 		return err
 	}
@@ -86,18 +86,46 @@ func runWithCallbacks(ctx context.Context, token string, invitation bool, logWri
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if invitation {
-		token, err = invite.Redeem(ctx, token)
+	var t protocol.Token
+	if shortURL, ok := ShortCodeURL(token); ok && !invitation {
+		var resolved string
+		t, resolved, err = redeemShortCode(ctx, shortURL)
 		if err != nil {
 			return err
 		}
 		if callbacks.Redeemed != nil {
-			callbacks.Redeemed(token)
+			callbacks.Redeemed(resolved)
+		}
+	} else {
+		if invitation {
+			token, err = invite.Redeem(ctx, token)
+			if err != nil {
+				return err
+			}
+			if callbacks.Redeemed != nil {
+				callbacks.Redeemed(token)
+			}
 		}
 		t, err = protocol.Decode(token)
 		if err != nil {
+			return TokenValidationError()
+		}
+	}
+	selectedKey, err := connectionLockKey(address)
+	if err != nil {
+		return err
+	}
+	targetKey, err := connectionLockKey(t.URL)
+	if err != nil {
+		return err
+	}
+	if selectedKey != targetKey {
+		targetLock, err := acquireConnectionLock(t.URL)
+		if err != nil {
 			return err
 		}
+		defer targetLock.Close()
+		lock.Close()
 	}
 	return reconnect(ctx, t, logWriter, callbacks)
 }

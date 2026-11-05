@@ -33,7 +33,7 @@ func TestUnusedTokenCleanupWithAndWithoutQuota(t *testing.T) {
 				}
 			}
 			s.cleanupTokensLocked(s.clientOwners[decoded.Secret].expires)
-			if len(s.tokens)+len(s.clientOwners)+len(s.multiDevice)+len(s.invitations)+len(s.installCodes) != 0 {
+			if len(s.tokens)+len(s.clientOwners)+len(s.multiDevice)+len(s.invitations)+len(s.shortCodes) != 0 {
 				t.Fatalf("quota=%d redeemed=%v: expired token or associated state retained", quota, redeemed)
 			}
 		}
@@ -138,7 +138,7 @@ func TestTokenCleanupRunsWithoutNewRequests(t *testing.T) {
 		s.mu.Lock()
 		_, expiredRetained := s.tokens[issued["client_token"].(string)]
 		clean := !expiredRetained && len(s.tokens) == 1 && s.tokens["startup"] == "startup-secret" &&
-			len(s.clientOwners)+len(s.invitations)+len(s.installCodes)+len(s.multiDevice) == 0
+			len(s.clientOwners)+len(s.invitations)+len(s.shortCodes)+len(s.multiDevice) == 0
 		s.mu.Unlock()
 		if clean {
 			break
