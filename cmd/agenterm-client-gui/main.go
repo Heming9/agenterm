@@ -41,6 +41,11 @@ func main() {
 		win.Close()
 	})
 	view.startUpdates()
+	// Explicit startup credentials retain their existing persistent behavior;
+	// the selector applies to connections started from the form.
+	if options.Token != "" || invitation != "" {
+		view.modeSelect.SetSelected(tr("connection.mode.short.persistent"))
+	}
 	if options.Token != "" {
 		view.token.SetText(options.Token)
 		view.connect()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"agenterm/internal/client"
@@ -55,6 +56,7 @@ type clientView struct {
 	content fyne.CanvasObject
 
 	token                           *widget.Entry
+	modeSelect                      *widget.Select
 	connectButton, disconnectButton *prototypeButton
 	address, status, statistics     *uiText
 	inputRow, connectedRow          *fyne.Container
@@ -85,6 +87,7 @@ type clientView struct {
 	invitation   string
 	serverDialog dialog.Dialog
 	latency      time.Duration
+	temporary    bool
 }
 
 func padded(object fyne.CanvasObject, top, bottom, left, right float32) *fyne.Container {
@@ -100,7 +103,10 @@ func newClientView(win fyne.Window) *clientView {
 	v.token = widget.NewEntry()
 	v.token.SetPlaceHolder(tr("paste.the.connection.token.from.the.server"))
 	v.token.OnSubmitted = func(string) { v.connect() }
-	v.connectButton = newButton(tr("connect"), arrowIcon, func() {
+	v.modeSelect = &widget.Select{Options: []string{tr("connection.mode.short.temporary"), tr("connection.mode.short.persistent")}, PlaceHolder: tr("connection.mode.short.persistent")}
+	v.modeSelect.ExtendBaseWidget(v.modeSelect)
+	v.modeSelect.SetSelected(tr("connection.mode.short.temporary"))
+	v.connectButton = newButton(tr("connect"), nil, func() {
 		if v.connecting {
 			v.disconnect()
 		} else {
@@ -118,12 +124,14 @@ func newClientView(win fyne.Window) *clientView {
 	connectControl := container.NewThemeOverride(v.connectButton, buttonTheme{newMonochromeTheme(false)})
 	disconnectControl := container.NewThemeOverride(v.disconnectButton, buttonTheme{newMonochromeTheme(false)})
 	tokenControl := container.NewThemeOverride(v.token, entryTheme{Theme: newMonochromeTheme(false), height: 38})
-	v.inputRow = container.NewBorder(nil, nil, nil, padded(slot(connectControl, 110, 38, false), 0, 0, 8, 0), tokenControl)
+	modeControl := container.NewThemeOverride(v.modeSelect, newMonochromeTheme(false))
+	actions := container.New(layout.NewCustomPaddedHBoxLayout(4), slot(modeControl, 0, 38, false), slot(connectControl, 70, 38, false))
+	v.inputRow = container.NewBorder(nil, nil, nil, padded(actions, 0, 0, 8, 0), tokenControl)
 	v.connectedRow = container.NewBorder(nil, nil, nil,
 		container.New(layout.NewCustomPaddedHBoxLayout(14), v.address, container.NewCenter(v.statusBadge),
 			slot(newSurface(disconnectControl, 7), 130, 38, false)), nil)
 	v.connectedRow.Hide()
-	connection := container.NewStack(slot(v.inputRow, 440, 38, true), v.connectedRow)
+	connection := container.NewStack(slot(v.inputRow, 0, 38, true), v.connectedRow)
 
 	logo := canvas.NewImageFromResource(fyne.NewStaticResource("app-icon.png", appIcon))
 	logo.FillMode = canvas.ImageFillContain
@@ -135,7 +143,7 @@ func newClientView(win fyne.Window) *clientView {
 		brandTitle = container.New(layout.NewCustomPaddedVBoxLayout(-6), title, versionLabel)
 	}
 	brand := padded(container.New(layout.NewCustomPaddedHBoxLayout(10),
-		container.NewCenter(slot(logo, 32, 32, false)), brandTitle), 0, 0, 0, 24)
+		container.NewCenter(slot(logo, 32, 32, false)), brandTitle), 0, 0, 0, 12)
 	v.header = container.NewBorder(nil, nil, brand, nil, connection)
 	v.connectionError = widget.NewLabel("")
 	v.connectionError.Importance = widget.DangerImportance
@@ -292,6 +300,9 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	v.connectButton.SetIcon(theme.CancelIcon())
 	v.connectButton.Importance = widget.MediumImportance
 	v.token.Disable()
+	v.modeSelect.Disable()
+	v.temporary = v.modeSelect.Selected == tr("connection.mode.short.temporary")
+	temporary := v.temporary
 	buffer := &logBuffer{}
 	v.buffer = buffer
 	v.decoder = logview.Decoder{}
@@ -307,7 +318,14 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	go func() {
 		defer stop()
 		hasConnected := false // Accessed only on the Fyne UI thread.
+		var idleExpired atomic.Bool
+		idleTimeout := time.Duration(0)
+		if temporary {
+			idleTimeout = 5 * time.Minute
+		}
 		err := run(ctx, value, buffer, client.Callbacks{
+			IdleTimeout:      idleTimeout,
+			IdleDisconnected: func() { idleExpired.Store(true) },
 			Redeemed: func(token string) {
 				if target, id, err := client.ConnectionAddress(token); err == nil {
 					address = target
@@ -398,13 +416,17 @@ func (v *clientView) connectValue(value string, invitation bool) {
 			v.status.SetText(tr("disconnected"))
 			v.cancel = nil
 			v.connectButton.SetText(tr("connect"))
-			v.connectButton.SetIcon(arrowIcon)
+			v.connectButton.SetIcon(nil)
 			v.connectButton.Importance = widget.HighImportance
 			v.connectButton.Enable()
 			v.token.Enable()
+			v.modeSelect.Enable()
 			v.connectedRow.Hide()
 			v.inputRow.Show()
-			if err != nil {
+			if idleExpired.Load() {
+				v.showConnectionError(tr("connection.idle.disconnected"))
+				fmt.Fprintln(buffer, "\n"+tr("connection.idle.disconnected"))
+			} else if err != nil {
 				v.showConnectionError(tr("connection.ended") + i18n.Localize(err, uiLanguage))
 				fmt.Fprintf(buffer, "\n%s%v\n", tr("connection.ended"), i18n.Localize(err, uiLanguage))
 			} else if wasConnected {
@@ -430,7 +452,11 @@ func (v *clientView) showConnecting(host, status string) {
 
 func (v *clientView) setLatency(d time.Duration) {
 	v.latency = d
-	status := tr("connected")
+	mode := "connected.persistent"
+	if v.temporary {
+		mode = "connected.temporary"
+	}
+	status := "●  " + tr(mode)
 	if d >= 0 {
 		status += fmt.Sprintf(" · %dms", max(1, d.Milliseconds()))
 	}

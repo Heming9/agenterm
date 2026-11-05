@@ -62,11 +62,15 @@ func TestTUIShortCodeOnlyContactsSelectedServer(t *testing.T) {
 	m := newTUI("ABC123")
 	defer m.cancel()
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
-	m.connect()
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.selectingServer || len(m.serverChoices) != 2 || first.Load() != 0 || second.Load() != 0 {
 		t.Fatal("short code did not prompt without sending")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.selectingMode || first.Load() != 0 || second.Load() != 0 {
+		t.Fatal("short code must select a mode before contacting the server")
+	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	select {
 	case <-hit:

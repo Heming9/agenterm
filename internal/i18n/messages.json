@@ -203,6 +203,38 @@
     "en": "Connected",
     "zh-CN": "已连接"
   },
+  "connected.temporary": {
+    "en": "Connected (temporary)",
+    "zh-CN": "已连接 (临时)"
+  },
+  "connected.persistent": {
+    "en": "Connected (persistent)",
+    "zh-CN": "已连接 (持久)"
+  },
+  "connection.mode.temporary": {
+    "en": "Temporary",
+    "zh-CN": "临时连接"
+  },
+  "connection.mode.persistent": {
+    "en": "Persistent",
+    "zh-CN": "持久连接"
+  },
+  "connection.mode.short.temporary": {
+    "en": "Temporary",
+    "zh-CN": "临时"
+  },
+  "connection.mode.short.persistent": {
+    "en": "Persistent",
+    "zh-CN": "持久"
+  },
+  "connection.mode.select": {
+    "en": "Choose connection mode:",
+    "zh-CN": "选择连接模式："
+  },
+  "connection.mode.help": {
+    "en": "Arrow keys select  ·  Enter connect  ·  Esc back",
+    "zh-CN": "方向键选择  ·  Enter 连接  ·  Esc 返回"
+  },
   "3.4.connecting": {
     "en": "[3/4] Connecting…",
     "zh-CN": "[3/4] 正在连接…"

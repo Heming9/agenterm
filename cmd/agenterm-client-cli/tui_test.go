@@ -42,7 +42,7 @@ func TestInvitationProgressRequiresConnectedEvent(t *testing.T) {
 		t.Fatalf("successful handshake missing progress: %s", m.View())
 	}
 	header := ansi.Strip(strings.Split(m.View(), "\n")[0])
-	if !strings.HasSuffix(header, "已连接 ") || strings.Contains(header, "[4/4]") {
+	if !strings.HasSuffix(header, "已连接 (持久) ") || strings.Contains(header, "[4/4]") {
 		t.Fatalf("connected header still shows progress: %q", header)
 	}
 }
@@ -70,7 +70,7 @@ func TestLatencyAndReconnectPreserveHistory(t *testing.T) {
 	d := 42 * time.Millisecond
 	m.Update(tuiEvent{latency: &d})
 	header := ansi.Strip(strings.Split(m.View(), "\n")[0])
-	if !strings.HasSuffix(header, "已连接 ") || strings.Contains(header, "42ms") || !strings.HasSuffix(ansi.Strip(m.connectedFooter()), "0 条 · 42ms") {
+	if !strings.HasSuffix(header, "已连接 (持久) ") || strings.Contains(header, "42ms") || !strings.HasSuffix(ansi.Strip(m.connectedFooter()), "0 条 · 42ms") {
 		t.Fatalf("header=%q footer=%q", header, ansi.Strip(m.connectedFooter()))
 	}
 	m.appendLog("output", "saved output\n")
@@ -206,12 +206,71 @@ func TestHeaderRightAlignmentAndNarrowWidth(t *testing.T) {
 		if ansi.StringWidth(header) > width {
 			t.Errorf("width %d: %q overflows", width, header)
 		}
-		if !strings.HasSuffix(header, "已连接 ") {
+		if !strings.HasSuffix(strings.TrimSpace(header), "已连接 (持久)") {
 			t.Errorf("width %d: status not right aligned: %q", width, header)
 		}
-		if width == 80 && !strings.Contains(header, m.address+"  ·  已连接") {
+		if width == 80 && !strings.Contains(header, m.address+"  ·  已连接 (持久)") {
 			t.Errorf("address and status order: %q", header)
 		}
+	}
+}
+
+func TestConnectedHeaderShowsConnectionMode(t *testing.T) {
+	m := newTUI("")
+	defer m.cancel()
+	m.width = 80
+	m.state = "connected"
+	for _, tc := range []struct {
+		temporary bool
+		want      string
+	}{
+		{true, "已连接 (临时)"},
+		{false, "已连接 (持久)"},
+	} {
+		m.temporary = tc.temporary
+		header := ansi.Strip(strings.Split(m.View(), "\n")[0])
+		if !strings.HasSuffix(strings.TrimSpace(header), tc.want) {
+			t.Errorf("temporary=%v: header %q, want %q", tc.temporary, header, tc.want)
+		}
+	}
+}
+
+func TestManualConnectionModeSelection(t *testing.T) {
+	token, err := protocol.Encode(protocol.Token{URL: "ws://127.0.0.1:1/agenterm/client", Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		move      bool
+		temporary bool
+	}{{"temporary default", false, true}, {"persistent", true, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTUI(token)
+			defer m.cancel()
+			m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+			m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if !m.selectingMode || m.state != "disconnected" || m.modeIndex != 0 {
+				t.Fatal("manual connect must select a mode before connecting")
+			}
+			if !strings.Contains(ansi.Strip(m.View()), "临时连接") || !strings.Contains(ansi.Strip(m.View()), "持久连接") {
+				t.Fatal("connection modes are not visible")
+			}
+			if tc.move {
+				m.Update(tea.KeyMsg{Type: tea.KeyDown})
+			}
+			m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if m.selectingMode || m.state != "connecting" || m.temporary != tc.temporary {
+				t.Fatalf("incorrect selection: state=%s temporary=%v", m.state, m.temporary)
+			}
+		})
+	}
+	m := newTUI(token)
+	defer m.cancel()
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.selectingMode || m.state != "disconnected" || m.input.Value() != token {
+		t.Fatal("escape should return to the connection input")
 	}
 }
 

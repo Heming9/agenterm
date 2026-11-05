@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"image/color"
 	"image/png"
@@ -18,6 +19,7 @@ import (
 
 	"agenterm/internal/client"
 	"agenterm/internal/logview"
+	"agenterm/internal/protocol"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
@@ -42,7 +44,7 @@ func TestConnectionLatencyAndReconnectStatus(t *testing.T) {
 	v.setLatency(42 * time.Millisecond)
 	fmt.Fprint(v.buffer, "connection history\n")
 	v.flushLogs()
-	if !strings.HasSuffix(v.status.Text, "已连接 · 42ms") {
+	if !strings.HasSuffix(v.status.Text, "已连接 (持久) · 42ms") {
 		t.Fatal(v.status.Text)
 	}
 	capture := func(name string) {
@@ -71,6 +73,85 @@ func TestConnectionLatencyAndReconnectStatus(t *testing.T) {
 	test.Tap(v.disconnectButton)
 	if ctx.Err() == nil || v.latency >= 0 {
 		t.Fatal("cancel did not stop reconnection")
+	}
+}
+
+func TestConnectionModeSelector(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(newMonochromeTheme(false))
+	token, err := protocol.Encode(protocol.Token{URL: "ws://127.0.0.1:1/agenterm/client", Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		selected  string
+		temporary bool
+		status    string
+	}{
+		{tr("connection.mode.short.temporary"), true, "已连接 (临时)"},
+		{tr("connection.mode.short.persistent"), false, "已连接 (持久)"},
+	} {
+		w := a.NewWindow("Agenterm")
+		v := newClientView(w)
+		w.SetContent(v.content)
+		if v.modeSelect.Selected != tr("connection.mode.short.temporary") {
+			t.Fatal("temporary mode should be selected by default")
+		}
+		v.modeSelect.SetSelected(tc.selected)
+		v.temporary = tc.temporary
+		v.setLatency(-1)
+		if !strings.HasSuffix(v.status.Text, tc.status) {
+			t.Fatalf("incorrect connection status %q", v.status.Text)
+		}
+		v.temporary = !tc.temporary
+		v.token.SetText(token)
+		v.connect()
+		if !v.connecting || v.temporary != tc.temporary || !v.modeSelect.Disabled() {
+			t.Fatalf("mode %q was not applied to the connection", tc.selected)
+		}
+		v.close()
+		w.Close()
+	}
+}
+
+func TestConnectionFormLayout(t *testing.T) {
+	oldLanguage := uiLanguage
+	defer func() { uiLanguage = oldLanguage }()
+	for _, language := range []string{"zh-CN", "en"} {
+		t.Run(language, func(t *testing.T) {
+			uiLanguage = language
+			a := test.NewApp()
+			defer a.Quit()
+			a.Settings().SetTheme(newMonochromeTheme(false))
+			w := a.NewWindow("Agenterm")
+			defer w.Close()
+			w.SetPadded(false)
+			v := newClientView(w)
+			defer v.close()
+			w.SetContent(v.content)
+			w.Resize(fyne.NewSize(700, 420))
+			v.modeSelect.SetSelected(tr("connection.mode.short.persistent"))
+			if v.token.Size().Width < 200 {
+				t.Fatalf("token input is too narrow: %.0f", v.token.Size().Width)
+			}
+			if v.modeSelect.Size().Width < v.modeSelect.MinSize().Width {
+				t.Fatalf("mode selector is too narrow: %.0f < %.0f", v.modeSelect.Size().Width, v.modeSelect.MinSize().Width)
+			}
+			if path := os.Getenv("AGENTERM_SCREENSHOTS"); path != "" {
+				if err := os.MkdirAll(path, 0755); err != nil {
+					t.Fatal(err)
+				}
+				f, err := os.Create(filepath.Join(path, "client-form-"+language+".png"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer f.Close()
+				if err := png.Encode(f, w.Canvas().Capture()); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
@@ -158,6 +239,9 @@ func TestCommandStatisticsAndClear(t *testing.T) {
 			}
 		}
 		capture("client-disconnected")
+		win.Resize(fyne.NewSize(700, 420))
+		capture("client-disconnected-compact")
+		win.Resize(fyne.NewSize(960, 640))
 		v.showConnectionError("Token 格式不正确，请粘贴 Server 生成的完整 Token。")
 		capture("client-error")
 		v.connectionError.Hide()

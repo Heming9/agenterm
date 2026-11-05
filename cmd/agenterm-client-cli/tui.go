@@ -93,6 +93,9 @@ type tuiModel struct {
 	serverChoices           []string
 	serverIndex             int
 	selectingServer         bool
+	selectModeAfterServer   bool
+	selectingMode           bool
+	modeIndex               int
 }
 
 func newTUI(token string) *tuiModel {
@@ -128,6 +131,24 @@ func (m *tuiModel) send(generation uint64, e tuiEvent) {
 	case m.events <- e:
 	case <-m.ctx.Done():
 	}
+}
+func (m *tuiModel) beginConnect() tea.Cmd {
+	value := strings.TrimSpace(m.input.Value())
+	if client.IsShortCode(value) {
+		m.selectModeAfterServer = true
+		cmd := m.connect()
+		if !m.selectingServer {
+			m.selectModeAfterServer = false
+		}
+		return cmd
+	}
+	if _, _, err := client.ConnectionAddress(value); err != nil {
+		m.message = client.TokenValidationError().Error()
+		return nil
+	}
+	m.selectingMode, m.modeIndex, m.message = true, 0, ""
+	m.input.Blur()
+	return nil
 }
 func (m *tuiModel) connect() tea.Cmd {
 	value := strings.TrimSpace(m.input.Value())
@@ -176,10 +197,11 @@ func (m *tuiModel) connect() tea.Cmd {
 	}
 	connectionCtx, connectionCancel := context.WithCancel(m.ctx)
 	m.connectionCancel = connectionCancel
+	temporary := m.temporary
 	go func() {
 		defer connectionCancel()
 		idleTimeout := time.Duration(0)
-		if m.temporary {
+		if temporary {
 			idleTimeout = 5 * time.Minute
 		}
 		idleExpired := false
@@ -321,6 +343,22 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.selectingMode {
+			switch msg.String() {
+			case "left", "up":
+				m.modeIndex = 0
+			case "right", "down":
+				m.modeIndex = 1
+			case "esc", "ctrl+c":
+				m.selectingMode = false
+				m.input.Focus()
+			case "enter":
+				m.selectingMode = false
+				m.temporary = m.modeIndex == 0
+				return m, m.connect()
+			}
+			return m, nil
+		}
 		if m.selectingServer {
 			switch msg.String() {
 			case "up", "k":
@@ -333,6 +371,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "esc", "ctrl+c":
 				m.selectingServer = false
+				m.selectModeAfterServer = false
 			case "enter":
 				address, err := client.ShortCodeForServer(m.serverChoices[m.serverIndex], m.input.Value())
 				m.selectingServer = false
@@ -341,6 +380,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.input.SetValue(address)
+				if m.selectModeAfterServer {
+					m.selectModeAfterServer = false
+					return m, m.beginConnect()
+				}
 				return m, m.connect()
 			}
 			return m, nil
@@ -378,7 +421,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.state == "disconnected" && msg.String() == "enter" {
-			return m, m.connect()
+			return m, m.beginConnect()
 		}
 	case tuiEvent:
 		if msg.generation != m.generation {
@@ -491,7 +534,10 @@ func (m *tuiModel) view() string {
 		status = tr("connecting")
 	}
 	if m.state == "connected" {
-		status = tr("connected.2")
+		status = tr("connected.persistent")
+		if m.temporary {
+			status = tr("connected.temporary")
+		}
 	}
 	if m.state == "reconnecting" {
 		status = fmt.Sprintf(tr("connection.retry.status"), int(m.retryDelay.Seconds()))
@@ -511,6 +557,9 @@ func (m *tuiModel) view() string {
 	if m.state == "disconnected" {
 		content = m.connectionView()
 		help = "\n " + tr("enter.connect.ctrl.c.quit")
+		if m.selectingMode {
+			help = "\n " + tr("connection.mode.help")
+		}
 	}
 	line := strings.Repeat("─", max(1, m.width-2))
 	if m.selection != nil && m.selection.dragged {
@@ -539,6 +588,21 @@ func (m *tuiModel) footerWithLeft(left string) string {
 }
 func (m *tuiModel) connectionView() string {
 	content := " " + tr("connection.token") + "\n " + m.input.View()
+	if m.selectingMode {
+		choices := []string{tr("connection.mode.temporary"), tr("connection.mode.persistent")}
+		for i := range choices {
+			if i == m.modeIndex {
+				choices[i] = statusStyles["connected"].Reverse(true).Render(" ▶ " + choices[i] + " ")
+			} else {
+				choices[i] = "   " + choices[i] + " "
+			}
+		}
+		separator := "   "
+		if m.cellWidth(strings.Join(choices, separator))+1 > m.viewport.Width {
+			separator = "\n "
+		}
+		content += "\n\n " + tr("connection.mode.select") + "\n " + strings.Join(choices, separator)
+	}
 	if m.selectingServer {
 		content += "\n\n " + tr("select.history.server")
 		available := max(1, m.viewport.Height-5)
