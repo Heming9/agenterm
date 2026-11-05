@@ -10,49 +10,6 @@ on:
         description: 'The caller already passed Build checks for source_ref'
         type: boolean
         default: false
-  workflow_dispatch:
-  pull_request:
-    paths:
-      - 'tools/p2p-cli/**'
-      - 'internal/p2p/**'
-      - 'internal/client/**'
-      - 'internal/protocol/**'
-      - 'internal/service/**'
-      - 'internal/components/**'
-      - 'internal/installer/**'
-      - 'cmd/agenterm-pack/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'scripts/build_components.py'
-      - 'scripts/build_p2p_cli.py'
-      - 'scripts/p2p_cache.py'
-      - 'scripts/build_server.py'
-      - 'scripts/test_*.py'
-      - 'scripts/release/**'
-      - '.github/workflows/p2p-cli.yml'
-      - '.github/workflows/release.yml'
-      - '.github/workflows/checks.yml'
-  push:
-    paths:
-      - 'tools/p2p-cli/**'
-      - 'internal/p2p/**'
-      - 'internal/client/**'
-      - 'internal/protocol/**'
-      - 'internal/service/**'
-      - 'internal/components/**'
-      - 'internal/installer/**'
-      - 'cmd/agenterm-pack/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'scripts/build_components.py'
-      - 'scripts/build_p2p_cli.py'
-      - 'scripts/p2p_cache.py'
-      - 'scripts/build_server.py'
-      - 'scripts/test_*.py'
-      - 'scripts/release/**'
-      - '.github/workflows/p2p-cli.yml'
-      - '.github/workflows/release.yml'
-      - '.github/workflows/checks.yml'
 
 permissions:
   contents: read
