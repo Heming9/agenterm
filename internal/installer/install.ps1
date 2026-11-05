@@ -129,9 +129,15 @@ try {
     }
     Say 'installer.client.verified'
   }
-  if ($Invitation) {
-    & $program -invite $Invitation -consent-confirmed
-  } else {
-    & $program -token=
-  }
+  # Keep the client in the language used for the authorization prompt, even
+  # when Windows display language and regional format are different.
+  $previousLanguage = $env:AGENTERM_LANG
+  try {
+    $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
+    if ($Invitation) {
+      & $program -invite $Invitation -consent-confirmed
+    } else {
+      & $program -token=
+    }
+  } finally { $env:AGENTERM_LANG = $previousLanguage }
 } finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }

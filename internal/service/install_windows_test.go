@@ -24,7 +24,7 @@ func TestPowerShellInvitationInstaller(t *testing.T) {
 	source := filepath.Join(root, "main.go")
 	if err := os.WriteFile(source, []byte(`package main
 import ("fmt"; "os")
-func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invitation=%s consent=%s\n", args[0], args[1], args[2]) }
+func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invitation=%s consent=%s lang=%s\n", args[0], args[1], args[2], os.Getenv("AGENTERM_LANG")) }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +73,7 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	value := issued["invitation"].(string)
 	_, command := installCommands(value)
 	forcedFormat := ""
+	customPrefix := ""
 	runWithInput := func(input string) (string, error) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -92,7 +93,7 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 			t.Fatalf("unexpected PowerShell launcher: %s", command)
 		}
 		script = strings.TrimSuffix(script, `"`)
-		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+prefix+script)
+		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+customPrefix+prefix+script+`; Write-Output ("restored-lang=" + $env:AGENTERM_LANG)`)
 		// CI runs under PowerShell 7. Let Windows PowerShell construct its own
 		// module path instead of trying to load the inherited PowerShell 7 modules.
 		for _, value := range os.Environ() {
@@ -138,6 +139,15 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	if archiveRequests.Load() != 1 {
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())
 	}
+	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; [Threading.Thread]::CurrentThread.CurrentCulture = 'zh-CN'; $env:AGENTERM_LANG = 'auto'; `
+	if out, err := run(); err != nil || !strings.Contains(out, "Allow connection?") || !strings.Contains(out, "lang=en") || !strings.Contains(out, "restored-lang=auto") {
+		t.Fatalf("display language differs from regional format: %v\n%s", err, out)
+	}
+	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $env:AGENTERM_LANG = 'zh-CN'; `
+	if out, err := run(); err != nil || !strings.Contains(out, "是否允许连接？") || !strings.Contains(out, "lang=zh-CN") || !strings.Contains(out, "restored-lang=zh-CN") {
+		t.Fatalf("explicit language override: %v\n%s", err, out)
+	}
+	customPrefix = ""
 	cached := filepath.Join(root, "local", "Agenterm", "cache", installerTestTag, "windows-"+runtime.GOARCH, name)
 	if err := os.WriteFile(cached, []byte("corrupted"), 0o600); err != nil {
 		t.Fatal(err)
