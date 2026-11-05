@@ -171,6 +171,7 @@ jobs:
 
   distribution:
     needs: native
+    if: always() && !cancelled() && needs.native.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
