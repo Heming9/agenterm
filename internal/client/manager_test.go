@@ -274,10 +274,12 @@ func TestEOFWaitEndsWithProcess(t *testing.T) {
 func TestCommandCallbackCanReadAndExecute(t *testing.T) {
 	var m *Manager
 	done := make(chan error, 1)
+	firstReturned := make(chan struct{})
 	m = NewManager(io.Discard, TerminalCallbacks{Command: func(e CommandEvent) {
 		if !e.Done || e.Command != "echo first" {
 			return
 		}
+		<-firstReturned
 		if _, err := m.List(context.Background()); err != nil {
 			done <- err
 			return
@@ -289,7 +291,11 @@ func TestCommandCallbackCanReadAndExecute(t *testing.T) {
 		done <- err
 	}})
 	t.Cleanup(func() { m.Close(); m.WaitCallbacks() })
-	runAPI(t, m, ExecuteRequest{Setup: &Setup{SessionID: "chain"}, Command: "echo first"})
+	_, firstErr := m.Execute(context.Background(), ExecuteRequest{Setup: &Setup{SessionID: "chain"}, Command: "echo first"})
+	close(firstReturned)
+	if firstErr != nil {
+		t.Fatal(firstErr)
+	}
 	select {
 	case err := <-done:
 		if err != nil {
