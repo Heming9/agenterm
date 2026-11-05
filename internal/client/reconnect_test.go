@@ -280,3 +280,25 @@ func TestRejectServerWithoutClientAPI(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenValidationMessages(t *testing.T) {
+	t.Setenv("AGENTERM_LANG", "zh-CN")
+	isolatedLockHome(t)
+	for _, tc := range []struct{ value, want string }{
+		{"", "无效的 Agenterm 令牌, 请检查格式"},
+		{"bad-token", "无效的 Agenterm 令牌, 请检查格式"},
+	} {
+		err := RunWithCallbacks(context.Background(), tc.value, io.Discard, Callbacks{})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("token %q: %v", tc.value, err)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	err := RunWithCallbacks(context.Background(), connectionToken(t, server.URL, 1), io.Discard, Callbacks{})
+	if err == nil || err.Error() != "无效或已过期的 Agenterm 令牌" {
+		t.Fatalf("rejected token: %v", err)
+	}
+}

@@ -163,7 +163,7 @@ func TestOnlyNamespacedRoutesAreExposed(t *testing.T) {
 		{"GET", "/agenterm/client", 401},
 		{"GET", "/agenterm/invite/redeem", 405},
 		{"GET", "/agenterm/downloads/v1.2.3/SHA256SUMS", 200},
-		{"GET", "/agenterm/c/unknown", 401},
+		{"GET", "/agenterm/c/unknown", 404},
 		{"POST", "/mcp", 404},
 		{"GET", "/client", 404},
 		{"POST", "/invite/redeem", 404},

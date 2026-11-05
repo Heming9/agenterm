@@ -151,12 +151,7 @@ func TestTUIFoldMouseBoundsAndClear(t *testing.T) {
 	}
 	clickTUILog(t, m, "▸ first")
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	m.Update(tea.MouseMsg{X: 0, Y: 2, Button: tea.MouseButtonLeft})
-	if m.logText() != "" || len(m.folds) != 0 || m.viewport.YOffset != 0 {
-		t.Fatal("clear retained stale folding state")
-	}
-	m.appendLog("output", "fresh\nnew\n")
-	if view := ansi.Strip(m.viewport.View()); !strings.Contains(view, "▸ fresh") || strings.Contains(view, "new") {
-		t.Fatalf("fresh output should start collapsed:\n%s", view)
+	if !strings.Contains(m.logText(), "first") || len(m.folds) == 0 {
+		t.Fatal("c should preserve history and folding state")
 	}
 }

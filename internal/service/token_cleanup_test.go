@@ -82,8 +82,8 @@ func TestMultiDeviceTokenOfflineExpiryAndReconnect(t *testing.T) {
 	second.Close()
 	expires := waitForClients(0)
 	disconnectedAfter := time.Now()
-	if expires.Before(disconnectedBefore.Add(30*time.Minute)) || expires.After(disconnectedAfter.Add(30*time.Minute)) {
-		t.Fatalf("offline token must expire 30 minutes after disconnection: %s", expires)
+	if expires.Before(disconnectedBefore.Add(3*time.Minute)) || expires.After(disconnectedAfter.Add(3*time.Minute)) {
+		t.Fatalf("offline token must expire 3 minutes after disconnection: %s", expires)
 	}
 	h.s.mu.Lock()
 	h.s.cleanupTokensLocked(expires.Add(-time.Nanosecond))
@@ -148,4 +148,41 @@ func TestTokenCleanupRunsWithoutNewRequests(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func TestOfflineExpiryRejectedBeforeCleanup(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	token := h.create(t, false)
+	decoded, err := protocol.Decode(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, _ := h.connect(t, token, "expiry")
+	ws.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		h.s.mu.Lock()
+		owner := h.s.clientOwners[decoded.Secret]
+		offline := !h.s.hasClientLocked(decoded.Secret)
+		if offline {
+			owner.expires = time.Now().Add(-time.Second)
+		}
+		h.s.mu.Unlock()
+		if offline {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("client did not disconnect")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	conn, response, err := h.dial(token, "expired-before-cleanup")
+	if err == nil {
+		conn.Close()
+		t.Fatal("expired token was accepted before cleanup")
+	}
+	if response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized, got %v, %v", response, err)
+	}
+	response.Body.Close()
 }

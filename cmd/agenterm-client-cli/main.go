@@ -24,15 +24,22 @@ func tr(key string) string { return i18n.Text(cliLanguage, key) }
 var progressConnected = tr("4.4.connected")
 
 func main() {
-	options, err := client.ParseOptions(flag.NewFlagSet(os.Args[0], flag.ExitOnError), os.Args[1:], true, tr)
+	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	options, err := client.ParseOptions(flags, os.Args[1:], true, tr)
 	if err != nil {
 		log.Fatal(err)
 	}
+	tokenProvided := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "token" {
+			tokenProvided = true
+		}
+	})
 	token := options.Token
 	if options.Invitation != "" {
 		endpoint, _, err := invite.Endpoint(options.Invitation)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(client.TokenValidationError())
 		}
 		if !options.ConsentConfirmed {
 			fmt.Printf(tr("remote.control.authorization.prompt"), strings.TrimSuffix(endpoint, "/invite/redeem"))
@@ -46,12 +53,12 @@ func main() {
 		token = options.Invitation
 	}
 	if !options.Plain && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
-		if err := runTUI(token, options.Invitation != ""); err != nil {
+		if err := runTUI(token, options.Invitation != "", tokenProvided); err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
-	if token == "" {
+	if token == "" && !tokenProvided {
 		fmt.Print(tr("connection.token.2"))
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil && err != io.EOF {

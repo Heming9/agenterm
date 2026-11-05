@@ -55,6 +55,11 @@ func (c *connection) send(m protocol.Message) error {
 	return c.ws.WriteJSON(m)
 }
 
+// TokenValidationError gives users a consistent message for malformed or empty credentials.
+func TokenValidationError() error {
+	return i18n.NewError("invalid.agenterm.token.format")
+}
+
 // RunWithCallbacks runs a connection with structured lifecycle notifications for
 // consumers such as the desktop UI, retaining the local lock across retries.
 func RunWithCallbacks(ctx context.Context, token string, logWriter io.Writer, callbacks Callbacks) error {
@@ -71,7 +76,7 @@ func RunInvitationWithCallbacks(ctx context.Context, invitation string, logWrite
 func runWithCallbacks(ctx context.Context, token string, invitation bool, logWriter io.Writer, callbacks Callbacks) error {
 	t, err := protocol.Decode(token)
 	if err != nil {
-		return err
+		return TokenValidationError()
 	}
 	lock, err := acquireConnectionLock(t.URL)
 	if err != nil {
@@ -121,6 +126,9 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 				if versionErr := version.Check(version.Current, resp.Header.Get(version.Header)); versionErr != nil {
 					return attemptResult{err: versionErr, permanent: true}
 				}
+			}
+			if resp.StatusCode == http.StatusUnauthorized {
+				return attemptResult{err: i18n.NewError("invalid.or.expired.token"), permanent: true}
 			}
 			return attemptResult{err: i18n.NewError("connect.w.http.d", err, resp.StatusCode), permanent: !retryHTTPStatus(resp.StatusCode), retryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
 		}

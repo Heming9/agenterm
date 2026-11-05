@@ -28,8 +28,8 @@ fi
 say() {
   color=''
   case "$1" in
-    installer.connection.progress|installer.1.4.checking.connectivity.and.version|installer.2.4.preparing.client) color=$cyan ;;
-    installer.server.reachable.invitation.and.version.verified|installer.cached.client.verified.skipping.download|installer.client.verified) color=$green ;;
+    installer.connection.progress|installer.2.4.preparing.client) color=$cyan ;;
+    installer.cached.client.verified.skipping.download|installer.client.verified) color=$green ;;
   esac
   format=$(text "$1"); shift
   printf '%s' "$color"
@@ -50,7 +50,6 @@ banner() {
   say installer.project.s 'https://github.com/Heming9/agenterm'
   say installer.license
 }
-[ -n "$invitation" ] || { say installer.missing.invitation >&2; exit 1; }
 [ -n "$base" ] || { say installer.missing.download.url >&2; exit 1; }
 banner
 printf '\n%s%s%s\n' "$gold" "$(text installer.remote.control.authorization)" "$reset"
@@ -78,28 +77,6 @@ cache="$cache_root/$version/$os-$arch"
 mkdir -p "$cache"
 work=$(mktemp -d "$cache/.tmp.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-say installer.1.4.checking.connectivity.and.version
-if ! status=$(curl --http1.1 -sS --connect-timeout 5 --max-time 10 \
-  -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
-  -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  -H "Authorization: Bearer $invitation" \
-  -H "X-Agenterm-Version: $version" \
-  -D "$work/probe.headers" -o /dev/null -w '%{http_code}' "$origin/client?probe=1"); then
-  say installer.cannot.reach.the.server.websocket.endpoint.check >&2; exit 1
-fi
-case "$status" in
-  101) ;;
-  401) say installer.invitation.invalid.expired.or.already.used.request >&2; exit 1 ;;
-  429) say installer.too.many.authentication.failures.try.again.later >&2; exit 1 ;;
-  426)
-    server_version=$(awk '{ sub(/\r$/, ""); if (tolower($1) == "x-agenterm-version:") print $2 }' "$work/probe.headers")
-    say installer.incompatible.versions.installer.s.server.s.update "$version" "${server_version:-unknown}" >&2; exit 1 ;;
-  *) say installer.websocket.connectivity.check.failed.http.s.check "$status" >&2; exit 1 ;;
-esac
-awk '{ sub(/\r$/, ""); if (tolower($1) == "sec-websocket-accept:" && $2 == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") ok=1 } END { exit !ok }' "$work/probe.headers" || {
-  say installer.invalid.websocket.handshake.response >&2; exit 1
-}
-say installer.server.reachable.invitation.and.version.verified
 say installer.2.4.preparing.client
 name="agenterm-client-cli-$os-$arch"
 binary="$cache/$name"
@@ -150,4 +127,8 @@ else
   mv -f "$work/$name" "$binary"
   say installer.client.verified
 fi
-"$binary" -invite "$invitation" -consent-confirmed
+if [ -n "$invitation" ]; then
+  "$binary" -invite "$invitation" -consent-confirmed
+else
+  "$binary" -token ""
+fi

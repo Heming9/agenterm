@@ -66,7 +66,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	log := filepath.Join(root, "downloads")
 	state := &runtimeState{}
 	var blockWebSocket atomic.Bool
-	mux := state.routes(installerTestTag, os.DirFS(assets))
+	var mux http.Handler
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f, err := os.OpenFile(log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
@@ -94,6 +94,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	defer frontend.Close()
 	publicURL := frontend.URL
 	state.clientURL = "ws" + strings.TrimPrefix(publicURL, "http") + prefix + "/client"
+	mux = state.routes(installerTestTag, os.DirFS(assets))
 	issued, err := state.createClient("")
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +138,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 			t.Fatalf("missing or duplicate consent prompt: %s", output)
 		}
 		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[1/4]", "[2/4]", "arg=-invite"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[2/4]", "arg=-invite"} {
 			index := strings.Index(output, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", output)
@@ -194,76 +195,22 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if err == nil || strings.Contains(string(out), "arg=-invite") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
 	}
-	// Invalid/expired invitations must fail before fetching the manifest or archive,
-	// even when the local cache is missing or damaged.
-	before, _ := os.ReadFile(log)
+	// An expired invitation still launches the client with the original value.
+	write(cached, client, 0o700)
 	decoded, _ := protocol.Decode(invitation)
 	state.mu.Lock()
 	entry := state.invitations[decoded.Secret]
 	entry.expires = time.Now().Add(-time.Second)
 	state.invitations[decoded.Secret] = entry
+	state.cleanupTokensLocked(time.Now())
 	state.mu.Unlock()
 	cmd = exec.Command("sh", "-c", command)
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err = cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "401") {
-		t.Fatalf("expired preflight: err=%v output=%s", err, out)
+	if err != nil || !strings.Contains(string(out), "arg=-token invitation= consent=") {
+		t.Fatalf("expired launch: %v %s", err, out)
 	}
-	after, _ := os.ReadFile(log)
-	if strings.Contains(string(after[len(before):]), "SHA256SUMS") || strings.Contains(string(after[len(before):]), archive) {
-		t.Fatalf("download continued after failed probe: %s", after[len(before):])
-	}
-	// Being able to fetch the script over HTTP does not imply WebSocket support.
-	state.mu.Lock()
-	entry.expires = time.Now().Add(time.Minute)
-	state.invitations[decoded.Secret] = entry
-	state.mu.Unlock()
+	// Connection reachability is also decided by the client.
 	blockWebSocket.Store(true)
-	before = after
-	cmd = exec.Command("sh", "-c", command)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-	cmd.Stdin = strings.NewReader("y\n")
-	out, err = cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "WebSocket 连通性检查失败（HTTP 403）") {
-		t.Fatalf("blocked WebSocket: err=%v output=%s", err, out)
-	}
-	after, _ = os.ReadFile(log)
-	if strings.Contains(string(after[len(before):]), "SHA256SUMS") || strings.Contains(string(after[len(before):]), archive) {
-		t.Fatalf("download continued after blocked WebSocket: %s", after[len(before):])
-	}
-}
-
-func TestShellInstallerVersionMismatchStopsDownload(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires a POSIX shell")
-	}
-	state := &runtimeState{}
-	var downloads atomic.Int32
-	routes := state.routes("v9.9.9", nil)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/downloads/") {
-			downloads.Add(1)
-		}
-		routes.ServeHTTP(w, r)
-	}))
-	defer ts.Close()
-	state.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
-	issued, err := state.createClient("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	command, _ := installCommands(issued["invitation"].(string))
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CACHE_HOME="+t.TempDir())
-	cmd.Stdin = strings.NewReader("y\n")
-	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "版本不兼容") || !strings.Contains(string(out), "v9.9.9") {
-		t.Fatalf("incompatible installer: %v\n%s", err, out)
-	}
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	if downloads.Load() != 0 || len(state.invitations) != 1 || len(state.clients) != 0 {
-		t.Fatal("incompatible installer downloaded files, redeemed the invitation, or registered a client")
-	}
 }

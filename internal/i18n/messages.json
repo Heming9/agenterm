@@ -123,14 +123,6 @@
     "en": "Commands and output",
     "zh-CN": "命令与输出"
   },
-  "invalid.token.paste.the.complete.token.from": {
-    "en": "Invalid token. Paste the complete token from the server.",
-    "zh-CN": "Token 格式不正确，请粘贴 Server 生成的完整 Token。"
-  },
-  "enter.a.connection.token": {
-    "en": "Enter a connection token.",
-    "zh-CN": "请先输入连接 Token。"
-  },
   "cancel": {
     "en": "Cancel",
     "zh-CN": "取消连接"
@@ -165,7 +157,7 @@
   },
   "paste.connection.token": {
     "en": "Paste connection token",
-    "zh-CN": "粘贴连接 Token"
+    "zh-CN": "请粘贴 Agenterm 的连接令牌"
   },
   "disconnected.2": {
     "en": "Disconnected",
@@ -188,12 +180,16 @@
     "zh-CN": "连接 Token："
   },
   "enter.connect.ctrl.c.quit": {
-    "en": "Enter connect  ·  Ctrl+C quit",
-    "zh-CN": "Enter 连接  ·  Ctrl+C 退出"
+    "en": "Enter connect  ·  Ctrl+C clear / quit",
+    "zh-CN": "Enter 连接  ·  Ctrl+C 清空 / 退出"
   },
-  "d.commands.scroll.c.clear.q.quit": {
-    "en": "\n %d commands · c clear · q quit",
-    "zh-CN": "\n %d 条 · c 清空 · q 退出"
+  "tui.ctrl.c.quit": {
+    "en": "Ctrl+C disconnect",
+    "zh-CN": "Ctrl+C 返回"
+  },
+  "tui.command.count": {
+    "en": "%d commands",
+    "zh-CN": "%d 条"
   },
   "tui.selection.help": {
     "en": "Esc clear selection",
@@ -286,6 +282,14 @@
   "invalid.token.port.must.be.between.1.and": {
     "en": "invalid token: port must be between 1 and 65535",
     "zh-CN": "无效 Token：端口必须在 1 到 65535 之间"
+  },
+  "invalid.agenterm.token.format": {
+    "en": "Invalid Agenterm token, please check the format",
+    "zh-CN": "无效的 Agenterm 令牌, 请检查格式"
+  },
+  "invalid.or.expired.token": {
+    "en": "Invalid or expired Agenterm token",
+    "zh-CN": "无效或已过期的 Agenterm 令牌"
   },
   "invalid.token.missing.s.prefix": {
     "en": "invalid token: missing %s prefix",
@@ -439,14 +443,6 @@
     "en": "Connection cancelled.",
     "zh-CN": "已取消连接。"
   },
-  "installer.1.4.checking.connectivity.and.version": {
-    "en": "[1/4] Checking connectivity and version…",
-    "zh-CN": "[1/4] 检查连通性与版本…"
-  },
-  "installer.server.reachable.invitation.and.version.verified": {
-    "en": "      Server reachable; invitation and version verified.",
-    "zh-CN": "      服务可达，邀请和版本校验通过。"
-  },
   "installer.2.4.preparing.client": {
     "en": "[2/4] Preparing client…",
     "zh-CN": "[2/4] 准备客户端…"
@@ -467,10 +463,6 @@
     "en": "      Client verified.",
     "zh-CN": "      客户端校验通过。"
   },
-  "installer.incompatible.versions.installer.s.server.s.update": {
-    "en": "Incompatible versions: installer %s, server %s. Update server and client to compatible versions.",
-    "zh-CN": "版本不兼容：安装器 %s，Server %s。请将 Server 和 Client 更新到兼容版本。"
-  },
   "installer.unsupported.system": {
     "en": "Unsupported system",
     "zh-CN": "不支持的系统"
@@ -478,22 +470,6 @@
   "installer.unsupported.architecture": {
     "en": "Unsupported architecture",
     "zh-CN": "不支持的架构"
-  },
-  "installer.cannot.reach.the.server.websocket.endpoint.check": {
-    "en": "Cannot reach the server WebSocket endpoint. Check the address, network, and proxy configuration.",
-    "zh-CN": "无法访问服务器 WebSocket 接口，请检查地址、网络和代理配置。"
-  },
-  "installer.invitation.invalid.expired.or.already.used.request": {
-    "en": "Invitation invalid, expired, or already used. Request a new invitation.",
-    "zh-CN": "邀请无效、已过期或已使用，请申请新邀请。"
-  },
-  "installer.too.many.authentication.failures.try.again.later": {
-    "en": "Too many authentication failures. Try again later.",
-    "zh-CN": "身份验证失败次数过多，请稍后重试。"
-  },
-  "installer.invalid.websocket.handshake.response": {
-    "en": "Invalid WebSocket handshake response.",
-    "zh-CN": "WebSocket 握手响应无效。"
   },
   "installer.missing.client.checksum": {
     "en": "Missing client checksum",
@@ -523,10 +499,6 @@
     "en": "LOCALAPPDATA is not set",
     "zh-CN": "未设置 LOCALAPPDATA"
   },
-  "installer.websocket.connectivity.check.failed.http.s.check": {
-    "en": "WebSocket connectivity check failed (HTTP %s). Check the server and reverse proxy configuration.",
-    "zh-CN": "WebSocket 连通性检查失败（HTTP %s），请检查服务器和反向代理配置。"
-  },
   "installer.remote.control.authorization": {
     "en": "⚠️ Remote control authorization reminder",
     "zh-CN": "⚠️ 远程控制授权提醒"
@@ -547,17 +519,9 @@
     "en": "\nAllow connection? [y/N] ",
     "zh-CN": "\n是否允许连接？[y/N] "
   },
-  "installer.incompatible.versions.installer.s.is.incompatible.with": {
-    "en": "Incompatible versions: installer %s is incompatible with the server. Update server and client to compatible versions.",
-    "zh-CN": "版本不兼容：安装器 %s 与 Server 不兼容。请将 Server 和 Client 更新到兼容版本。"
-  },
   "installer.missing.checksum.for.s": {
     "en": "Missing checksum for %s",
     "zh-CN": "缺少 %s 的校验值"
-  },
-  "installer.websocket.connectivity.check.failed.check.the.server": {
-    "en": "WebSocket connectivity check failed. Check the server address, network, proxy, and invitation validity. %s",
-    "zh-CN": "WebSocket 连通性检查失败，请检查服务器地址、网络、代理和邀请有效性。%s"
   },
   "mcp.shell.command": {
     "en": "Shell command to execute on the target device.",
@@ -598,10 +562,6 @@
   "client.input.error": {
     "en": "\n[Agenterm] input error: %s\n",
     "zh-CN": "\n[Agenterm] 输入错误：%s\n"
-  },
-  "installer.missing.invitation": {
-    "en": "Missing invitation",
-    "zh-CN": "缺少邀请"
   },
   "installer.missing.download.url": {
     "en": "Missing download URL",

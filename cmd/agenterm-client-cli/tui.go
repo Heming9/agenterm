@@ -82,6 +82,8 @@ type tuiModel struct {
 	lastID                  string
 	width, height           int
 	connectionProgress      bool
+	autoConnect             bool
+	connectionCancel        context.CancelFunc
 	invitation              string
 	spacing                 logview.Spacing
 	latency                 time.Duration
@@ -98,9 +100,10 @@ func newTUI(token string) *tuiModel {
 	input.Focus()
 	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*logview.Decoder), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
 }
-func runTUI(token string, connectionProgress bool) error {
+func runTUI(token string, connectionProgress, tokenProvided bool) error {
 	m := newTUI(token)
 	m.connectionProgress = connectionProgress
+	m.autoConnect = tokenProvided
 	if connectionProgress {
 		m.invitation = token
 	}
@@ -109,7 +112,7 @@ func runTUI(token string, connectionProgress bool) error {
 	return err
 }
 func (m *tuiModel) Init() tea.Cmd {
-	if m.input.Value() != "" {
+	if m.input.Value() != "" || m.autoConnect {
 		return tea.Batch(textinput.Blink, m.connect())
 	}
 	return textinput.Blink
@@ -124,7 +127,7 @@ func (m *tuiModel) send(generation uint64, e tuiEvent) {
 func (m *tuiModel) connect() tea.Cmd {
 	t, err := protocol.Decode(strings.TrimSpace(m.input.Value()))
 	if err != nil {
-		m.message = err.Error()
+		m.message = client.TokenValidationError().Error()
 		return nil
 	}
 	m.generation++
@@ -149,8 +152,11 @@ func (m *tuiModel) connect() tea.Cmd {
 	if token != "" && token == m.invitation {
 		run = client.RunInvitationWithCallbacks
 	}
+	connectionCtx, connectionCancel := context.WithCancel(m.ctx)
+	m.connectionCancel = connectionCancel
 	go func() {
-		err := run(m.ctx, token, io.Discard, client.Callbacks{
+		defer connectionCancel()
+		err := run(connectionCtx, token, io.Discard, client.Callbacks{
 			Redeemed:     func(token string) { m.send(generation, tuiEvent{redeemed: token}) },
 			Connecting:   func() { m.send(generation, tuiEvent{connecting: true}) },
 			Connected:    func() { m.send(generation, tuiEvent{connected: true}) },
@@ -293,33 +299,25 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.String() == "ctrl+c" {
-			m.cancel()
-			return m, tea.Quit
-		}
-		if m.state == "disconnected" {
-			if msg.String() == "enter" {
-				return m, m.connect()
-			}
-		} else {
-			switch msg.String() {
-			case "q":
+			if m.state == "disconnected" {
+				if m.input.Value() != "" {
+					m.input.SetValue("")
+					m.invitation = ""
+					m.message = ""
+					return m, nil
+				}
 				m.cancel()
 				return m, tea.Quit
-			case "c":
-				m.logBytes = 0
-				m.spans = nil
-				m.folds = nil
-				m.lastID = ""
-				m.spacing = logview.Spacing{}
-				for _, decoder := range m.decoders {
-					decoder.Output = logview.Output{}
-				}
-				m.viewport.SetContent("")
-				m.logRows = nil
-				m.softWraps = nil
-				m.viewport.GotoTop()
-				return m, nil
 			}
+			if m.connectionCancel != nil {
+				m.connectionCancel()
+				m.connectionCancel = nil
+			}
+			m.state = "disconnecting"
+			return m, nil
+		}
+		if m.state == "disconnected" && msg.String() == "enter" {
+			return m, m.connect()
 		}
 	case tuiEvent:
 		if msg.generation != m.generation {
@@ -379,6 +377,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.finished {
+			m.connectionCancel = nil
 			m.clearSelection()
 			m.state = "disconnected"
 			m.latency = -1
@@ -426,9 +425,6 @@ func (m *tuiModel) view() string {
 	}
 	if m.state == "connected" {
 		status = tr("connected.2")
-		if m.latency >= 0 {
-			status += fmt.Sprintf(" · %dms", max(1, m.latency.Milliseconds()))
-		}
 	}
 	if m.state == "reconnecting" {
 		status = fmt.Sprintf(tr("connection.retry.status"), int(m.retryDelay.Seconds()))
@@ -444,19 +440,35 @@ func (m *tuiModel) view() string {
 	}
 	header := m.header(status)
 	content := m.selectionView()
-	help := fmt.Sprintf(tr("d.commands.scroll.c.clear.q.quit"), m.completed)
+	help := "\n " + m.connectedFooter()
 	if m.state == "disconnected" {
 		content = m.connectionView()
 		help = "\n " + tr("enter.connect.ctrl.c.quit")
 	}
 	line := strings.Repeat("─", max(1, m.width-2))
 	if m.selection != nil && m.selection.dragged {
-		help = "\n " + tr("tui.selection.help")
+		selectionHelp := tr("tui.selection.help")
 		if m.selection.notice != "" {
-			help = "\n " + tr(m.selection.notice) + " · " + tr("tui.selection.help")
+			selectionHelp = tr(m.selection.notice) + " · " + selectionHelp
 		}
+		help = "\n " + m.footerWithLeft(selectionHelp)
 	}
 	return header + "\n " + line + "\n" + content + "\n " + line + help
+}
+func (m *tuiModel) connectedFooter() string {
+	return m.footerWithLeft(tr("tui.ctrl.c.quit"))
+}
+func (m *tuiModel) footerWithLeft(left string) string {
+	right := fmt.Sprintf(tr("tui.command.count"), m.completed)
+	if m.state == "connected" && m.latency >= 0 {
+		right += fmt.Sprintf(" · %dms", max(1, m.latency.Milliseconds()))
+	}
+	width := max(1, m.width-2)
+	if m.cellWidth(left)+m.cellWidth(right)+1 > width {
+		left = m.truncateCells(left, max(0, width-m.cellWidth(right)-1), "…")
+	}
+	space := max(1, width-m.cellWidth(left)-m.cellWidth(right))
+	return left + strings.Repeat(" ", space) + right
 }
 func (m *tuiModel) connectionView() string {
 	content := " " + tr("connection.token") + "\n " + m.input.View()

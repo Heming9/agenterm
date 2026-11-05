@@ -2,7 +2,7 @@
 # Project: https://github.com/Heming9/agenterm
 # SPDX-License-Identifier: Apache-2.0
 # License: https://www.apache.org/licenses/LICENSE-2.0
-param([Parameter(Mandatory=$true)][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base)
+param([AllowEmptyString()][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base)
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
@@ -19,9 +19,7 @@ function Write-Styled([string]$Message, [string]$Color = '', [switch]$NoNewline)
 function Say([string]$Key) {
   $color = switch ($Key) {
     'installer.connection.progress' { 'Cyan'; break }
-    'installer.1.4.checking.connectivity.and.version' { 'Cyan'; break }
     'installer.2.4.preparing.client' { 'Cyan'; break }
-    'installer.server.reachable.invitation.and.version.verified' { 'Green'; break }
     'installer.cached.client.verified.skipping.download' { 'Green'; break }
     'installer.client.verified' { 'Green'; break }
     default { '' }
@@ -62,24 +60,6 @@ if ($null -eq $answer -or $answer.Trim() -ine 'y') {
 Say 'installer.connection.progress'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
-Say 'installer.1.4.checking.connectivity.and.version'
-$probe = [System.Net.WebSockets.ClientWebSocket]::new()
-$timeout = [System.Threading.CancellationTokenSource]::new(10000)
-try {
-  $probe.Options.SetRequestHeader('Authorization', "Bearer $Invitation")
-  $probe.Options.SetRequestHeader('X-Agenterm-Version', $Version)
-  $endpoint = ($origin -replace '^http', 'ws') + '/client?probe=1'
-  $null = $probe.ConnectAsync([Uri]$endpoint, $timeout.Token).GetAwaiter().GetResult()
-} catch {
-  if ($_.Exception.ToString() -match '426') {
-    throw (Text 'installer.incompatible.versions.installer.s.is.incompatible.with' @($Version))
-  }
-  throw (Text 'installer.websocket.connectivity.check.failed.check.the.server' @($_.Exception.Message))
-} finally {
-  $probe.Dispose()
-  $timeout.Dispose()
-}
-Say 'installer.server.reachable.invitation.and.version.verified'
 Say 'installer.2.4.preparing.client'
 if (-not $env:LOCALAPPDATA) { throw (Text 'installer.localappdata.is.not.set') }
 $cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
@@ -149,5 +129,9 @@ try {
     }
     Say 'installer.client.verified'
   }
-  & $program -invite $Invitation -consent-confirmed
+  if ($Invitation) {
+    & $program -invite $Invitation -consent-confirmed
+  } else {
+    & $program -token=
+  }
 } finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }

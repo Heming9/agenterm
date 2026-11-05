@@ -122,6 +122,9 @@ func Decode(s string) (Token, error) {
 	var t Token
 	payload, ok := strings.CutPrefix(s, tokenPrefix)
 	if !ok {
+		if s == "" {
+			return t, i18n.NewError("invalid.agenterm.token.format")
+		}
 		return t, i18n.NewError("invalid.token.missing.s.prefix", tokenPrefix)
 	}
 	// A cleared format bit denotes the identifier-bearing format.

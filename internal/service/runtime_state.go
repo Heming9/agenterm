@@ -143,7 +143,15 @@ func (s *runtimeState) validSecret(secret string) bool {
 	return s.validSecretLocked(secret)
 }
 
+func (s *runtimeState) tokenUnexpiredLocked(secret string) bool {
+	owner := s.clientOwners[secret]
+	return owner == nil || owner.expires.IsZero() || time.Now().Before(owner.expires) || s.hasClientLocked(secret)
+}
+
 func (s *runtimeState) validSecretLocked(secret string) bool {
+	if !s.tokenUnexpiredLocked(secret) {
+		return false
+	}
 	for _, candidate := range s.tokens {
 		if candidate == secret {
 			return true

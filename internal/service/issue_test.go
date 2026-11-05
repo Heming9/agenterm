@@ -57,7 +57,7 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			if !strings.Contains(created["display_text"].(string), fmt.Sprintf("Invitation validity: %d seconds", int64(tc.want/time.Second))) || !strings.Contains(created["display_text"].(string), expires.UTC().Format("2006-01-02 15:04:05")+" UTC") {
 				t.Fatalf("display does not show configured lifetime and deadline: %v", created["display_text"])
 			}
-			// Expiry must revoke both platform links and the pending credential.
+			// Expiry revokes the pending credential while installer links remain usable.
 			h.s.mu.Lock()
 			h.s.cleanupTokensLocked(entry.expires.Add(-time.Nanosecond))
 			_, retained := h.s.invitations[decoded.Secret]
@@ -70,7 +70,7 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			for _, suffix := range []string{"", ".ps1"} {
 				w := httptest.NewRecorder()
 				h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+installCode(decoded.Secret)+suffix, nil))
-				if w.Code != http.StatusUnauthorized {
+				if w.Code != http.StatusOK || strings.Contains(w.Body.String(), created["invitation"].(string)) {
 					t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
 				}
 			}

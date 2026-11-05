@@ -63,14 +63,14 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 	if err != nil || got != issued["client_token"] {
 		t.Fatalf("redeem after wrapper fetch: %q %v", got, err)
 	}
-	wantStatus, wantCodes := 401, 0
+	wantCodes := 0
 	if multi {
-		wantStatus, wantCodes = 200, 1
+		wantCodes = 1
 	}
 	for _, scriptPath := range paths {
 		w := httptest.NewRecorder()
 		s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest("GET", scriptPath, nil))
-		if w.Code != wantStatus || (!multi && strings.Contains(w.Body.String(), value)) {
+		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), value) != multi {
 			t.Fatalf("wrapper after redemption %s: %d", scriptPath, w.Code)
 		}
 	}
@@ -91,11 +91,11 @@ func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
 		method, tag, path string
 		status            int
 	}{
-		{"GET", "v1.2.3", path, 401},
-		{"GET", "v1.2.3", path + ".ps1", 401},
-		{"GET", "v1.2.3", "/c/" + decoded.Secret, 401},
-		{"GET", "v1.2.3", "/c/unknown", 401},
-		{"GET", "v1.2.3", path + "/install.sh", 401},
+		{"GET", "v1.2.3", path, 200},
+		{"GET", "v1.2.3", path + ".ps1", 200},
+		{"GET", "v1.2.3", "/c/" + decoded.Secret, 200},
+		{"GET", "v1.2.3", "/c/unknown", 404},
+		{"GET", "v1.2.3", path + "/install.sh", 404},
 		{"POST", "v1.2.3", path, 405},
 		{"GET", "", path, 404},
 	} {
@@ -121,7 +121,7 @@ func TestInstallWrapperLimitsShortCodeGuesses(t *testing.T) {
 	for i := 0; i <= failureLimit; i++ {
 		w := httptest.NewRecorder()
 		s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest("GET", "/c/"+unknown, nil))
-		want := http.StatusUnauthorized
+		want := http.StatusOK
 		if i == failureLimit {
 			want = http.StatusTooManyRequests
 		}
@@ -167,6 +167,27 @@ func TestInstallWrapperRetriesCodeCollisions(t *testing.T) {
 	for _, item := range []struct{ secret, token string }{{firstInvite.Secret, "first-token"}, {secondInvite.Secret, "second-token"}} {
 		if secret := s.installCodes[installCode(item.secret)]; secret != item.secret || s.invitations[secret].token != item.token {
 			t.Fatalf("collision replaced an invitation: %s", item.token)
+		}
+	}
+}
+
+func TestShortInstallLinkAfterRuntimeRestart(t *testing.T) {
+	original := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	issued, err := original.createClient("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := issued["invitation"].(string)
+	decoded, err := protocol.Decode(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := &runtimeState{clientURL: original.clientURL}
+	for _, suffix := range []string{"", ".ps1"} {
+		w := httptest.NewRecorder()
+		fresh.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+installCode(decoded.Secret)+suffix, nil))
+		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), value) || !strings.Contains(w.Body.String(), "https://example.com/agenterm/downloads/v1.2.3") {
+			t.Fatalf("empty credential wrapper after restart: %d", w.Code)
 		}
 	}
 }

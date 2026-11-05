@@ -256,3 +256,11 @@ func TestExampleWordSafeToken(t *testing.T) {
 		t.Fatalf("encoded = %q, %v", encoded, err)
 	}
 }
+
+func TestDecodeEmptyTokenMessage(t *testing.T) {
+	t.Setenv("AGENTERM_LANG", "zh-CN")
+	_, err := Decode("")
+	if err == nil || err.Error() != "无效的 Agenterm 令牌, 请检查格式" {
+		t.Fatalf("unexpected empty token error: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"agenterm/internal/client"
 	"agenterm/internal/logview"
+	"context"
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -67,13 +68,13 @@ func TestLatencyAndReconnectPreserveHistory(t *testing.T) {
 	d := 42 * time.Millisecond
 	m.Update(tuiEvent{latency: &d})
 	header := ansi.Strip(strings.Split(m.View(), "\n")[0])
-	if !strings.HasSuffix(header, "已连接 · 42ms ") {
-		t.Fatal(header)
+	if !strings.HasSuffix(header, "已连接 ") || strings.Contains(header, "42ms") || !strings.HasSuffix(ansi.Strip(m.connectedFooter()), "0 条 · 42ms") {
+		t.Fatalf("header=%q footer=%q", header, ansi.Strip(m.connectedFooter()))
 	}
 	m.appendLog("output", "saved output\n")
 	m.Update(tuiEvent{retry: &client.ReconnectEvent{Attempt: 1, Delay: time.Second, Err: errors.New("unexpected EOF")}})
 	header = ansi.Strip(strings.Split(m.View(), "\n")[0])
-	if strings.Contains(header, "42ms") || !strings.Contains(header, "重连中") {
+	if strings.Contains(m.connectedFooter(), "42ms") || !strings.Contains(header, "重连中") {
 		t.Fatal(header)
 	}
 	m.Update(tuiEvent{latency: &d}) // Ignore stale measurements while offline.
@@ -120,8 +121,8 @@ func TestTUIEventsAndBoundedLog(t *testing.T) {
 		t.Fatal("invalid bounded log")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	if m.logText() != "" {
-		t.Fatal("clear failed")
+	if m.logText() == "" {
+		t.Fatal("c should not clear history")
 	}
 }
 
@@ -187,7 +188,7 @@ func TestTUIOutputSpacingAndClear(t *testing.T) {
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	m.Update(tuiEvent{id: "one", output: []byte("\n  after clear\n\n")})
-	if want := "  after clear\n"; m.logText() != want {
+	if want := want + "\n  after clear\n"; m.logText() != want {
 		t.Fatalf("output after clear = %q, want %q", m.logText(), want)
 	}
 }
@@ -250,5 +251,61 @@ func TestHeaderRetainsTokenIdentifierWhenAddressIsTruncated(t *testing.T) {
 	header := ansi.Strip(m.header("connected"))
 	if !strings.Contains(header, "123abc") || !strings.Contains(header, "connected") {
 		t.Fatalf("identifier or status missing: %q", header)
+	}
+}
+
+func TestTUIValidatesExplicitEmptyToken(t *testing.T) {
+	manual := newTUI("")
+	defer manual.cancel()
+	manual.Init()
+	if manual.message != "" {
+		t.Fatalf("unprovided token should wait for input: %q", manual.message)
+	}
+	automatic := newTUI("")
+	defer automatic.cancel()
+	automatic.autoConnect = true
+	automatic.Init()
+	if automatic.message == "" {
+		t.Fatal("explicit empty token should be validated at startup")
+	}
+}
+
+func TestCtrlCClearsInputBeforeQuitting(t *testing.T) {
+	m := newTUI("expired invitation")
+	defer m.cancel()
+	m.invitation = m.input.Value()
+	m.message = "invalid token"
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd != nil || m.ctx.Err() != nil || m.input.Value() != "" || m.message != "" || m.invitation != "" {
+		t.Fatalf("first Ctrl+C should clear input: input=%q message=%q invitation=%q err=%v", m.input.Value(), m.message, m.invitation, m.ctx.Err())
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil || m.ctx.Err() == nil {
+		t.Fatal("Ctrl+C with an empty input should quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("expected quit command")
+	}
+}
+
+func TestConnectedFooterAndDisconnect(t *testing.T) {
+	m := newTUI("saved-token")
+	defer m.cancel()
+	m.state = "connected"
+	m.completed = 12
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	line := ansi.Strip(m.connectedFooter())
+	if !strings.HasPrefix(line, "Ctrl+C") || !strings.HasSuffix(line, "12 条") || m.cellWidth(line) != 78 {
+		t.Fatalf("footer alignment: %q (%d cells)", line, m.cellWidth(line))
+	}
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.connectionCancel = cancel
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if ctx.Err() == nil || m.ctx.Err() != nil || m.state != "disconnecting" || m.input.Value() != "saved-token" {
+		t.Fatal("Ctrl+C should stop the connection without quitting or clearing its token")
+	}
+	m.Update(tuiEvent{finished: true})
+	if m.state != "disconnected" || m.input.Value() != "saved-token" {
+		t.Fatal("disconnection should return to the input with the token retained")
 	}
 }

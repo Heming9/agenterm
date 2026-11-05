@@ -205,6 +205,7 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		token := strings.TrimPrefix(header, "Bearer ")
 		s.mu.Lock()
 		secret, ok := s.tokens[token]
+		ok = ok && s.tokenUnexpiredLocked(secret)
 		s.mu.Unlock()
 		admin := (s.noPassword && header == "") || (s.adminKey != "" && header == "Bearer "+token && subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) == 1)
 		if status, err := s.authorize(r, admin || (header == "Bearer "+token && ok)); err != nil {
@@ -217,7 +218,11 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if in.Principal.Admin {
-			return s.tokens[in.Token], nil
+			secret, ok := s.tokens[in.Token]
+			if ok && s.tokenUnexpiredLocked(secret) {
+				return secret, nil
+			}
+			return "", nil
 		}
 		if s.validSecretLocked(in.Principal.Secret) {
 			return in.Principal.Secret, nil

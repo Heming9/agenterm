@@ -216,8 +216,8 @@ func TestTUISelectionClipboardFailureAndNewestRequestWins(t *testing.T) {
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if m.ctx.Err() == nil {
-		t.Fatal("Ctrl+C without a selection should still quit")
+	if m.ctx.Err() != nil || m.state != "disconnecting" {
+		t.Fatal("Ctrl+C without a selection should disconnect")
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const tokenOfflineTTL = 30 * time.Minute
+const tokenOfflineTTL = 3 * time.Minute
 
 func (s *runtimeState) cleanupLoop(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)

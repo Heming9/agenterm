@@ -202,11 +202,7 @@ func (v *clientView) connectValue(value string, invitation bool) {
 	}
 	decoded, err := protocol.Decode(value)
 	if err != nil {
-		message := tr("invalid.token.paste.the.complete.token.from")
-		if value == "" {
-			message = tr("enter.a.connection.token")
-		}
-		v.showConnectionError(message)
+		v.showConnectionError(client.TokenValidationError().Error())
 		v.window.Canvas().Focus(v.token)
 		return
 	}

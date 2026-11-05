@@ -8,10 +8,12 @@ import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -21,9 +23,10 @@ import (
 const downloadTag = "v" + version.Current
 
 var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
+var validInstallCredential = regexp.MustCompile(`^(?:[A-Z0-9]{6}|[A-Za-z0-9_-]{14})$`)
 
 // Six uppercase base36 characters carry about 31 random bits. The URL is itself
-// an invitation credential, protected by the same expiry and failure limiter.
+// an invitation credential, protected by expiry and the failure limiter.
 const installCodeLength = 6
 
 // Use the last six base36 digits of the full random invitation secret.
@@ -104,25 +107,43 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		secret, powershell := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/c/"), ".ps1")
-		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: secret})
-		if err != nil {
-			writeControlError(w, err)
+		credential, powershell := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/c/"), ".ps1")
+		if !validInstallCredential.MatchString(credential) {
+			http.NotFound(w, r)
 			return
 		}
-		secret = entry.Secret
-		source, err := protocol.Decode(entry.Token)
+		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential})
+		value := ""
+		clientURL := s.clientURL
 		if err != nil {
-			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
+			var ce *controlError
+			if !errors.As(err, &ce) || ce.Status != http.StatusUnauthorized {
+				writeControlError(w, err)
+				return
+			}
+		} else {
+			source, decodeErr := protocol.Decode(entry.Token)
+			if decodeErr == nil {
+				clientURL = source.URL
+				value, decodeErr = protocol.Encode(protocol.Token{URL: source.URL, Secret: entry.Secret, Identifier: source.Identifier})
+			}
+			if decodeErr != nil {
+				http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
+				return
+			}
+		}
+		u, parseErr := url.Parse(clientURL)
+		if parseErr != nil || u.Host == "" || (u.Scheme != "ws" && u.Scheme != "wss") {
+			http.Error(w, i18n.Text(i18n.Terminal(), "installer.unavailable"), http.StatusServiceUnavailable)
 			return
 		}
-		value, err := protocol.Encode(protocol.Token{URL: source.URL, Secret: secret, Identifier: source.Identifier})
-		if err != nil {
-			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
-			return
+		if u.Scheme == "wss" {
+			u.Scheme = "https"
+		} else {
+			u.Scheme = "http"
 		}
-		endpoint, _, _ := invite.Endpoint(value)
-		base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/downloads/" + tag
+		u.Path = strings.TrimSuffix(u.Path, "/client") + "/downloads/" + tag
+		base := u.String()
 		name := "install.sh"
 		if powershell {
 			name = "install.ps1"

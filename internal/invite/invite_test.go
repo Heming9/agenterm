@@ -44,3 +44,19 @@ func TestRedeemChecksServerVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestRedeemUnauthorizedMessage(t *testing.T) {
+	t.Setenv("AGENTERM_LANG", "zh-CN")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	value, err := protocol.Encode(protocol.Token{URL: "ws" + strings.TrimPrefix(server.URL, "http") + protocol.ClientPath, Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Redeem(context.Background(), value)
+	if err == nil || err.Error() != "无效或已过期的 Agenterm 令牌" {
+		t.Fatalf("rejected invitation: %v", err)
+	}
+}

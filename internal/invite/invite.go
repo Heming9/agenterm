@@ -54,6 +54,9 @@ func Redeem(ctx context.Context, value string) (string, error) {
 			return "", err
 		}
 	}
+	if res.StatusCode == http.StatusUnauthorized {
+		return "", i18n.NewError("invalid.or.expired.token")
+	}
 	if res.StatusCode != http.StatusOK {
 		return "", i18n.NewError("invitation.invalid.expired.or.already.used.http.d", res.StatusCode)
 	}
