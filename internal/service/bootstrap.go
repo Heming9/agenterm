@@ -32,6 +32,7 @@ type runtimeSettings struct {
 	NoPassword      bool
 	MaxClientsPerIP int
 	ClientIPHeader  string
+	EnableShortCode bool
 }
 
 type runtimeLaunchOptions struct {
@@ -49,6 +50,7 @@ func addRuntimeLaunchFlags(flags *flag.FlagSet) *runtimeLaunchOptions {
 	flags.BoolVar(&o.Settings.NoPassword, "no-password", false, serverText("allow.mcp.management.access.without.a.password"))
 	flags.IntVar(&o.Settings.MaxClientsPerIP, "max-clients-per-ip", 0, serverText("max.clients.per.ip"))
 	flags.StringVar(&o.Settings.ClientIPHeader, "client-ip-header", "", serverText("client.ip.header"))
+	flags.BoolVar(&o.Settings.EnableShortCode, "enable-short-code", false, serverText("enable.short.code"))
 	return o
 }
 
@@ -70,7 +72,7 @@ func ensureSocketDirectory(socket string) error {
 	return nil
 }
 
-var runtimeSettingFlags = []string{"listen", "public-url", "url-prefix", "server-socket", "passwd", "no-password", "max-clients-per-ip", "client-ip-header"}
+var runtimeSettingFlags = []string{"listen", "public-url", "url-prefix", "server-socket", "passwd", "no-password", "max-clients-per-ip", "client-ip-header", "enable-short-code"}
 
 func (s *runtimeState) checkRuntimeSettings(_ context.Context, requested runtimeLaunchOptions) (bool, error) {
 	active := s.startupSettings
@@ -106,6 +108,8 @@ func (s *runtimeState) checkRuntimeSettings(_ context.Context, requested runtime
 			matches = o.MaxClientsPerIP == active.MaxClientsPerIP
 		case "client-ip-header":
 			matches = http.CanonicalHeaderKey(o.ClientIPHeader) == active.ClientIPHeader
+		case "enable-short-code":
+			matches = o.EnableShortCode == active.EnableShortCode
 		}
 		if !matches {
 			if name == "server-socket" {
@@ -148,6 +152,11 @@ func ensureRuntime(ctx context.Context, socket string, options *runtimeLaunchOpt
 	c := newRuntimeClient(socket)
 	defer c.http.CloseIdleConnections()
 	verify := func(config runtimeConfig) (runtimeConfig, error) {
+		// Older runtimes may have short codes enabled and ignore this setting.
+		// Require an explicit runtime report even when the flag is omitted.
+		if config.ShortCodeEnabled == nil || *config.ShortCodeEnabled != options.Settings.EnableShortCode {
+			return runtimeConfig{}, errors.New("running runtime has a different or unsupported short-code setting; use restart to apply the requested setting (existing connections and memory state will be lost)")
+		}
 		check := *options
 		check.Fields = make(map[string]bool, len(options.Fields)+1)
 		for name, set := range options.Fields {
@@ -181,6 +190,9 @@ func ensureRuntime(ctx context.Context, socket string, options *runtimeLaunchOpt
 		"-max-clients-per-ip", strconv.Itoa(o.MaxClientsPerIP), "-client-ip-header", o.ClientIPHeader)
 	if options.Fields["passwd"] {
 		args = append(args, "-passwd", options.Password)
+	}
+	if o.EnableShortCode {
+		args = append(args, "-enable-short-code")
 	}
 	if o.NoPassword {
 		args = append(args, "-no-password")

@@ -14,7 +14,7 @@ import (
 func TestUnusedTokenCleanupWithAndWithoutQuota(t *testing.T) {
 	for _, quota := range []int{0, 2} {
 		for _, redeemed := range []bool{false, true} {
-			s := &runtimeState{clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: quota}
+			s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: quota}
 			issued, err := s.createClient("192.0.2.1")
 			if err != nil {
 				t.Fatal(err)
@@ -117,7 +117,7 @@ func TestMultiDeviceTokenOfflineExpiryAndReconnect(t *testing.T) {
 }
 
 func TestTokenCleanupRunsWithoutNewRequests(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)

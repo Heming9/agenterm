@@ -266,7 +266,7 @@ func runtimeMain(options *runtimeLaunchOptions, controlSocket string, output io.
 	if !settings.NoPassword && !options.Fields["passwd"] {
 		password = randomManagementKey()
 	}
-	s := &runtimeState{adminKey: password, noPassword: settings.NoPassword, clientURL: u.String(), clientIPHeader: http.CanonicalHeaderKey(settings.ClientIPHeader), maxClientsPerIP: settings.MaxClientsPerIP}
+	s := &runtimeState{adminKey: password, noPassword: settings.NoPassword, clientURL: u.String(), clientIPHeader: http.CanonicalHeaderKey(settings.ClientIPHeader), maxClientsPerIP: settings.MaxClientsPerIP, enableShortCode: settings.EnableShortCode}
 	settings.PublicURL, settings.Prefix, settings.ClientIPHeader = publicBase, pathPrefix(s.clientURL), s.clientIPHeader
 	s.startupSettings = &settings
 	controlListener, err := listenUnix(controlSocket)

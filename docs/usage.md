@@ -46,7 +46,7 @@ For self-hosting, replace the URL with the MCP address shown after deployment an
 4. Keep the agent conversation active while the device connects, then start the task. The other person can see commands and output in the client and disconnect at any time.
 5. Close or disconnect the client when finished.
 
-To connect several computers, ask the agent for a multi-device invitation and identify the target before each operation. Multi-device tokens do not have short codes.
+To connect several computers, ask the agent for a multi-device invitation and identify the target before each operation. Multi-device tokens do not have short codes. Short codes for single-device connections are disabled by default and must be enabled by the server administrator.
 
 After a successful connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, enter the full short-code address.
 

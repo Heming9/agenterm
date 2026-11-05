@@ -66,6 +66,7 @@ type runtimeState struct {
 	adminKey        string
 	noPassword      bool
 	clientURL       string
+	enableShortCode bool
 	clientIPHeader  string                      // empty uses the directly connected peer IP
 	tokens          map[string]string           // full token -> client credential
 	clients         map[string]*client          // six-character client ID -> connection

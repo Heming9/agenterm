@@ -37,7 +37,7 @@ func (c *legacyDisplayControl) call(ctx context.Context, method string, in, out 
 func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 	for _, multi := range []bool{false, true} {
 		t.Run(map[bool]string{false: "single", true: "multi"}[multi], func(t *testing.T) {
-			state := &runtimeState{adminKey: "admin-test", clientURL: "ws://example.com/agenterm/client"}
+			state := &runtimeState{enableShortCode: true, adminKey: "admin-test", clientURL: "ws://example.com/agenterm/client"}
 			legacy := &legacyDisplayControl{control: localControl{state}, issued: make(chan map[string]any, 1)}
 			front := &frontend{control: legacy, clientURL: state.clientURL}
 			server := httptest.NewServer(http.HandlerFunc(front.mcp))

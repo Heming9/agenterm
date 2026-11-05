@@ -136,4 +136,5 @@ agenterm-server -help
 | `-no-password` | Allow access to the MCP management interface without a password. |
 | `-max-clients-per-ip` | Maximum connected clients per invitation creator's IP; default `0`, meaning unlimited. |
 | `-client-ip-header` | Trusted request header containing a single client IP; empty by default, using the directly connected peer IP. |
+| `-enable-short-code` | Enable issuing and redeeming short codes; short codes are disabled by default. |
 | `-stdio` | Also serve management MCP over standard input/output, trusting the process owner. |

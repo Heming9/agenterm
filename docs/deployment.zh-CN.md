@@ -136,4 +136,5 @@ agenterm-server -help
 | `-no-password` | 允许无需密码访问 MCP 管理接口。 |
 | `-max-clients-per-ip` | 每个邀请创建者 IP 的最大在线客户端数；默认 `0`，表示不限制。 |
 | `-client-ip-header` | 用于读取客户端 IP 的可信请求头，头内须为单个 IP；默认留空，使用直连对端 IP。 |
+| `-enable-short-code` | 启用短码生成和兑换；默认禁用短码。 |
 | `-stdio` | 同时通过标准输入输出提供 MCP 管理接口，信任启动进程的用户。 |

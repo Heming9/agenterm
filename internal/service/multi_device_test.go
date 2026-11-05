@@ -29,7 +29,7 @@ type multiHarness struct {
 
 func newMultiHarness(t *testing.T, limit int) *multiHarness {
 	t.Helper()
-	s := &runtimeState{adminKey: "admin-test", maxClientsPerIP: limit}
+	s := &runtimeState{enableShortCode: true, adminKey: "admin-test", maxClientsPerIP: limit}
 	ts := httptest.NewServer(s.routes(installerTestTag, nil))
 	t.Cleanup(ts.Close)
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath

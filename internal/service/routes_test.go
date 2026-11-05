@@ -63,7 +63,7 @@ func TestCustomPublicURLNormalization(t *testing.T) {
 func TestURLPrefixEndToEnd(t *testing.T) {
 	for _, prefix := range []string{"/agenterm", "/a", "/tools/remote", ""} {
 		t.Run("prefix="+prefix, func(t *testing.T) {
-			s := &runtimeState{adminKey: "test-admin"}
+			s := &runtimeState{enableShortCode: true, adminKey: "test-admin"}
 			ts := httptest.NewUnstartedServer(nil)
 			t.Cleanup(ts.Close)
 			origin := "http://" + ts.Listener.Addr().String()
@@ -153,7 +153,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 }
 
 func TestOnlyNamespacedRoutesAreExposed(t *testing.T) {
-	s := &runtimeState{adminKey: "test-admin"}
+	s := &runtimeState{enableShortCode: true, adminKey: "test-admin"}
 	h := s.routes("v1.2.3", fstest.MapFS{"SHA256SUMS": {Data: []byte("manifest")}})
 	for _, tc := range []struct {
 		method, path string

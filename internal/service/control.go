@@ -118,8 +118,9 @@ func (i requestIdentity) request() *http.Request {
 }
 
 type runtimeConfig struct {
-	ClientURL string
-	PID       int
+	ClientURL        string
+	PID              int
+	ShortCodeEnabled *bool
 }
 
 type targetRequest struct {
@@ -191,7 +192,7 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		_ = json.NewEncoder(w).Encode(currentRuntimeIdentity())
 	})
 	registerControl(mux, "config", func(context.Context, struct{}) (runtimeConfig, error) {
-		return runtimeConfig{ClientURL: s.clientURL, PID: os.Getpid()}, nil
+		return runtimeConfig{ClientURL: s.clientURL, PID: os.Getpid(), ShortCodeEnabled: &s.enableShortCode}, nil
 	})
 	registerControl(mux, "runtime/check", s.checkRuntimeSettings)
 	registerControl(mux, "runtime/shutdown", func(context.Context, struct{}) (bool, error) {
@@ -247,6 +248,9 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 	registerControl(mux, "terminal/control", s.controlSession)
 	registerControl(mux, "invitation", func(_ context.Context, in invitationRequest) (installerInvitation, error) {
 		secret := in.Secret
+		if len(secret) == shortCodeLength && !s.enableShortCode {
+			return installerInvitation{}, &controlError{Status: http.StatusNotFound, Message: http.StatusText(http.StatusNotFound)}
+		}
 		s.mu.Lock()
 		var entry installerInvitation
 		var exists bool

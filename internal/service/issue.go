@@ -66,7 +66,7 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	valueExpires := expires
 	var code string
 	var codeExpires time.Time
-	if !multiDevice {
+	if !multiDevice && s.enableShortCode {
 		if s.shortCodes == nil {
 			s.shortCodes = make(shortCodeStore)
 		}

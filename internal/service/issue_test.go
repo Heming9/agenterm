@@ -137,7 +137,7 @@ func TestCreateClientTimeoutSchema(t *testing.T) {
 }
 
 func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client", tokens: make(map[string]string)}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client", tokens: make(map[string]string)}
 	for i := 0; i < 1000; i++ {
 		s.tokens[fmt.Sprintf("existing-%d", i)] = "secret"
 	}
@@ -151,7 +151,7 @@ func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
 
 func TestCreateClientDisplayText(t *testing.T) {
 	t.Setenv("AGENTERM_LANG", "zh-CN")
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	result, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 }
 
 func TestManagementCreatesAndUsesClient(t *testing.T) {
-	s := &runtimeState{adminKey: "admin-test", tokens: map[string]string{}, clients: map[string]*client{}, invitations: map[string]invitation{}}
+	s := &runtimeState{enableShortCode: true, adminKey: "admin-test", tokens: map[string]string{}, clients: map[string]*client{}, invitations: map[string]invitation{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/mcp", s.mcp)
 	mux.HandleFunc("/agenterm/invite/redeem", s.redeemInvitation)
@@ -355,7 +355,7 @@ func TestManagementAuthenticationModes(t *testing.T) {
 		{"explicit management key", false, "Bearer test-key", 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &runtimeState{adminKey: "test-key", noPassword: tc.noPassword}
+			s := &runtimeState{enableShortCode: true, adminKey: "test-key", noPassword: tc.noPassword}
 			req := httptest.NewRequest("POST", "/agenterm/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 			setMCPHeaders(req)
 			if tc.header != "" {
@@ -370,5 +370,31 @@ func TestManagementAuthenticationModes(t *testing.T) {
 				t.Fatalf("management tool missing: %s", rr.Body.String())
 			}
 		})
+	}
+}
+
+func TestCreateClientMCPWithShortCodesDisabled(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	h.s.enableShortCode = false
+	admin := connectMCPClient(t, h, "admin-test")
+	result, err := admin.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_client", Arguments: map[string]any{}})
+	if err != nil || result.IsError {
+		t.Fatalf("create_client: %v %v", result, err)
+	}
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"short_code", "short_code_expires_at"} {
+		if _, ok := fields[key]; ok {
+			t.Fatalf("unexpected %s", key)
+		}
+	}
+	if fields["control_token"] == "" || fields["client_token"] == "" || strings.Contains(fields["display_text"].(string), "Short Code:") {
+		t.Fatalf("invalid result: %v", fields)
 	}
 }

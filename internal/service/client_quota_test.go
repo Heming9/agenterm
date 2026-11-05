@@ -15,7 +15,7 @@ import (
 )
 
 func TestMCPCreationUsesIssuingIP(t *testing.T) {
-	s := &runtimeState{noPassword: true, clientIPHeader: "X-Real-IP", maxClientsPerIP: 1, clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, noPassword: true, clientIPHeader: "X-Real-IP", maxClientsPerIP: 1, clientURL: "wss://example.com/agenterm/client"}
 	call := func(remote, forwarded string) {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/agenterm/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_client","arguments":{}}}`))
@@ -46,7 +46,7 @@ func TestMCPCreationUsesIssuingIP(t *testing.T) {
 }
 
 func TestRequestIP(t *testing.T) {
-	s := &runtimeState{clientIPHeader: "X-Real-IP"}
+	s := &runtimeState{enableShortCode: true, clientIPHeader: "X-Real-IP"}
 	for _, tc := range []struct {
 		header, want string
 		invalid      bool
@@ -77,7 +77,7 @@ func TestRequestIP(t *testing.T) {
 }
 
 func TestQuotaReclaimsOldestUnusedAndExpired(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: 2}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: 2}
 	first, _ := s.createClient("192.0.2.1")
 	second, _ := s.createClient("192.0.2.1")
 	other, _ := s.createClient("192.0.2.2")
@@ -113,7 +113,7 @@ func TestQuotaReclaimsOldestUnusedAndExpired(t *testing.T) {
 }
 
 func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
-	s := &runtimeState{maxClientsPerIP: 1, tokens: map[string]string{}, clients: map[string]*client{}}
+	s := &runtimeState{enableShortCode: true, maxClientsPerIP: 1, tokens: map[string]string{}, clients: map[string]*client{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/client", s.connect)
 	mux.HandleFunc("/agenterm/client/", s.connect)
@@ -169,7 +169,7 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 }
 
 func TestQuotaConcurrentCreation(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: 5}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: 5}
 	var wg sync.WaitGroup
 	for i := 0; i < 40; i++ {
 		wg.Add(1)
@@ -187,7 +187,7 @@ func TestQuotaConcurrentCreation(t *testing.T) {
 }
 
 func TestQuotaConcurrentReconnects(t *testing.T) {
-	s := &runtimeState{maxClientsPerIP: 1, tokens: map[string]string{}, clients: map[string]*client{}, clientOwners: map[string]*clientOwner{}}
+	s := &runtimeState{enableShortCode: true, maxClientsPerIP: 1, tokens: map[string]string{}, clients: map[string]*client{}, clientOwners: map[string]*clientOwner{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/client", s.connect)
 	mux.HandleFunc("/agenterm/client/", s.connect)

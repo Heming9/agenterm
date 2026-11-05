@@ -101,11 +101,15 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 		}
 	}
 	config, err := controlCall[runtimeConfig](context.Background(), c, "config", struct{}{})
-	if err != nil || config.PID == first.cmd.Process.Pid {
+	if err != nil || config.PID == first.cmd.Process.Pid || config.ShortCodeEnabled == nil || *config.ShortCodeEnabled {
 		t.Fatalf("independent runtime: %+v %v", config, err)
 	}
 	h := &multiHarness{ts: &httptest.Server{URL: origin}}
-	token := h.create(t, false)
+	created := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
+	if _, ok := created["short_code"]; ok {
+		t.Fatal("default server issued a short code")
+	}
+	token := created["client_token"].(string)
 	clientCtx, stopClient := context.WithCancel(context.Background())
 	clientDone := make(chan error, 1)
 	var connections atomic.Int32
@@ -180,6 +184,9 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	if output, err := exec.Command(executable, append(args, "-passwd", "different-secret")...).CombinedOutput(); err == nil || !strings.Contains(string(output), "different -passwd") || strings.Contains(string(output), "different-secret") {
 		t.Fatalf("credential mismatch: %v\n%s", err, output)
 	}
+	if output, err := exec.Command(executable, append(args, "-enable-short-code")...).CombinedOutput(); err == nil || !strings.Contains(string(output), "short-code setting") {
+		t.Fatalf("short-code setting mismatch: %v\n%s", err, output)
+	}
 	// There is no public runtime subcommand or independently runnable worker.
 	if output, err := exec.Command(executable, "runtime").CombinedOutput(); err == nil || !strings.Contains(string(output), "unexpected argument") {
 		t.Fatalf("standalone runtime entrypoint: %v\n%s", err, output)
@@ -212,13 +219,18 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = exec.Command(executable, "stop", "-instance", "staging").Run() })
-	staging := startService(t, "server", dir, "-instance", "staging", "-listen", isolatedAddress, "-public-url", "http://"+isolatedAddress, "-passwd", "staging-key")
+	staging := startService(t, "server", dir, "-instance", "staging", "-listen", isolatedAddress, "-public-url", "http://"+isolatedAddress, "-passwd", "staging-key", "-enable-short-code")
 	waitProcessBackend(t, stagedPaths, staging)
 	staged := newRuntimeClient(stagedPaths.Runtime)
 	stagedConfig, err := controlCall[runtimeConfig](context.Background(), staged, "config", struct{}{})
 	staged.http.CloseIdleConnections()
-	if err != nil || stagedConfig.PID == config.PID {
+	if err != nil || stagedConfig.PID == config.PID || stagedConfig.ShortCodeEnabled == nil || !*stagedConfig.ShortCodeEnabled {
 		t.Fatalf("instances shared a runtime: %+v %v", stagedConfig, err)
+	}
+	stagingHarness := &multiHarness{ts: &httptest.Server{URL: "http://" + isolatedAddress}}
+	stagingCreated := stagingHarness.call(t, "staging-key", "create_client", map[string]any{}, false).(map[string]any)
+	if _, ok := stagingCreated["short_code"]; !ok {
+		t.Fatal("enabled server did not issue a short code")
 	}
 	if output, err := exec.Command(executable, "status", "-instance", "staging").CombinedOutput(); err != nil || !strings.Contains(string(output), "staging") {
 		t.Fatalf("named status: %v\n%s", err, output)
@@ -260,6 +272,9 @@ func TestRuntimeSettingsCheckOnlyExplicitFlags(t *testing.T) {
 		o.Fields = map[string]bool{name: true}
 		if name == "no-password" {
 			o.Settings.NoPassword = true
+		}
+		if name == "enable-short-code" {
+			o.Settings.EnableShortCode = true
 		}
 		if _, err := s.checkRuntimeSettings(context.Background(), o); err == nil {
 			t.Fatalf("ignored explicit mismatch: %s", name)

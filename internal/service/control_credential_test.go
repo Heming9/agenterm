@@ -17,7 +17,7 @@ import (
 )
 
 func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
-	s := &runtimeState{adminKey: "admin-test", clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, adminKey: "admin-test", clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)

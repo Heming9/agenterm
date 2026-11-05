@@ -32,7 +32,7 @@ func TestShortCodeStore(t *testing.T) {
 }
 
 func TestShortCodeLifetimeIndependentOfInvitation(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClientMode("", false, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestShortCodeLifetimeIndependentOfInvitation(t *testing.T) {
 }
 
 func TestRevocationRemovesShortCode(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestRevocationRemovesShortCode(t *testing.T) {
 }
 
 func TestShortCodeExpiryDoesNotExpireInvitation(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClientMode("", false, 600)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestShortCodeExpiryDoesNotExpireInvitation(t *testing.T) {
 }
 
 func TestShortCodeLookupEndpoint(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestShortCodeLookupEndpoint(t *testing.T) {
 }
 
 func TestShortCodeConcurrentLookupSingleUse(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestShortCodeConcurrentLookupSingleUse(t *testing.T) {
 }
 
 func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClientMode("", true, defaultInvitationTimeoutSeconds)
 	if err != nil {
 		t.Fatal(err)
@@ -192,5 +192,43 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 	}
 	if strings.Contains(issued["display_text"].(string), "Short Code:") {
 		t.Fatal("multi-device instructions contain a short code")
+	}
+}
+
+func TestShortCodesDisabled(t *testing.T) {
+	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	issued, err := s.createClientMode("", false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"short_code", "short_code_expires_at"} {
+		if _, ok := issued[key]; ok {
+			t.Fatalf("disabled short code returned %s", key)
+		}
+	}
+	if len(s.shortCodes) != 0 || strings.Contains(issued["display_text"].(string), "Short Code:") {
+		t.Fatal("disabled short code issued or displayed")
+	}
+	if remaining := time.Until(s.clientOwners[s.tokens[issued["client_token"].(string)]].expires); remaining > time.Second {
+		t.Fatalf("token lifetime unexpectedly extended: %v", remaining)
+	}
+	s.shortCodes = shortCodeStore{"ABC123": {token: issued["client_token"].(string), expires: time.Now().Add(time.Minute)}}
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(method, "/c/ABC123", nil)
+		r.Header.Set(version.Header, version.Current)
+		s.installWrapper("v1.2.3").ServeHTTP(w, r)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s: got %d", method, w.Code)
+		}
+	}
+	decoded, err := protocol.Decode(issued["client_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+decoded.Secret, nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), issued["client_token"].(string)) {
+		t.Fatal("device token installer unavailable")
 	}
 }

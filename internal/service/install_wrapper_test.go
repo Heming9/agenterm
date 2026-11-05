@@ -17,7 +17,7 @@ func TestInstallWrapperLifecycle(t *testing.T) {
 }
 
 func testInstallWrapperLifecycle(t *testing.T, multi bool) {
-	s := &runtimeState{}
+	s := &runtimeState{enableShortCode: true}
 	mux := http.NewServeMux()
 	mux.Handle("/c/", s.installWrapper("v1.2.3"))
 	mux.HandleFunc("/agenterm/invite/redeem", s.redeemInvitation)
@@ -78,7 +78,7 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 }
 
 func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, _ := s.createClient("")
 	decoded, _ := protocol.Decode(issued["invitation"].(string))
 	path := "/c/" + issued["short_code"].(string)
@@ -106,7 +106,7 @@ func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
 }
 
 func TestInstallWrapperLimitsShortCodeGuesses(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
@@ -134,13 +134,13 @@ func TestInstallWrapperLimitsShortCodeGuesses(t *testing.T) {
 }
 
 func TestShortInstallLinkAfterRuntimeRestart(t *testing.T) {
-	original := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	original := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := original.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	value := issued["invitation"].(string)
-	fresh := &runtimeState{clientURL: original.clientURL}
+	fresh := &runtimeState{enableShortCode: true, clientURL: original.clientURL}
 	for _, suffix := range []string{"", ".ps1"} {
 		w := httptest.NewRecorder()
 		fresh.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string)+suffix, nil))
@@ -151,7 +151,7 @@ func TestShortInstallLinkAfterRuntimeRestart(t *testing.T) {
 }
 
 func TestInstallerUsesTokenSecretIndependentlyOfShortCode(t *testing.T) {
-	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)

@@ -80,7 +80,7 @@ func TestAuthenticationRequiresConfiguredIPHeaderAcrossEndpoints(t *testing.T) {
 			{"scoped-ipv6", []string{"fe80::1%lo0"}},
 		} {
 			t.Run(endpoint+"/"+header.name, func(t *testing.T) {
-				s := &runtimeState{noPassword: true, clientIPHeader: "X-Client-IP"}
+				s := &runtimeState{noPassword: true, clientIPHeader: "X-Client-IP", enableShortCode: true}
 				r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 				setMCPHeaders(r)
 				r.RemoteAddr = "203.0.113.5:1234"

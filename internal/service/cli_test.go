@@ -12,13 +12,13 @@ import (
 	"testing"
 )
 
-func TestServerCLIHasNineOptionsAndSeparateCommands(t *testing.T) {
+func TestServerCLIOptionsAndSeparateCommands(t *testing.T) {
 	var help bytes.Buffer
 	_, err := parseServerCommand([]string{"-help"}, &help)
 	if !errors.Is(err, flag.ErrHelp) {
 		t.Fatal(err)
 	}
-	wanted := []string{"client-ip-header", "instance", "listen", "max-clients-per-ip", "no-password", "passwd", "public-url", "stdio", "url-prefix"}
+	wanted := []string{"client-ip-header", "enable-short-code", "instance", "listen", "max-clients-per-ip", "no-password", "passwd", "public-url", "stdio", "url-prefix"}
 	actual := make([]string, 0)
 	for _, line := range strings.Split(help.String(), "\n") {
 		if strings.HasPrefix(line, "  -") {
