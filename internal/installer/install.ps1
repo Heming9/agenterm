@@ -51,12 +51,46 @@ Write-Host ''
 Write-Styled (Text 'installer.remote.control.authorization') 'Yellow'
 Write-Host (Text 'installer.server.s' @($origin))
 Say 'installer.the.server.can.control.this.computer.with'
-Write-Styled (Text 'installer.allow.connection.y.n') 'Yellow' -NoNewline
-$answer = [Console]::ReadLine()
-if ($null -eq $answer -or $answer.Trim() -ine 'y') {
-  Say 'installer.connection.cancelled'
-  return
+Write-Host ''
+Say 'installer.consent.menu'
+$choices = @((Text 'installer.consent.temporary'), (Text 'installer.consent.persistent'), (Text 'installer.consent.no'))
+$choice = 0
+if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
+  $previousLines = 0
+  while ($true) {
+    $vertical = [Console]::WindowWidth -lt 120
+    if ($previousLines -gt 0) {
+      $top = [Math]::Max(0, [Console]::CursorTop - ($previousLines - 1))
+      for ($line = 0; $line -lt $previousLines; $line++) {
+        [Console]::SetCursorPosition(0, $top + $line)
+        Write-Host (' ' * [Math]::Max(0, [Console]::WindowWidth - 1)) -NoNewline
+      }
+      [Console]::SetCursorPosition(0, $top)
+    }
+    Write-Host "`r" -NoNewline
+    for ($i = 0; $i -lt 3; $i++) {
+      if ($i -eq $choice) {
+        if ($useColor) { Write-Host (" ▶ " + $choices[$i] + " ") -ForegroundColor Black -BackgroundColor White -NoNewline }
+        else { Write-Host (" ▶ " + $choices[$i] + " ") -NoNewline }
+      } else { Write-Host ("   " + $choices[$i] + " ") -NoNewline }
+      if ($vertical -and $i -lt 2) { Write-Host '   ' } else { Write-Host '   ' -NoNewline }
+    }
+    $previousLines = if ($vertical) { 3 } else { 1 }
+    $key = [Console]::ReadKey($true)
+    if ($key.Key -eq 'Enter') { break }
+    if (($key.Key -eq 'LeftArrow' -or $key.Key -eq 'UpArrow') -and $choice -gt 0) { $choice-- }
+    if (($key.Key -eq 'RightArrow' -or $key.Key -eq 'DownArrow') -and $choice -lt 2) { $choice++ }
+  }
+  Write-Host ''
+} else {
+  Write-Host ("1. {0}    2. {1}    3. {2}" -f $choices)
+  Write-Host (Text 'installer.consent.number') -NoNewline
+  $answer = [Console]::ReadLine()
+  if ($answer -eq '1') { $choice = 0 } elseif ($answer -eq '2') { $choice = 1 } else { $choice = 2 }
 }
+if ($choice -eq 2) { Say 'installer.connection.cancelled'; return }
+$clientOptions = @()
+if ($choice -eq 0) { $clientOptions += '-temporary' }
 Say 'installer.connection.progress'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
@@ -135,9 +169,9 @@ try {
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
     if ($Invitation) {
-      if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program -token $Invitation } else { & $program -invite $Invitation -consent-confirmed }
+      if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program @clientOptions -token $Invitation } else { & $program @clientOptions -invite $Invitation -consent-confirmed }
     } else {
-      & $program -token=
+      & $program @clientOptions -token=
     }
     $clientExitCode = $LASTEXITCODE
   } finally { $env:AGENTERM_LANG = $previousLanguage }

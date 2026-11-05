@@ -12,6 +12,7 @@ type Options struct {
 	Invitation       string
 	Plain            bool
 	ConsentConfirmed bool
+	Temporary        bool
 }
 
 // ParseOptions registers and parses client flags. Terminal-only flags are
@@ -22,6 +23,7 @@ func ParseOptions(flags *flag.FlagSet, args []string, terminal bool, text func(s
 	flags.StringVar(&options.Token, "token", "", text("connection.token.omit.to.enter.interactively"))
 	flags.StringVar(&options.Invitation, "invite", "", text("one.time.invitation"))
 	if terminal {
+		flags.BoolVar(&options.Temporary, "temporary", false, text("installer.consent.temporary"))
 		flags.BoolVar(&options.Plain, "plain", false, text("use.plain.text.output"))
 		flags.BoolVar(&options.ConsentConfirmed, "consent-confirmed", false, text("connection.consent.already.obtained.by.the.installer"))
 	}

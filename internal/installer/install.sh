@@ -56,15 +56,51 @@ banner
 printf '\n%s%s%s\n' "$gold" "$(text installer.remote.control.authorization)" "$reset"
 say installer.server.s "$origin"
 say installer.the.server.can.control.this.computer.with
-printf '%s%s%s' "$gold" "$(text installer.allow.connection.y.n)" "$reset"
-if ! read -r answer; then
-  say installer.connection.cancelled
-  exit 0
+printf '\n'
+say installer.consent.menu
+choice=1
+if [ -t 0 ] && [ -t 1 ] && command -v stty >/dev/null 2>&1; then
+  old_tty=$(stty -g)
+  stty -echo -icanon min 1 time 0
+  trap 'stty "$old_tty"; exit 130' HUP INT TERM
+  previous_lines=0
+  while :; do
+    columns=$(stty size 2>/dev/null | awk '{print $2}')
+    case "$columns" in ''|*[!0-9]*) columns=80;; esac
+    if [ "$columns" -lt 120 ]; then vertical=1; else vertical=0; fi
+    if [ "$previous_lines" -gt 1 ]; then printf '\033[%sA' "$((previous_lines - 1))"; fi
+    printf '\r\033[J'
+    index=0
+    for label in "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$(text installer.consent.no)"; do
+      index=$((index + 1))
+      if [ "$index" -eq "$choice" ]; then
+        if [ -n "$reset" ]; then printf '\033[7m ▶ %s \033[0m' "$label"; else printf ' ▶ %s ' "$label"; fi
+      else
+        printf '   %s ' "$label"
+      fi
+      if [ "$vertical" -eq 1 ] && [ "$index" -lt 3 ]; then printf '\n'; else printf '   '; fi
+    done
+    if [ "$vertical" -eq 1 ]; then previous_lines=3; else previous_lines=1; fi
+    key=$(dd bs=1 count=1 2>/dev/null || true; printf '.')
+    case "$key" in
+      .) choice=3; break ;;
+      "$(printf '\n.')"|"$(printf '\r.')") break ;;
+      "$(printf '\003.')"|"$(printf '\004.')") choice=3; break ;;
+      "$(printf '\033.')")
+        sequence=$(dd bs=1 count=2 2>/dev/null || true)
+        case "$sequence" in '[C'|'[B') [ "$choice" -ge 3 ] || choice=$((choice + 1));; '[D'|'[A') [ "$choice" -le 1 ] || choice=$((choice - 1));; esac ;;
+      1.|2.|3.) choice=${key%.} ;;
+    esac
+  done
+  stty "$old_tty"
+  trap - HUP INT TERM
+  printf '\n'
+else
+  printf '1. %s    2. %s    3. %s\n' "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$(text installer.consent.no)"
+  printf '%s' "$(text installer.consent.number)"
+  read -r choice || choice=3
 fi
-case "$answer" in
-  y|Y) ;;
-  *) say installer.connection.cancelled; exit 0 ;;
-esac
+case "$choice" in 1) temporary=-temporary;; 2) temporary=;; *) say installer.connection.cancelled; exit 0;; esac
 say installer.connection.progress
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) say installer.unsupported.system >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) say installer.unsupported.architecture >&2; exit 1;; esac
@@ -129,7 +165,7 @@ else
   say installer.client.verified
 fi
 if [ -n "$invitation" ]; then
-  case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" -token "$invitation";; *) "$binary" -invite "$invitation" -consent-confirmed;; esac
+  case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" ${temporary:+"$temporary"} -token "$invitation";; *) "$binary" ${temporary:+"$temporary"} -invite "$invitation" -consent-confirmed;; esac
 else
-  "$binary" -token ""
+  "$binary" ${temporary:+"$temporary"} -token ""
 fi

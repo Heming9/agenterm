@@ -12,7 +12,7 @@ import (
 
 func TestShellAuthorizationLanguage(t *testing.T) {
 	for _, tc := range []struct{ locale, want string }{
-		{"zh-CN", "是否允许连接？"}, {"en", "Allow connection?"}, {"ja-JP", "Allow connection?"}, {"zh-TW", "Allow connection?"},
+		{"zh-CN", "选择授权方式"}, {"en", "Choose authorization"}, {"ja-JP", "Choose authorization"}, {"zh-TW", "Choose authorization"},
 	} {
 		t.Run(tc.locale, func(t *testing.T) {
 			script, err := Script("install.sh")

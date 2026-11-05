@@ -31,6 +31,34 @@ type attemptResult struct {
 }
 
 func reconnect(ctx context.Context, token protocol.Token, log io.Writer, callbacks Callbacks) error {
+	if log == nil {
+		log = io.Discard
+	}
+	if callbacks.IdleTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		tracker := newIdleTracker(ctx, callbacks.IdleTimeout, func() {
+			if callbacks.IdleDisconnected != nil {
+				callbacks.IdleDisconnected()
+			}
+			cancel()
+		})
+		callbacks.idle = tracker
+		originalCommand := callbacks.Command
+		callbacks.Command = func(e CommandEvent) {
+			tracker.command(e)
+			if originalCommand != nil {
+				originalCommand(e)
+			} else if e.Done {
+				fmt.Fprintf(log, i18n.Text(i18n.Terminal(), "agenterm.finished.exit.code.d"), e.ExitCode)
+			} else if e.Interactive {
+				fmt.Fprintf(log, i18n.Text(i18n.Terminal(), "agenterm.running.interactive.s"), e.Command)
+			} else {
+				fmt.Fprintf(log, i18n.Text(i18n.Terminal(), "agenterm.running.s"), e.Command)
+			}
+		}
+	}
 	api := NewManager(log, TerminalCallbacks{Command: callbacks.Command, Output: callbacks.Output})
 	defer func() { api.Close(); api.WaitCallbacks() }()
 	delay, attempt := time.Second, 0

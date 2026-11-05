@@ -7,6 +7,7 @@ import (
 	"agenterm/internal/version"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
@@ -22,6 +23,9 @@ import (
 // Output, when supplied, receives process output with its command ID; otherwise
 // process output is written to logWriter as it arrives.
 type Callbacks struct {
+	IdleTimeout      time.Duration
+	IdleDisconnected func()
+	idle             *idleTracker
 	// Redeemed receives the reusable token after an invitation is exchanged.
 	Redeemed     func(token string)
 	Connecting   func()
@@ -195,6 +199,9 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 		case <-closed:
 		}
 	}()
+	if callbacks.idle != nil {
+		callbacks.idle.start()
+	}
 	if callbacks.Connected != nil {
 		callbacks.Connected()
 	}
@@ -232,6 +239,12 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 				callbacks.Latency(time.Duration(m.LatencyMS) * time.Millisecond)
 			}
 		case "api_call":
+			if callbacks.idle != nil {
+				var request APIRequest
+				if json.Unmarshal(m.Request, &request) == nil && (request.Method == "execute" || request.Method == "control") {
+					callbacks.idle.touch()
+				}
+			}
 			c.startAPICall(m)
 		case "api_cancel":
 			c.mu.Lock()
@@ -240,6 +253,9 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 			}
 			c.mu.Unlock()
 		case "p2p_start":
+			if callbacks.idle != nil {
+				callbacks.idle.touch()
+			}
 			if m.P2P != nil && len(m.P2P.Script) <= 64<<10 && len(m.P2P.StopScript) <= 64<<10 && len(m.P2P.ConfigBase64) <= 32<<10 {
 				c.startBootstrap(m)
 			}

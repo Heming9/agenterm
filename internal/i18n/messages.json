@@ -217,7 +217,7 @@
   },
   "tui.ctrl.c.quit": {
     "en": "Ctrl+C disconnect",
-    "zh-CN": "Ctrl+C 返回"
+    "zh-CN": "Ctrl+C 中断连接"
   },
   "tui.command.count": {
     "en": "%d commands",
@@ -264,8 +264,8 @@
     "zh-CN": "安装器已取得连接授权"
   },
   "remote.control.authorization.prompt": {
-    "en": "⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n\nAllow connection? [y/N] ",
-    "zh-CN": "⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n\n是否允许连接？[y/N] "
+    "en": "⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n",
+    "zh-CN": "⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n"
   },
   "connection.cancelled": {
     "en": "Connection cancelled.",
@@ -1018,5 +1018,29 @@
   "mcp.result.terminal_api": {
     "en": "Whether this device supports the terminal client API.",
     "zh-CN": "此设备是否支持终端 client API。"
+  },
+  "installer.consent.menu": {
+    "en": "Choose authorization (↑/↓/←/→, Enter):",
+    "zh-CN": "选择授权方式（↑/↓/←/→，回车确认）："
+  },
+  "installer.consent.no": {
+    "en": "Deny authorization",
+    "zh-CN": "拒绝授权"
+  },
+  "installer.consent.temporary": {
+    "en": "Allow authorization (temporary)",
+    "zh-CN": "允许授权（临时连接）"
+  },
+  "installer.consent.persistent": {
+    "en": "Allow authorization (persistent)",
+    "zh-CN": "允许授权（持久连接）"
+  },
+  "installer.consent.number": {
+    "en": "Enter 1, 2 or 3: ",
+    "zh-CN": "请输入 1、2 或 3："
+  },
+  "connection.idle.disconnected": {
+    "en": "Disconnected after 5 minutes of inactivity.",
+    "zh-CN": "连接已因 5 分钟无操作自动断开。"
   }
 }

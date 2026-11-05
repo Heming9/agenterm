@@ -82,6 +82,7 @@ type tuiModel struct {
 	lastID                  string
 	width, height           int
 	connectionProgress      bool
+	temporary               bool
 	autoConnect             bool
 	connectionCancel        context.CancelFunc
 	invitation              string
@@ -103,9 +104,10 @@ func newTUI(token string) *tuiModel {
 	input.Focus()
 	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*logview.Decoder), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
 }
-func runTUI(token string, connectionProgress, tokenProvided bool) error {
+func runTUI(token string, connectionProgress, tokenProvided, temporary bool) error {
 	m := newTUI(token)
 	m.connectionProgress = connectionProgress
+	m.temporary = temporary
 	m.autoConnect = tokenProvided
 	if connectionProgress {
 		m.invitation = token
@@ -176,7 +178,14 @@ func (m *tuiModel) connect() tea.Cmd {
 	m.connectionCancel = connectionCancel
 	go func() {
 		defer connectionCancel()
+		idleTimeout := time.Duration(0)
+		if m.temporary {
+			idleTimeout = 5 * time.Minute
+		}
+		idleExpired := false
 		err := run(connectionCtx, token, io.Discard, client.Callbacks{
+			IdleTimeout:      idleTimeout,
+			IdleDisconnected: func() { idleExpired = true },
 			Redeemed: func(token string) {
 				if target, _, err := client.ConnectionAddress(token); err == nil {
 					address = target
@@ -192,6 +201,9 @@ func (m *tuiModel) connect() tea.Cmd {
 				m.send(generation, tuiEvent{id: id, output: append([]byte(nil), data...)})
 			},
 		})
+		if idleExpired {
+			err = fmt.Errorf("%s", tr("connection.idle.disconnected"))
+		}
 		m.send(generation, tuiEvent{finished: true, err: err})
 	}()
 	return m.waitEvent()

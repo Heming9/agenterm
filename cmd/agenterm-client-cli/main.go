@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -45,17 +46,18 @@ func main() {
 		}
 		if !options.ConsentConfirmed {
 			fmt.Printf(tr("remote.control.authorization.prompt"), strings.TrimSuffix(endpoint, "/invite/redeem"))
-			answer, _ := input.ReadString('\n')
-			if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+			choice := authorizationChoice(input, os.Stdout)
+			if choice == 0 {
 				fmt.Println(tr("connection.cancelled"))
 				return
 			}
+			options.Temporary = choice == 1
 		}
 		fmt.Println(tr("3.4.verifying.invitation.and.connecting"))
 		token = options.Invitation
 	}
 	if !options.Plain && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
-		if err := runTUI(token, options.Invitation != "", tokenProvided); err != nil {
+		if err := runTUI(token, options.Invitation != "", tokenProvided, options.Temporary); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -84,7 +86,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	serverAddress, _, _ := client.ConnectionAddress(token)
-	if err := run(ctx, token, os.Stdout, client.Callbacks{Redeemed: func(token string) {
+	idleTimeout := time.Duration(0)
+	if options.Temporary {
+		idleTimeout = 5 * time.Minute
+	}
+	if err := run(ctx, token, os.Stdout, client.Callbacks{IdleTimeout: idleTimeout, IdleDisconnected: func() { fmt.Println(tr("connection.idle.disconnected")) }, Redeemed: func(token string) {
 		if target, _, err := client.ConnectionAddress(token); err == nil {
 			serverAddress = target
 		}

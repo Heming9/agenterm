@@ -125,7 +125,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command("sh", "-c", command)
 		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-		cmd.Stdin = strings.NewReader("y\n")
+		cmd.Stdin = strings.NewReader("2\n")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("command failed: %v\n%s", err, out)
@@ -134,11 +134,11 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 			t.Fatalf("unexpected client output: %s", out)
 		}
 		output := string(out)
-		if strings.Count(output, "是否允许连接？[y/N]") != 1 || !strings.Contains(output, "请确保你信任对方") {
+		if strings.Count(output, "选择授权方式（↑/↓/←/→，回车确认）：") != 1 || !strings.Contains(output, "请确保你信任对方") {
 			t.Fatalf("missing or duplicate consent prompt: %s", output)
 		}
 		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[2/4]", "arg=-token"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "选择授权方式（↑/↓/←/→，回车确认）：", "连接进度", "[2/4]", "arg=-token"} {
 			index := strings.Index(output, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", output)
@@ -152,6 +152,12 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	}
 	if output := run(); !strings.Contains(output, "本地客户端校验通过，跳过下载") {
 		t.Fatalf("second run: %s", output)
+	}
+	cmdTemporary := exec.Command("sh", "-c", command)
+	cmdTemporary.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+	cmdTemporary.Stdin = strings.NewReader("1\n")
+	if out, err := cmdTemporary.CombinedOutput(); err != nil || !strings.Contains(string(out), "arg=-temporary invitation=-token") {
+		t.Fatalf("temporary choice was not passed to client: %v\n%s", err, out)
 	}
 	logContent, err := os.ReadFile(log)
 	if err != nil {
@@ -190,7 +196,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	write(filepath.Join(assets, archive), []byte("corrupted archive"), 0o600)
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-	cmd.Stdin = strings.NewReader("y\n")
+	cmd.Stdin = strings.NewReader("2\n")
 	out, err := cmd.CombinedOutput()
 	if err == nil || strings.Contains(string(out), "arg=-token") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
@@ -204,7 +210,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	state.mu.Unlock()
 	cmd = exec.Command("sh", "-c", command)
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-	cmd.Stdin = strings.NewReader("y\n")
+	cmd.Stdin = strings.NewReader("2\n")
 	out, err = cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "arg=-token invitation= consent=") {
 		t.Fatalf("expired launch: %v %s", err, out)

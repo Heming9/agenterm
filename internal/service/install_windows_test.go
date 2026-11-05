@@ -118,17 +118,17 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 			t.Fatalf("cache created before consent: %v", err)
 		}
 	}
-	run := func() (string, error) { return runWithInput("y\n") }
+	run := func() (string, error) { return runWithInput("2\n") }
 	for i, message := range []string{"正在下载客户端", "本地客户端校验通过，跳过下载"} {
 		out, err := run()
 		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-token invitation="+issued["client_token"].(string)) {
 			t.Fatalf("run %d: %v\n%s", i, err, out)
 		}
-		if strings.Count(out, "是否允许连接？[y/N]") != 1 || !strings.Contains(out, "请确保你信任对方") {
+		if strings.Count(out, "选择授权方式（↑/↓/←/→，回车确认）：") != 1 || !strings.Contains(out, "请确保你信任对方") {
 			t.Fatalf("missing or duplicate consent prompt: %s", out)
 		}
 		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[2/4]", "arg=-token"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "选择授权方式（↑/↓/←/→，回车确认）：", "连接进度", "[2/4]", "arg=-token"} {
 			index := strings.Index(out, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", out)
@@ -140,11 +140,11 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())
 	}
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; [Threading.Thread]::CurrentThread.CurrentCulture = 'zh-CN'; $env:AGENTERM_LANG = 'auto'; `
-	if out, err := run(); err != nil || !strings.Contains(out, "Allow connection?") || !strings.Contains(out, "lang=en") || !strings.Contains(out, "restored-lang=auto") {
+	if out, err := run(); err != nil || !strings.Contains(out, "Choose authorization") || !strings.Contains(out, "lang=en") || !strings.Contains(out, "restored-lang=auto") {
 		t.Fatalf("display language differs from regional format: %v\n%s", err, out)
 	}
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $env:AGENTERM_LANG = 'zh-CN'; `
-	if out, err := run(); err != nil || !strings.Contains(out, "是否允许连接？") || !strings.Contains(out, "lang=zh-CN") || !strings.Contains(out, "restored-lang=zh-CN") {
+	if out, err := run(); err != nil || !strings.Contains(out, "选择授权方式") || !strings.Contains(out, "lang=zh-CN") || !strings.Contains(out, "restored-lang=zh-CN") {
 		t.Fatalf("explicit language override: %v\n%s", err, out)
 	}
 	customPrefix = ""
