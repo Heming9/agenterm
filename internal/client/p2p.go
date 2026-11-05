@@ -31,13 +31,30 @@ func stopP2P(script string) {
 type BootstrapOptions struct{ Script, StopScript, ConfigBase64 string }
 
 func Bootstrap(ctx context.Context, a BootstrapOptions, output io.Writer) (int, error) {
-	defer stopP2P(a.StopScript)
-	cmd := p2pCommand(ctx, a.Script)
+	commandCtx, cancelCommand := context.WithCancel(context.Background())
+	defer cancelCommand()
+	finished := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			// Give the helper a chance to notify its peer and remove its state
+			// before the process group is killed as a fallback.
+			stopP2P(a.StopScript)
+			cancelCommand()
+		case <-finished:
+			stopP2P(a.StopScript)
+		}
+	}()
+	cmd := p2pCommand(commandCtx, a.Script)
 	configureCommand(cmd, false)
 	cmd.Env = append(os.Environ(), "AGENTERM_P2P_CONFIG_B64="+a.ConfigBase64)
 	stdout, stderr := newOutputWriter(output), newOutputWriter(output)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
+	close(finished)
+	<-stopped
 	_ = stdout.Close()
 	_ = stderr.Close()
 	code, detail := processResult(cmd, err)
