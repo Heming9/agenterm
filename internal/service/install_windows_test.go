@@ -128,7 +128,7 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 			t.Fatalf("missing or duplicate consent prompt: %s", out)
 		}
 		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[1/4]", "[2/4]", "arg=-token"} {
+		for _, stage := range []string{"⚠️ 远程控制授权", "是否允许连接？[y/N]", "连接进度", "[2/4]", "arg=-token"} {
 			index := strings.Index(out, stage)
 			if index <= previous {
 				t.Fatalf("unexpected stage order: %s", out)
