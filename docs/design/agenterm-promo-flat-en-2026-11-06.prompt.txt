@@ -1,0 +1,30 @@
+Use case: text-localization / ads-marketing.
+Edit target: attached Agenterm flat Chinese promotional poster. Create its ENGLISH VERSION for sharing on Product Hunt. Preserve the flat ivory/black/mustard editorial design, terminal-face brand mark, information hierarchy, the 2D terminal connection diagram, thin horizontal dividers and portrait 2:3 format. Reflow all typography for natural concise English. English only; remove every Chinese character. This is localization of the existing poster, not a new product concept.
+Style: genuinely flat vector-like solid fills, uniform ivory #F5F2E9 background, near-black typography, flat mustard #E5BA54 highlights. No texture, gradients, metallic finishes, 3D, drop shadows, glow, robots or photography. Crisp modern sans-serif, careful kerning, generous spacing and aligned grid. Big headline and readable supporting copy. No awkward hyphenation. All text stays within margins.
+Exact text and layout:
+Top brand: "Agenterm" with small descriptor "AI REMOTE TERMINAL ASSISTANT".
+Headline, large bold, three lines:
+"Your AI agent."
+"Another computer."
+"One connection."
+Highlight third line with flat mustard block.
+Subtitle, two lines if needed:
+"Authorize once. Let your existing agent"
+"help through the terminal."
+Center illustration: simple outlined terminal window on left, straight arrow to flat mustard square >_< brand icon at center, straight arrow to two overlapping outlined terminal windows on right. These are diagram symbols, not device renderings.
+Labels: "Your AI agent" / "Agenterm" / "Authorized devices".
+Three-step workflow row, evenly spaced:
+"01  Add MCP" → "02  Invite & authorize" → "03  Start helping".
+Three feature rows separated by thin horizontal rules. A tiny black outline icon, a bold title and a one-line description for each. Allocate sufficient width for English:
+"Troubleshoot" — "Inspect environments and logs."
+"Multiple devices" — "Work across dev machines and servers."
+"Stay in control" — "See commands and output. Disconnect anytime."
+Benefits single line, or wrap cleanly if needed:
+"No SSH needed  ·  No inbound ports  ·  Self-hostable"
+Footer CTA:
+"Take your AI agent beyond your own computer."
+Then prominent "agenterm.net" in flat mustard rectangle with small arrow.
+Separate smaller line "github.com/Heming9/agenterm".
+Small footer metadata:
+"macOS · Linux · Windows   /   CLI · GUI   /   Apache-2.0".
+No additional text, no Product Hunt logo or ranking, no QR code, invented metrics or claims. Preserve explicit authorization and terminal-only product meaning. The poster should read like a practical open-source developer tool launch designed by a human graphic designer. Output one polished finished English portrait poster.

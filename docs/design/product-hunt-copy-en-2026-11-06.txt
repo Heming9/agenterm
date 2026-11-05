@@ -1,0 +1,20 @@
+Product name
+Agenterm
+
+Tagline
+Let your AI agent help on another computer
+
+Description
+Agenterm connects your existing AI agent to remote terminals through MCP. Troubleshoot, inspect logs, and work across devices with explicit authorization. See commands and output, disconnect anytime. Open source, self-hostable, and no SSH required.
+
+Short launch post
+Hi Product Hunt! I built Agenterm to let the AI agent you already use help on another computer.
+
+Connect your agent via MCP, share an invitation, and have the other person run a connection command and authorize access. Your agent can then troubleshoot, inspect logs, or work across dev machines and servers through the terminal. They can see commands and output and disconnect at any time.
+
+Agenterm is open source, supports macOS, Linux, and Windows, and can be self-hosted. No SSH or inbound ports required.
+
+Try it: https://agenterm.net
+Source: https://github.com/Heming9/agenterm
+
+I'd love to hear what you'd use it for!
