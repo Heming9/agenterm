@@ -6,14 +6,12 @@ import (
 	"strings"
 )
 
-// ScriptTranslations renders the shared installer resources as safely quoted
-// script literals. Both languages are included: selection happens on the client.
-func ScriptTranslations(powershell bool) string {
-	keys := make([]string, 0)
-	for key := range messages {
-		if strings.HasPrefix(key, "installer.") {
-			keys = append(keys, key)
-		}
+// ScriptTranslations renders the requested resources with compact script keys.
+// Both languages are included: selection happens on the client.
+func ScriptTranslations(powershell bool, names map[string]string) string {
+	keys := make([]string, 0, len(names))
+	for key := range names {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	var b strings.Builder
@@ -31,9 +29,9 @@ func ScriptTranslations(powershell bool) string {
 				for n := 0; strings.Contains(value, "%s"); n++ {
 					value = strings.Replace(value, "%s", fmt.Sprintf("{%d}", n), 1)
 				}
-				fmt.Fprintf(&b, " '%d:%s' = '%s'\n", index, key, strings.ReplaceAll(value, "'", "''"))
+				fmt.Fprintf(&b, " '%d:%s' = '%s'\n", index, names[key], strings.ReplaceAll(value, "'", "''"))
 			} else {
-				fmt.Fprintf(&b, " '%d:%s') printf '%%s' '%s';;\n", index, key, strings.ReplaceAll(value, "'", "'\"'\"'"))
+				fmt.Fprintf(&b, " '%d:%s') printf '%%s' '%s';;\n", index, names[key], strings.ReplaceAll(value, "'", "'\"'\"'"))
 			}
 		}
 	}
