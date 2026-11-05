@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const Current = "0.10.3"
+const Current = "0.10.4"
 const Header = "X-Agenterm-Version"
 
 // SemVer 2.0.0 grammar, including the prohibition on leading zeroes in numeric
