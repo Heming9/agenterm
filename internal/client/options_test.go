@@ -26,6 +26,29 @@ func TestParseOptions(t *testing.T) {
 	}
 }
 
+func TestConnectionMode(t *testing.T) {
+	for _, tc := range []struct {
+		args    []string
+		mode    string
+		wantErr bool
+	}{
+		{nil, ConnectionModeTemporary, false},
+		{[]string{"-token=example"}, ConnectionModeTemporary, false},
+		{[]string{"-connection-mode=temporary"}, ConnectionModeTemporary, false},
+		{[]string{"-connection-mode", "persistent"}, ConnectionModePersistent, false},
+		{[]string{"-connection-mode=invalid"}, "", true},
+		{[]string{"-connection-mode="}, "", true},
+		{[]string{"-temporary"}, "", true},
+	} {
+		flags := flag.NewFlagSet("client", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		options, err := ParseOptions(flags, tc.args, true, func(s string) string { return s })
+		if (err != nil) != tc.wantErr || (!tc.wantErr && options.ConnectionMode != tc.mode) {
+			t.Fatalf("args %v: options %+v, error %v", tc.args, options, err)
+		}
+	}
+}
+
 func TestParseOptionsValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

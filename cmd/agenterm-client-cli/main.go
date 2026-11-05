@@ -32,9 +32,13 @@ func main() {
 		log.Fatal(err)
 	}
 	tokenProvided := false
+	modeProvided := false
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "token" {
 			tokenProvided = true
+		}
+		if f.Name == "connection-mode" {
+			modeProvided = true
 		}
 	})
 	input := bufio.NewReader(os.Stdin)
@@ -51,13 +55,16 @@ func main() {
 				fmt.Println(tr("connection.cancelled"))
 				return
 			}
-			options.Temporary = choice == 1
+			options.ConnectionMode = client.ConnectionModePersistent
+			if choice == 1 {
+				options.ConnectionMode = client.ConnectionModeTemporary
+			}
 		}
 		fmt.Println(tr("3.4.verifying.invitation.and.connecting"))
 		token = options.Invitation
 	}
 	if !options.Plain && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
-		if err := runTUI(token, options.Invitation != "", tokenProvided, options.Temporary); err != nil {
+		if err := runTUI(token, options.Invitation != "", tokenProvided, options.ConnectionMode == client.ConnectionModeTemporary, modeProvided); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -87,7 +94,7 @@ func main() {
 	defer stop()
 	serverAddress, _, _ := client.ConnectionAddress(token)
 	idleTimeout := time.Duration(0)
-	if options.Temporary {
+	if options.ConnectionMode == client.ConnectionModeTemporary {
 		idleTimeout = 5 * time.Minute
 	}
 	if err := run(ctx, token, os.Stdout, client.Callbacks{IdleTimeout: idleTimeout, IdleDisconnected: func() { fmt.Println(tr("connection.idle.disconnected")) }, Redeemed: func(token string) {

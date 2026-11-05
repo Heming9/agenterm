@@ -124,6 +124,9 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-token invitation="+issued["client_token"].(string)) {
 			t.Fatalf("run %d: %v\n%s", i, err, out)
 		}
+		if !strings.Contains(out, "consent=-connection-mode=persistent") {
+			t.Fatalf("persistent choice was not passed to client: %s", out)
+		}
 		if strings.Count(out, "选择授权方式（↑/↓/←/→，回车确认）：") != 1 || !strings.Contains(out, "请确保你信任对方") {
 			t.Fatalf("missing or duplicate consent prompt: %s", out)
 		}
@@ -135,6 +138,9 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 			}
 			previous = index
 		}
+	}
+	if out, err := runWithInput("1\n"); err != nil || !strings.Contains(out, "consent=-connection-mode=temporary ") {
+		t.Fatalf("temporary choice was not passed to client: %v\n%s", err, out)
 	}
 	if archiveRequests.Load() != 1 {
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())

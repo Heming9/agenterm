@@ -6,13 +6,18 @@ import (
 	"strings"
 )
 
+const (
+	ConnectionModeTemporary  = "temporary"
+	ConnectionModePersistent = "persistent"
+)
+
 // Options contains startup settings shared by the client entry points.
 type Options struct {
 	Token            string
 	Invitation       string
 	Plain            bool
 	ConsentConfirmed bool
-	Temporary        bool
+	ConnectionMode   string
 }
 
 // ParseOptions registers and parses client flags. Terminal-only flags are
@@ -23,7 +28,7 @@ func ParseOptions(flags *flag.FlagSet, args []string, terminal bool, text func(s
 	flags.StringVar(&options.Token, "token", "", text("connection.token.omit.to.enter.interactively"))
 	flags.StringVar(&options.Invitation, "invite", "", text("one.time.invitation"))
 	if terminal {
-		flags.BoolVar(&options.Temporary, "temporary", false, text("installer.consent.temporary"))
+		flags.StringVar(&options.ConnectionMode, "connection-mode", ConnectionModeTemporary, text("connection.mode.flag"))
 		flags.BoolVar(&options.Plain, "plain", false, text("use.plain.text.output"))
 		flags.BoolVar(&options.ConsentConfirmed, "consent-confirmed", false, text("connection.consent.already.obtained.by.the.installer"))
 	}
@@ -32,6 +37,9 @@ func ParseOptions(flags *flag.FlagSet, args []string, terminal bool, text func(s
 	}
 	if flags.NArg() != 0 {
 		return Options{}, fmt.Errorf("unexpected positional arguments; use -token or -invite")
+	}
+	if terminal && options.ConnectionMode != ConnectionModeTemporary && options.ConnectionMode != ConnectionModePersistent {
+		return Options{}, fmt.Errorf("-connection-mode must be temporary or persistent")
 	}
 	options.Token = strings.TrimSpace(options.Token)
 	options.Invitation = strings.TrimSpace(options.Invitation)

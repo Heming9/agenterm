@@ -55,6 +55,8 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 - 🖥️ **终端客户端：** 可粘贴连接令牌或短码地址连接；使用方向键或鼠标滚轮浏览，拖选文字复制，按 `c` 清空显示，按 `q` 断开并退出。
 - 🪟 **桌面客户端：** 可粘贴连接令牌或短码地址（例如 `https://example.com/agenterm/c/XXXXXX`）、连接或断开，并查看实时命令和输出。界面语言可在应用菜单的 **Language / 语言** 中切换，重启后生效。
 
+终端客户端启动时可以使用 `-connection-mode=temporary` 或 `-connection-mode=persistent` 指定连接模式，默认值为 `temporary`。使用一键连接或邀请时，以授权步骤中选择的模式为准。
+
 一键连接下载的客户端会保留在本机缓存中；关闭客户端后可以删除：
 
 | 系统 | 缓存目录 |

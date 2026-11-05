@@ -274,6 +274,22 @@ func TestManualConnectionModeSelection(t *testing.T) {
 	}
 }
 
+func TestExplicitConnectionModeSkipsManualSelection(t *testing.T) {
+	token, err := protocol.Encode(protocol.Token{URL: "ws://127.0.0.1:1/agenterm/client", Secret: base64.RawURLEncoding.EncodeToString(make([]byte, protocol.TokenSecretSize))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, temporary := range []bool{true, false} {
+		m := newTUI(token)
+		m.modeProvided, m.temporary = true, temporary
+		m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if m.selectingMode || m.state != "connecting" || m.temporary != temporary {
+			t.Errorf("explicit mode ignored: state=%s temporary=%v", m.state, m.temporary)
+		}
+		m.cancel()
+	}
+}
+
 func TestStatusColors(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	lipgloss.SetHasDarkBackground(true)

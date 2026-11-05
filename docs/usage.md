@@ -55,6 +55,8 @@ After a successful connection, the client saves the server address locally. Ente
 - 🖥️ **Terminal client:** Paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to browse, drag to select and copy text, press `c` to clear the display, and `q` to disconnect and exit.
 - 🪟 **Desktop client:** Paste a connection token or short-code address (for example, `https://example.com/agenterm/c/XXXXXX`), connect or disconnect, and view live commands and output. Change the interface language from **Language / 语言** in the app menu, then restart the app.
 
+The terminal client accepts `-connection-mode=temporary` or `-connection-mode=persistent`; the default is `temporary`. One-click connections and invitations use the mode selected during authorization.
+
 The one-command connection stores a client in a local cache. You can delete it after closing the client:
 
 | OS | Cache directory |

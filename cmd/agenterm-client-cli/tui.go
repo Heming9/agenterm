@@ -84,6 +84,7 @@ type tuiModel struct {
 	connectionProgress      bool
 	temporary               bool
 	autoConnect             bool
+	modeProvided            bool
 	connectionCancel        context.CancelFunc
 	invitation              string
 	spacing                 logview.Spacing
@@ -107,11 +108,12 @@ func newTUI(token string) *tuiModel {
 	input.Focus()
 	return &tuiModel{input: input, viewport: viewport.New(80, 15), events: make(chan tuiEvent, 256), ctx: ctx, cancel: cancel, state: "disconnected", latency: -1, decoders: make(map[string]*logview.Decoder), clipboard: &tuiClipboard{write: writeTUIClipboard}, legacyCells: os.Getenv("TERM_PROGRAM") == "Apple_Terminal"}
 }
-func runTUI(token string, connectionProgress, tokenProvided, temporary bool) error {
+func runTUI(token string, connectionProgress, tokenProvided, temporary, modeProvided bool) error {
 	m := newTUI(token)
 	m.connectionProgress = connectionProgress
 	m.temporary = temporary
 	m.autoConnect = tokenProvided
+	m.modeProvided = modeProvided
 	if connectionProgress {
 		m.invitation = token
 	}
@@ -421,6 +423,9 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.state == "disconnected" && msg.String() == "enter" {
+			if m.modeProvided {
+				return m, m.connect()
+			}
 			return m, m.beginConnect()
 		}
 	case tuiEvent:

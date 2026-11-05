@@ -100,7 +100,7 @@ else
   printf '%s' "$(text installer.consent.number)"
   read -r choice || choice=3
 fi
-case "$choice" in 1) temporary=-temporary;; 2) temporary=;; *) say installer.connection.cancelled; exit 0;; esac
+case "$choice" in 1) connection_mode=temporary;; 2) connection_mode=persistent;; *) say installer.connection.cancelled; exit 0;; esac
 say installer.connection.progress
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) say installer.unsupported.system >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) say installer.unsupported.architecture >&2; exit 1;; esac
@@ -165,7 +165,7 @@ else
   say installer.client.verified
 fi
 if [ -n "$invitation" ]; then
-  case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" ${temporary:+"$temporary"} -token "$invitation";; *) "$binary" ${temporary:+"$temporary"} -invite "$invitation" -consent-confirmed;; esac
+  case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" -token "$invitation" "-connection-mode=$connection_mode";; *) "$binary" -invite "$invitation" -consent-confirmed "-connection-mode=$connection_mode";; esac
 else
-  "$binary" ${temporary:+"$temporary"} -token ""
+  "$binary" -token "" "-connection-mode=$connection_mode"
 fi

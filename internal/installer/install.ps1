@@ -90,7 +90,7 @@ if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
 }
 if ($choice -eq 2) { Say 'installer.connection.cancelled'; return }
 $clientOptions = @()
-if ($choice -eq 0) { $clientOptions += '-temporary' }
+if ($choice -eq 0) { $clientOptions += '-connection-mode=temporary' } else { $clientOptions += '-connection-mode=persistent' }
 Say 'installer.connection.progress'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
@@ -169,9 +169,9 @@ try {
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
     if ($Invitation) {
-      if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program @clientOptions -token $Invitation } else { & $program @clientOptions -invite $Invitation -consent-confirmed }
+      if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program -token $Invitation @clientOptions } else { & $program -invite $Invitation -consent-confirmed @clientOptions }
     } else {
-      & $program @clientOptions -token=
+      & $program -token= @clientOptions
     }
     $clientExitCode = $LASTEXITCODE
   } finally { $env:AGENTERM_LANG = $previousLanguage }

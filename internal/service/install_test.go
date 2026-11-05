@@ -133,6 +133,9 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		if !strings.Contains(string(out), "arg=-token invitation="+issued["client_token"].(string)) {
 			t.Fatalf("unexpected client output: %s", out)
 		}
+		if !strings.Contains(string(out), "consent=-connection-mode=persistent") {
+			t.Fatalf("persistent choice was not passed to client: %s", out)
+		}
 		output := string(out)
 		if strings.Count(output, "选择授权方式（↑/↓/←/→，回车确认）：") != 1 || !strings.Contains(output, "请确保你信任对方") {
 			t.Fatalf("missing or duplicate consent prompt: %s", output)
@@ -156,7 +159,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	cmdTemporary := exec.Command("sh", "-c", command)
 	cmdTemporary.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmdTemporary.Stdin = strings.NewReader("1\n")
-	if out, err := cmdTemporary.CombinedOutput(); err != nil || !strings.Contains(string(out), "arg=-temporary invitation=-token") {
+	if out, err := cmdTemporary.CombinedOutput(); err != nil || !strings.Contains(string(out), "arg=-token invitation="+issued["client_token"].(string)+" consent=-connection-mode=temporary") {
 		t.Fatalf("temporary choice was not passed to client: %v\n%s", err, out)
 	}
 	logContent, err := os.ReadFile(log)
