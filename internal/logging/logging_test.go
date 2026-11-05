@@ -16,11 +16,11 @@ func TestStructuredFieldsLevelAndRedaction(t *testing.T) {
 	logger := New(&output, Config{Format: "json", Level: slog.LevelInfo}, "runtime", "staging")
 	logger.Debug("hidden")
 	logger.With("Authorization", "bearer-secret", slog.Group("env", "DATABASE", "nested-secret")).Info("command completed",
-		"client_token", "token-secret", "command", "private-command", "output", "private-output", "client_id", "abc123")
+		"client_token", "token-secret", "control_token", "control-token-secret", "controlKey", "control-key-secret", slog.Group("nested", "control-token", "nested-control-secret"), "command", "private-command", "output", "private-output", "client_id", "abc123")
 	if strings.Contains(output.String(), "hidden") {
 		t.Fatal("DEBUG escaped level filter")
 	}
-	for _, secret := range []string{"bearer-secret", "nested-secret", "token-secret", "private-command", "private-output"} {
+	for _, secret := range []string{"bearer-secret", "nested-secret", "token-secret", "control-token-secret", "control-key-secret", "nested-control-secret", "private-command", "private-output"} {
 		if strings.Contains(output.String(), secret) {
 			t.Fatalf("secret escaped redaction: %s", secret)
 		}

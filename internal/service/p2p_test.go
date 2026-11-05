@@ -264,6 +264,7 @@ func TestP2PStartUsesRawTokenSuffixWithoutFormatValidation(t *testing.T) {
 			}
 			h.s.mu.Lock()
 			h.s.tokens = map[string]string{encoded: secret}
+			h.s.clientOwners = map[string]*clientOwner{secret: {controlKeyHash: sha256.Sum256([]byte("test-key"))}}
 			h.s.mu.Unlock()
 			ws, id := h.connect(t, encoded, "token-suffix")
 			enableP2PTestClient(h, id)
@@ -276,6 +277,7 @@ func TestP2PStartUsesRawTokenSuffixWithoutFormatValidation(t *testing.T) {
 				h.s.tokens[token] = secret
 				h.s.mu.Unlock()
 			}
+			h.controls.Store(token, token+":test-key")
 			result := h.call(t, token, "p2p_transfer_start", map[string]any{"client_id": id}, false).(map[string]any)
 			want := "agent-" + token[max(0, len(token)-6):]
 			if result["local_client_id"] != want || result["state"] != "waiting_for_agent" {

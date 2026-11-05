@@ -267,6 +267,7 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 		t.Fatalf("create: %v", created)
 	}
 	token := created["client_token"].(string)
+	control := created["control_token"].(string)
 	invitation := created["invitation"].(string)
 	got, err := invite.Redeem(context.Background(), invitation)
 	if err != nil || got != token {
@@ -275,7 +276,7 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if _, err := invite.Redeem(context.Background(), invitation); err == nil {
 		t.Fatal("invitation redeemed twice")
 	}
-	status, denied := call(token, "create_client", `{}`)
+	status, denied := call(control, "create_client", `{}`)
 	if status != http.StatusBadRequest {
 		t.Fatalf("client may create: status=%d %v", status, denied)
 	}
@@ -283,12 +284,12 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if missing["isError"] != true {
 		t.Fatalf("missing client accepted: %v", missing)
 	}
-	args, _ := json.Marshal(map[string]any{"client_token": token})
+	args, _ := json.Marshal(map[string]any{"client_token": control})
 	_, waited := call("admin-test", "list_client", string(args))
 	if len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("wait: %v", waited)
 	}
-	_, old := call(token, "list_client", `{}`)
+	_, old := call(control, "list_client", `{}`)
 	if len(old["clients"].([]any)) != 0 {
 		t.Fatalf("client token compatibility: %v", old)
 	}

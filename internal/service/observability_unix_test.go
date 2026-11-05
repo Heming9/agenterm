@@ -93,7 +93,8 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	}})
 	r, _ := http.NewRequest("POST", origin+"/agenterm/mcp", bytes.NewReader(body))
 	setMCPHeaders(r)
-	r.Header.Set("Authorization", "Bearer "+token)
+	control, _ := h.controls.Load(token)
+	r.Header.Set("Authorization", "Bearer "+control.(string))
 	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(r)
 	if err != nil {
 		t.Fatal(err)

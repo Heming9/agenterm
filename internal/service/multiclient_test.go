@@ -19,23 +19,27 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	s := &runtimeState{tokens: make(map[string]string), clients: make(map[string]*client)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/client", s.connect)
+	mux.HandleFunc("/agenterm/client/", s.connect)
 	mux.HandleFunc("/agenterm/mcp", s.mcp)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	var tokens []string
+	controls := make(map[string]string)
+	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
 	for i := 0; i < 2; i++ {
-		secret := randomBytes(protocol.TokenSecretSize)
-		token, err := protocol.Encode(protocol.Token{URL: "ws" + strings.TrimPrefix(ts.URL, "http") + "/agenterm/client", Secret: secret})
+		issued, err := s.createClient("")
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.tokens[token] = secret
+		token := issued["client_token"].(string)
 		tokens = append(tokens, token)
+		controls[token] = issued["control_token"].(string)
 	}
 	for i, token := range tokens {
 		secret := s.tokens[token]
 		h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
-		raw, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
+		decoded, _ := protocol.Decode(token)
+		raw, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), h)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,6 +53,9 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/agenterm/mcp", bytes.NewReader(body))
 		setMCPHeaders(req)
 		if token != "" {
+			if control, ok := controls[token]; ok {
+				token = control
+			}
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		resp, err := http.DefaultClient.Do(req)
@@ -94,7 +101,8 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	}
 	secret := s.tokens[tokens[0]]
 	h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
-	_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/agenterm/client", h)
+	decoded, _ := protocol.Decode(tokens[0])
+	_, resp, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), h)
 	if err == nil || resp == nil || resp.StatusCode != http.StatusConflict {
 		t.Fatalf("duplicate connection accepted: %v", err)
 	}

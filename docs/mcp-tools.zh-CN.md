@@ -4,7 +4,7 @@
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
-| `create_client` | 创建私密连接邀请。 | `client_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
+| `create_client` | 创建私密连接邀请。 | `client_token`、`control_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
 | `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
 | `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
 | `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
@@ -50,7 +50,7 @@
 
 `create_client` 的 MCP 文本内容直接返回固定的英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致，不受服务器语言设置影响；凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。模板依次包含 Windows 命令、macOS / Linux 命令、连接令牌、使用方法和邀请有效期；多设备模式会追加复用提示。
 
-通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。然后使用返回的 `client_token` 调用 `list_client`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
+通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `client_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后将返回的 `control_token` 填入 `client_token` 参数，调用 `list_client`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
 
 </details>
 
@@ -59,7 +59,7 @@
 
 `list_client` 只返回在线设备。每条包含 client_id、connected_at 和 client_info，不再返回顶层或设备条目的 status；是否在线由 clients 数组直接判断。client_info 的主机名、平台、架构、shell、默认目录、客户端版本和能力信息保持不变。心跳和 RTT 仍由连接内部及客户端界面使用，不拼接为 MCP 状态字符串。
 
-`close_client` 接受非空、无重复的 `client_ids` 数组；不传该参数时关闭当前 token 下所有在线设备并撤销该 token 和其邀请，即使没有在线设备也会撤销。所有 ID 均须属于该 token，校验失败时不关闭任何设备。返回的 `client_ids` 列出已关闭的连接，无设备在线时返回空数组。关闭会结束设备的会话和活动传输；仅关闭指定设备时保留 token 和邀请。已关闭客户端不会自动重连。管理访问须传 `client_token`，设备范围访问使用 Bearer token。
+`close_client` 接受非空、无重复的 `client_ids` 数组；不传该参数时关闭当前 token 下所有在线设备并撤销该 token 和其邀请，即使没有在线设备也会撤销。所有 ID 均须属于该 token，校验失败时不关闭任何设备。返回的 `client_ids` 列出已关闭的连接，无设备在线时返回空数组。关闭会结束设备的会话和活动传输；仅关闭指定设备时保留 token 和邀请。已关闭客户端不会自动重连。管理访问须将 `control_token`（`token:密钥`）作为 `client_token` 传入；范围控制访问使用相同的控制凭证作为 Bearer token。仅有设备 token 不能调用控制工具。
 
 </details>
 

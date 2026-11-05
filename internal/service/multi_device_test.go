@@ -22,8 +22,9 @@ import (
 )
 
 type multiHarness struct {
-	s  *runtimeState
-	ts *httptest.Server
+	s        *runtimeState
+	ts       *httptest.Server
+	controls sync.Map // device token -> control credential
 }
 
 func newMultiHarness(t *testing.T, limit int) *multiHarness {
@@ -36,6 +37,19 @@ func newMultiHarness(t *testing.T, limit int) *multiHarness {
 }
 
 func (h *multiHarness) request(auth, name string, args map[string]any, timeout ...time.Duration) (any, bool, error) {
+	if credential, ok := h.controls.Load(auth); ok {
+		auth = credential.(string)
+	}
+	if token, ok := args["client_token"].(string); ok {
+		if credential, found := h.controls.Load(token); found {
+			copied := make(map[string]any, len(args))
+			for k, v := range args {
+				copied[k] = v
+			}
+			copied["client_token"] = credential.(string)
+			args = copied
+		}
+	}
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
 	req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/agenterm/mcp", bytes.NewReader(body))
 	setMCPHeaders(req)
@@ -76,6 +90,15 @@ func (h *multiHarness) request(auth, name string, args map[string]any, timeout .
 		return nil, false, fmt.Errorf("missing tool result")
 	}
 	result, err := decodeToolResult(payload.Result.Content[0].Text, payload.Result.IsError, payload.Result.StructuredContent)
+	if name == "create_client" && err == nil && !payload.Result.IsError {
+		if data, ok := result.(map[string]any); ok {
+			if device, ok := data["client_token"].(string); ok {
+				if control, ok := data["control_token"].(string); ok {
+					h.controls.Store(device, control)
+				}
+			}
+		}
+	}
 	return result, payload.Result.IsError, err
 }
 
@@ -278,7 +301,11 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 	for _, auth := range []string{"admin-test", h.create(t, true)} {
 		req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/agenterm/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 		setMCPHeaders(req)
-		req.Header.Set("Authorization", "Bearer "+auth)
+		credential := auth
+		if control, ok := h.controls.Load(auth); ok {
+			credential = control.(string)
+		}
+		req.Header.Set("Authorization", "Bearer "+credential)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

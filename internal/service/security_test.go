@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/sha256"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 func TestFailureLimitAcrossEndpoints(t *testing.T) {
 	s := &runtimeState{clientIPHeader: "X-Real-IP", tokens: map[string]string{"valid-token": "valid-secret"}, clients: make(map[string]*client)}
+	s.clientOwners = map[string]*clientOwner{"valid-secret": {controlKeyHash: sha256.Sum256([]byte("test-key"))}}
 	for i := 0; i < failureLimit; i++ {
 		path := "/agenterm/mcp"
 		if i%2 == 1 {
@@ -33,7 +35,7 @@ func TestFailureLimitAcrossEndpoints(t *testing.T) {
 	setMCPHeaders(req)
 	req.RemoteAddr = "127.0.0.1:7777"
 	req.Header.Set("X-Real-IP", "192.0.2.1")
-	req.Header.Set("Authorization", "Bearer valid-token")
+	req.Header.Set("Authorization", "Bearer valid-token:test-key")
 	rec := httptest.NewRecorder()
 	s.mcp(rec, req)
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {

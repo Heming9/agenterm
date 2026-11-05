@@ -124,6 +124,8 @@ agenterm-server -help
 
 `stop` and `status` accept only `-instance`. The other options apply to `start` and `restart`; changing the startup settings of a running runtime requires `restart`.
 
+**Upgrading runtime API 7 to 8:** Keep the existing API 7 server executable until the old runtime has been stopped. Run `/path/to/api7/agenterm-server stop -instance <name>` using the same user and instance, then start the API 8 server with the intended configuration. API 8 `start`, `stop`, and `restart` cannot manage an API 7 runtime; if the previous executable is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and discards in-memory credentials and sessions; create new connections after the upgrade. Never downgrade authentication or send control credentials to an older runtime to bypass this check.
+
 | Option | Description |
 | --- | --- |
 | `-instance` | Name for an independent server instance; default `default`. |

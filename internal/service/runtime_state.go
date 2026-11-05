@@ -6,6 +6,8 @@ import (
 	"agenterm/internal/logging"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -137,6 +139,28 @@ func randomManagementKey() string {
 	}
 	return key.String()
 }
+
+// controlSecretLocked authenticates a scoped control credential, never a device token.
+func (s *runtimeState) controlSecretLocked(value string) (string, bool) {
+	token, key, ok := strings.Cut(value, ":")
+	if !ok || key == "" {
+		return "", false
+	}
+	secret, ok := s.tokens[token]
+	if !ok || !s.tokenUnexpiredLocked(secret) {
+		return "", false
+	}
+	owner := s.clientOwners[secret]
+	if owner == nil {
+		return "", false
+	}
+	hash := sha256.Sum256([]byte(key))
+	if subtle.ConstantTimeCompare(hash[:], owner.controlKeyHash[:]) != 1 {
+		return "", false
+	}
+	return secret, true
+}
+
 func (s *runtimeState) validSecret(secret string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

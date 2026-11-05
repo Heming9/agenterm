@@ -19,7 +19,7 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-const controlVersion = "7"
+const controlVersion = "8"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {
@@ -204,8 +204,7 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		header := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(header, "Bearer ")
 		s.mu.Lock()
-		secret, ok := s.tokens[token]
-		ok = ok && s.tokenUnexpiredLocked(secret)
+		secret, ok := s.controlSecretLocked(token)
 		s.mu.Unlock()
 		admin := (s.noPassword && header == "") || (s.adminKey != "" && header == "Bearer "+token && subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) == 1)
 		if status, err := s.authorize(r, admin || (header == "Bearer "+token && ok)); err != nil {
@@ -218,8 +217,8 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if in.Principal.Admin {
-			secret, ok := s.tokens[in.Token]
-			if ok && s.tokenUnexpiredLocked(secret) {
+			secret, ok := s.controlSecretLocked(in.Token)
+			if ok {
 				return secret, nil
 			}
 			return "", nil

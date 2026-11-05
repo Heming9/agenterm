@@ -53,9 +53,10 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 		t.Fatalf("create: %v %v", created, err)
 	}
 	var invitation struct {
-		Invitation  string `json:"invitation"`
-		ClientToken string `json:"client_token"`
-		DisplayText string `json:"display_text"`
+		Invitation   string `json:"invitation"`
+		ClientToken  string `json:"client_token"`
+		ControlToken string `json:"control_token"`
+		DisplayText  string `json:"display_text"`
 	}
 	data, err := json.Marshal(created.StructuredContent)
 	if err != nil {
@@ -71,7 +72,7 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	if err != nil || token != invitation.ClientToken || token == "" {
 		t.Fatalf("HTTP invitation redemption: token match=%v err=%v", token == invitation.ClientToken, err)
 	}
-	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_client", Arguments: map[string]any{"client_token": token}})
+	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_client", Arguments: map[string]any{"client_token": invitation.ControlToken}})
 	if err != nil || listed.IsError {
 		t.Fatalf("stdio target credentials: %v %v", listed, err)
 	}

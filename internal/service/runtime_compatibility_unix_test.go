@@ -5,6 +5,7 @@ package service
 import (
 	"agenterm/internal/version"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -40,7 +41,14 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
+	var oldStopped atomic.Bool
 	runtime := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/runtime/shutdown" && r.Header.Get(controlVersionHeader) == "7" {
+			oldStopped.Store(true)
+			w.Header().Set(controlVersionHeader, "7")
+			_, _ = io.WriteString(w, "true")
+			return
+		}
 		requests.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/config" {
 			t.Errorf("incompatible command attempted more than discovery: %s %s", r.Method, r.URL.Path)
@@ -108,4 +116,49 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 		t.Fatal("runtime no longer reachable: ", err)
 	}
 	connection.Close()
+
+	// A compatible API 7 client can stop the old runtime; only then may API 8 start.
+	oldHTTP := &http.Client{Transport: unixTransport(paths.Runtime), Timeout: 3 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, "http://runtime/v1/runtime/shutdown", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(controlVersionHeader, "7")
+	res, err := oldHTTP.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	oldHTTP.CloseIdleConnections()
+	if res.StatusCode != http.StatusOK || !oldStopped.Load() {
+		t.Fatal("compatible stop did not reach API 7 runtime")
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(paths.Server); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(paths.Runtime); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	reserved, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := reserved.Addr().String()
+	reserved.Close()
+	origin := "http://" + address
+	fresh := startService(t, "server", dir, "start", "-instance", "staging", "-listen", address, "-public-url", origin, "-no-password")
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = stopManagedServices(ctx, paths)
+	})
+	waitReady(t, origin+"/healthz", http.DefaultTransport, fresh)
+	c := newRuntimeClient(paths.Runtime)
+	defer c.http.CloseIdleConnections()
+	if _, err := controlCall[runtimeConfig](context.Background(), c, "config", struct{}{}); err != nil {
+		t.Fatalf("API 8 runtime did not start: %v", err)
+	}
 }

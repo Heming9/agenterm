@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -16,6 +17,8 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		return nil, i18n.NewError("invitation.timeout.invalid", maxInvitationTimeoutSeconds)
 	}
 	secret := randomBytes(protocol.TokenSecretSize)
+	controlKey := randomBytes(32)
+	controlHash := sha256.Sum256([]byte(controlKey))
 	expires := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -67,8 +70,8 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		s.clientOwners = make(map[string]*clientOwner)
 	}
 	s.nextClientOrder++
-	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, order: s.nextClientOrder, expires: expires}
-	result := map[string]any{"client_token": token, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
+	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires}
+	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": expires.UTC().Format(time.RFC3339)}
 	shell, powershell := installCommands(value)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell

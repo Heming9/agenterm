@@ -158,39 +158,41 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 	}
 	created := call("create_client", map[string]any{})
 	token := created["client_token"].(string)
-	call("list_client", map[string]any{"client_token": token})
-	waited := call("list_client", map[string]any{"client_token": token, "wait_ms": 20})
+	control := created["control_token"].(string)
+	h.controls.Store(token, control)
+	call("list_client", map[string]any{"client_token": control})
+	waited := call("list_client", map[string]any{"client_token": control, "wait_ms": 20})
 	if len(waited) != 1 || len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("unexpected connection timeout result: %v", waited)
 	}
 	ws, clientID := h.connect(t, token, "schema device")
 	enableP2PTestClient(h, clientID)
 	go serveTestDevice(ws, "schema", nil, nil)
-	call("p2p_transfer_start", map[string]any{"client_token": token, "client_id": clientID})
-	connected := call("list_client", map[string]any{"client_token": token, "wait_ms": 300000})
+	call("p2p_transfer_start", map[string]any{"client_token": control, "client_id": clientID})
+	connected := call("list_client", map[string]any{"client_token": control, "wait_ms": 300000})
 	if len(connected) != 1 || len(connected["clients"].([]any)) != 1 {
 		t.Fatalf("unexpected 300-second connection check result: %v", connected)
 	}
 	for _, wait := range []int{-1, 300001} {
 		h.call(t, token, "list_client", map[string]any{"wait_ms": wait}, true)
 	}
-	call("execute_command", map[string]any{"client_token": token, "command": "example"})
-	started := call("execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "client_token": token, "command": "interactive"})
+	call("execute_command", map[string]any{"client_token": control, "command": "example"})
+	started := call("execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "client_token": control, "command": "interactive"})
 	id := started["session_id"].(string)
-	call("session_read", map[string]any{"client_token": token, "session_id": id})
-	call("session_control", map[string]any{"action": "input", "client_token": token, "session_id": id, "input": "yes\n"})
-	call("session_list", map[string]any{"client_token": token})
-	call("session_control", map[string]any{"action": "interrupt", "client_token": token, "session_id": id})
-	call("session_control", map[string]any{"action": "eof", "client_token": token, "session_id": id})
-	stopped := call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
+	call("session_read", map[string]any{"client_token": control, "session_id": id})
+	call("session_control", map[string]any{"action": "input", "client_token": control, "session_id": id, "input": "yes\n"})
+	call("session_list", map[string]any{"client_token": control})
+	call("session_control", map[string]any{"action": "interrupt", "client_token": control, "session_id": id})
+	call("session_control", map[string]any{"action": "eof", "client_token": control, "session_id": id})
+	stopped := call("session_control", map[string]any{"action": "stop", "client_token": control, "session_id": id})
 	// This fake device reports a normal exit, not cancellation. The server must
 	// expose that distinction even though a stop request preceded completion.
 	if stopped["status"] != "closed" || stopped["exit_code"] != float64(0) {
 		t.Fatal(stopped)
 	}
-	call("session_read", map[string]any{"client_token": token, "session_id": id})
-	call("session_control", map[string]any{"action": "stop", "client_token": token, "session_id": id})
-	call("close_client", map[string]any{"client_token": token, "client_ids": []string{clientID}})
+	call("session_read", map[string]any{"client_token": control, "session_id": id})
+	call("session_control", map[string]any{"action": "stop", "client_token": control, "session_id": id})
+	call("close_client", map[string]any{"client_token": control, "client_ids": []string{clientID}})
 	if len(seen) != 8 {
 		t.Fatalf("validated %d tools", len(seen))
 	}

@@ -548,16 +548,16 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns a fixed English template with Markdown code blocks in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Preserve all sections and their order, and keep commands, URLs and connection tokens exactly unchanged. You MUST put each command in its own Markdown code block so it can be copied reliably. Express the invitation lifetime in readable units without changing its duration (for example, 300 seconds is 5 minutes). If the user’s time zone is known, convert expires_at to that time zone and label it explicitly; otherwise show the UTC deadline. Never guess the user’s time zone from their language or the server time zone. Do not omit any connection instructions. Then call list_client with the returned client_token and wait_ms=300000 to check whether a device connects, with a 300-second timeout. Report whether a device connected or the wait timed out. multi_device controls simultaneous connections and invitation reuse.",
-    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。文本内容和 structuredContent.display_text 均返回固定的英文模板，命令自带 Markdown 代码块，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言完整展示 display_text，保留所有段落及其顺序，命令、URL 和连接令牌必须保持原样。必须将每条命令分别放入 Markdown 代码块，方便准确复制。有效期可换算成易读的单位，但不能改变实际时长（例如 300 秒为 5 分钟）。已知用户时区时，将 expires_at 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器时区猜测用户时区，也不得省略连接说明。然后使用返回的 client_token 调用 list_client，设置 wait_ms=300000，以 300 秒为超时时间检查设备是否连接成功，并向用户报告连接成功或等待超时。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
+    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 300, or 5 minutes). Returns a fixed English template with Markdown code blocks in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Preserve all sections and their order, and keep commands, URLs and connection tokens exactly unchanged. You MUST put each command in its own Markdown code block so it can be copied reliably. Express the invitation lifetime in readable units without changing its duration (for example, 300 seconds is 5 minutes). If the user’s time zone is known, convert expires_at to that time zone and label it explicitly; otherwise show the UTC deadline. Never guess the user’s time zone from their language or the server time zone. Do not omit any connection instructions. Keep structuredContent.control_token private; never include it in connection instructions or share it with the target device. Then call list_client with the returned control_token as client_token and wait_ms=300000 to check whether a device connects, with a 300-second timeout. Report whether a device connected or the wait timed out. multi_device controls simultaneous connections and invitation reuse.",
+    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 300 秒（5 分钟）。文本内容和 structuredContent.display_text 均返回固定的英文模板，命令自带 Markdown 代码块，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言完整展示 display_text，保留所有段落及其顺序，命令、URL 和连接令牌必须保持原样。必须将每条命令分别放入 Markdown 代码块，方便准确复制。有效期可换算成易读的单位，但不能改变实际时长（例如 300 秒为 5 分钟）。已知用户时区时，将 expires_at 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器时区猜测用户时区，也不得省略连接说明。structuredContent.control_token 是控制凭证，必须保密，不得放入连接说明或分享给目标设备。然后将返回的 control_token 作为 client_token 调用 list_client，设置 wait_ms=300000，以 300 秒为超时时间检查设备是否连接成功，并向用户报告连接成功或等待超时。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 300 (5 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
     "zh-CN": "邀请有效期，单位秒，必须为正整数。默认 300（5 分钟）。过期后不能兑换邀请，已连接的设备不会因此断开。"
   },
   "mcp.target.client.connection.token.required.when.authenticated.with": {
-    "en": "Target client connection token, required with management access (including stdio and no-password mode). Device-scoped bearer access implicitly selects its own token.",
-    "zh-CN": "目标客户端连接 token；管理访问（包括 stdio 和免密模式）时必须填写。设备范围的 Bearer 访问会自动选择其自身 token。"
+    "en": "Control credential in token:key format, required with management access (including stdio and no-password mode). Scoped control bearer access implicitly selects its own token.",
+    "zh-CN": "控制凭证，格式为 token:密钥；管理访问（包括 stdio 和免密模式）时必须填写。控制范围的 Bearer 访问会自动选择其自身 token。"
   },
   "client.input.error": {
     "en": "\n[Agenterm] input error: %s\n",
@@ -596,8 +596,8 @@
     "zh-CN": "无法获取本机连接锁：%v"
   },
   "mcp.list.clients": {
-    "en": "List online devices belonging to the token, with their identifiers and metadata. After create_client generates connection instructions, you MUST call this tool with the returned client_token and wait_ms=300000 to check whether a device connects, with a 300-second timeout. A positive wait_ms waits while no device is online; any online device completes the wait immediately. An empty array means no device was online when the call returned; after the 300-second wait, report that the connection check timed out. Invalid, expired or revoked tokens cannot be used for further waits.",
-    "zh-CN": "列出 token 下在线设备的标识和元数据。create_client 生成连接说明后，必须使用返回的 client_token 调用本工具，设置 wait_ms=300000，以 300 秒为超时时间检查设备是否连接成功。wait_ms 为正时，在没有设备在线的情况下等待；任一设备在线都会立即结束等待。空数组表示调用返回时没有在线设备；等待 300 秒后仍无设备在线时，应向用户报告连接检查超时。无效、过期或已撤销的 token 不能继续用于等待。"
+    "en": "List online devices belonging to the token, with their identifiers and metadata. After create_client generates connection instructions, you MUST pass the returned control_token as client_token and set wait_ms=300000 to check whether a device connects, with a 300-second timeout. A positive wait_ms waits while no device is online; any online device completes the wait immediately. An empty array means no device was online when the call returned; after the 300-second wait, report that the connection check timed out. Invalid, expired or revoked tokens cannot be used for further waits.",
+    "zh-CN": "列出 token 下在线设备的标识和元数据。create_client 生成连接说明后，必须将返回的 control_token 填入 client_token 参数调用本工具，设置 wait_ms=300000，以 300 秒为超时时间检查设备是否连接成功。wait_ms 为正时，在没有设备在线的情况下等待；任一设备在线都会立即结束等待。空数组表示调用返回时没有在线设备；等待 300 秒后仍无设备在线时，应向用户报告连接检查超时。无效、过期或已撤销的 token 不能继续用于等待。"
   },
   "mcp.wait.for.connection": {
     "en": "Maximum connection wait in milliseconds while no device is online, 0–300000. After generating connection instructions, you MUST set this to 300000 (300-second timeout). 0 returns a snapshot immediately.",
@@ -759,9 +759,13 @@
     "en": "Public identifier for recognizing the connection token; not an authentication secret.",
     "zh-CN": "用于识别连接令牌的公开标识符，不是认证密钥。"
   },
+  "mcp.result.control_token": {
+    "en": "Private scoped control credential in token:key format; never share with the target device.",
+    "zh-CN": "私密控制凭证，格式为 token:密钥；不得分享给目标设备。"
+  },
   "mcp.result.client_token": {
-    "en": "Private credential for this target group. Pass as client_token with management access (including stdio and no-password mode) or as the MCP bearer token for device-scoped access.",
-    "zh-CN": "此目标组的私密凭据；管理访问（包括 stdio 和免密模式）时传入 client_token，设备范围访问时作为 MCP Bearer token。"
+    "en": "Device connection credential; it cannot authorize MCP control. Use the separate control_token for control access.",
+    "zh-CN": "设备连接凭证，不能用于 MCP 控制。控制访问须使用单独的 control_token。"
   },
   "mcp.result.multi_device": {
     "en": "True permits multiple simultaneous devices and reuses the invitation until expiry. False allows one device and a single-use invitation.",

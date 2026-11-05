@@ -32,6 +32,9 @@ func (a authenticatedTransport) RoundTrip(r *http.Request) (*http.Response, erro
 
 func connectMCPClient(t *testing.T, h *multiHarness, token string) *mcp.ClientSession {
 	t.Helper()
+	if control, ok := h.controls.Load(token); ok {
+		token = control.(string)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	c := mcp.NewClient(&mcp.Implementation{Name: "agenterm-integration", Version: version.Current}, nil)
