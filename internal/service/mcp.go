@@ -258,6 +258,9 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
+			shell, powershell := installCommands(out["client_token"].(string))
+			out["macos_linux_command"] = shell
+			out["windows_powershell_command"] = powershell
 			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, timeoutSeconds, expires, codeExpires, tokenExpires, out["multi_device"].(bool))
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})

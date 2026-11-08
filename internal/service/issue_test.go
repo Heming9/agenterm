@@ -180,13 +180,33 @@ func TestCreateClientDisplayText(t *testing.T) {
 		url := "https://example.com/agenterm/c/" + clientToken.Secret
 		if key == "windows_powershell_command" {
 			url += ".ps1"
-			if !strings.HasPrefix(command, `powershell -NoP -c "iex(irm -TimeoutSec 15 `) {
-				t.Fatalf("Windows command must work in CMD and skip profiles: %s", command)
+			if command != "powershell -NoP 'irm "+url+"|iex'" {
+				t.Fatalf("unexpected Windows command: %s", command)
 			}
 		}
-		if !strings.Contains(display, command) || !strings.Contains(command, "'"+url+"'") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "Agenterm_") || strings.Contains(command, "/downloads/") {
+		if !strings.Contains(display, command) || !strings.Contains(command, url) || strings.Contains(command, decoded.Secret) || strings.Contains(command, "Agenterm_") || strings.Contains(command, "/downloads/") {
 			t.Fatalf("invalid %s in display: %s", key, display)
 		}
+	}
+}
+
+func TestInstallCommandsForPublicHost(t *testing.T) {
+	s := &runtimeState{clientURL: "wss://agenterm.net/client"}
+	result, err := s.createClient("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := protocol.Decode(result["client_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "agenterm.net/c/" + decoded.Secret
+	shell, windows := installCommands(result["client_token"].(string))
+	if want := "curl -fL " + base + "|sh"; shell != want {
+		t.Fatalf("shell command = %q, want %q", shell, want)
+	}
+	if want := "powershell -NoP 'irm " + base + ".ps1|iex'"; windows != want {
+		t.Fatalf("PowerShell command = %q, want %q", windows, want)
 	}
 }
 

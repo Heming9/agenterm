@@ -95,7 +95,11 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 				if i == 1 {
 					path += ".ps1"
 				}
-				if !strings.Contains(command, "'"+base+path+"'") {
+				expectedBase := base
+				if i == 0 {
+					expectedBase = strings.TrimPrefix(expectedBase, "http://")
+				}
+				if !strings.Contains(command, expectedBase+path) {
 					t.Fatalf("command lost prefix: %s", command)
 				}
 				res, err := ts.Client().Get(base + path)

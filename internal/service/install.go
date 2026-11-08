@@ -23,6 +23,7 @@ const downloadTag = "v" + version.Current
 
 var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 var validInstallCredential = regexp.MustCompile(`^(?:[A-Z0-9]{6}|[A-Za-z0-9_-]{14})$`)
+var safeShellURL = regexp.MustCompile(`^[A-Za-z0-9._~:/%-]+$`)
 
 const shortCodeLength = 6
 
@@ -51,8 +52,17 @@ func installCommands(token string) (string, string) {
 		return "", ""
 	}
 	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + secret
-	shell := fmt.Sprintf("s=$(curl -fsS -m15 %s)&&sh -c \"$s\"", shQuote(base))
-	powershell := fmt.Sprintf("powershell -NoP -c \"iex(irm -TimeoutSec 15 %s)\"", psQuote(base+".ps1"))
+	commandBase := base
+	if u, err := url.Parse(base); err == nil && u.Scheme == "https" && u.Host == "agenterm.net" {
+		commandBase = strings.TrimPrefix(base, "https://")
+	}
+	shellBase := strings.TrimPrefix(commandBase, "http://")
+	shellURL := shellBase
+	if !safeShellURL.MatchString(shellURL) {
+		shellURL = shQuote(shellURL)
+	}
+	shell := fmt.Sprintf("curl -fL %s|sh", shellURL)
+	powershell := "powershell -NoP " + psQuote("irm "+commandBase+".ps1|iex")
 	return shell, powershell
 }
 
@@ -157,7 +167,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		if powershell {
 			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + " " + psQuote(kind) + "\n"
 		} else {
-			body = "#!/bin/sh\nset -- " + shQuote(value) + " " + shQuote(base) + " " + shQuote(kind) + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n")
+			body = "#!/bin/sh\n{\nset -- " + shQuote(value) + " " + shQuote(base) + " " + shQuote(kind) + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n") + "\n}\n"
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if r.Method == http.MethodGet {

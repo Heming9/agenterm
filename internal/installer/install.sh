@@ -59,6 +59,7 @@ say installer.the.server.can.control.this.computer.with
 printf '\n'
 say installer.consent.menu
 choice=1
+choose_consent() {
 if [ -t 0 ] && [ -t 1 ] && command -v stty >/dev/null 2>&1; then
   old_tty=$(stty -g)
   stty -echo -icanon min 1 time 0
@@ -99,6 +100,14 @@ else
   printf '1. %s    2. %s    3. %s\n' "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$(text installer.consent.no)"
   printf '%s' "$(text installer.consent.number)"
   read -r choice || choice=3
+fi
+}
+terminal_input=0
+if [ ! -t 0 ] && [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
+  terminal_input=1
+  choose_consent </dev/tty
+else
+  choose_consent
 fi
 case "$choice" in 1) connection_mode=temporary;; 2) connection_mode=persistent;; *) say installer.connection.cancelled; exit 0;; esac
 say installer.connection.progress
@@ -164,8 +173,11 @@ else
   mv -f "$work/$name" "$binary"
   say installer.client.verified
 fi
+run_client() {
 if [ -n "$invitation" ]; then
   case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" -token "$invitation" "-connection-mode=$connection_mode";; *) "$binary" -invite "$invitation" -consent-confirmed "-connection-mode=$connection_mode";; esac
 else
   "$binary" -token "" "-connection-mode=$connection_mode"
 fi
+}
+if [ "$terminal_input" -eq 1 ]; then run_client </dev/tty; else run_client; fi

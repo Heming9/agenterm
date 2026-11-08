@@ -25,6 +25,8 @@ func (c *legacyDisplayControl) call(ctx context.Context, method string, in, out 
 	if method == "create" {
 		result := *out.(*map[string]any)
 		result["display_text"] = "Legacy runtime connection instructions"
+		result["macos_linux_command"] = "legacy shell command"
+		result["windows_powershell_command"] = "legacy PowerShell command"
 		issued := make(map[string]any, len(result))
 		for key, value := range result {
 			issued[key] = value
@@ -66,10 +68,14 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 				t.Fatal("text and display_text differ")
 			}
 			issued := <-legacy.issued
-			for _, key := range []string{"client_token", "invitation", "expires_at", "macos_linux_command", "windows_powershell_command", "multi_device"} {
+			for _, key := range []string{"client_token", "invitation", "expires_at", "multi_device"} {
 				if structured[key] != issued[key] {
 					t.Fatalf("frontend changed runtime field %s", key)
 				}
+			}
+			shell, powershell := installCommands(structured["client_token"].(string))
+			if structured["macos_linux_command"] != shell || structured["windows_powershell_command"] != powershell {
+				t.Fatal("frontend did not replace legacy commands")
 			}
 		})
 	}

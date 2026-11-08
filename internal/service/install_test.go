@@ -2,6 +2,8 @@ package service
 
 import (
 	"agenterm/internal/protocol"
+	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 // Exercise real capability probes without depending on the host's tar features.
@@ -100,7 +104,11 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	invitation := issued["invitation"].(string)
-	command, _ := installCommands(issued["client_token"].(string))
+	decodedToken, err := protocol.Decode(issued["client_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := fmt.Sprintf("s=$(curl -fsSL %s)&&sh -c \"$s\"", shQuote(publicURL+prefix+"/c/"+decodedToken.Secret))
 	cache := filepath.Join(root, "cache")
 	// Cancellation must happen before probing, creating a cache, or downloading.
 	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
@@ -203,6 +211,49 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil || strings.Contains(string(out), "arg=-token") {
 		t.Fatalf("bad archive was not rejected: err=%v output=%s", err, out)
+	}
+	// The generated pipeline must read authorization from the terminal, not
+	// from the pipe carrying the installer, and pass terminal input onward.
+	write(filepath.Join(assets, archive), installerFixture(t, client)[archive], 0o600)
+	pipeline, _ := installCommands(issued["client_token"].(string))
+	wantPipeline := "curl -fL " + strings.TrimPrefix(publicURL, "http://") + prefix + "/c/" + decodedToken.Secret + "|sh"
+	if pipeline != wantPipeline {
+		t.Fatalf("pipeline = %q, want %q", pipeline, wantPipeline)
+	}
+	for _, tc := range []struct{ input, want string }{{"3\r", "已取消连接。"}, {"2\r", "consent=-connection-mode=persistent"}} {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		cmd := exec.CommandContext(ctx, "sh", "-c", pipeline)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+filepath.Join(root, "pty-cache"), "TERM=xterm")
+		terminal, err := pty.Start(cmd)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		done := make(chan string, 1)
+		go func() {
+			var output bytes.Buffer
+			buffer := make([]byte, 1024)
+			sent := false
+			for {
+				n, err := terminal.Read(buffer)
+				output.Write(buffer[:n])
+				if !sent && strings.Contains(output.String(), "▶") {
+					sent = true
+					_, _ = terminal.Write([]byte(tc.input))
+				}
+				if err != nil {
+					done <- output.String()
+					return
+				}
+			}
+		}()
+		waitErr := cmd.Wait()
+		output := <-done
+		terminal.Close()
+		cancel()
+		if waitErr != nil || !strings.Contains(output, tc.want) {
+			t.Fatalf("pipeline input %q: %v\n%s", tc.input, waitErr, output)
+		}
 	}
 	// An expired token launches the client without credentials.
 	write(cached, client, 0o700)
