@@ -122,6 +122,15 @@ fn stun_address_until(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_candidates_have_priority_over_public_mappings() {
+        let local = "192.168.1.10:5000".parse().unwrap();
+        let mapped = "203.0.113.10:5000".parse().unwrap();
+        let host = Candidate::host(local, "udp").unwrap();
+        let reflexive = Candidate::server_reflexive(mapped, local, "udp").unwrap();
+        assert!(host.prio() > reflexive.prio());
+    }
     use std::thread;
     use str0m::change::SdpAnswer;
 

@@ -28,7 +28,7 @@ p2p-cli stop
 ```
 
 - 一位操作系统用户同时维护一条连接。相同连接重复 start 返回已有状态；不同连接需要先 stop。
-- `status` 默认只显示本机状态（`state`）、双方 ID 和主机名、对方状态（`peer.state`），以及当前复制进度和速率（`copy.bytes`、`copy.total`、`copy.bytes_per_second`；空闲为 `null`）。`status --verbose` 或 `status -v` 额外显示连接标识、系统、架构、工作目录、最近通信时间、程序路径和完整复制信息，其中 `copy.average_bytes_per_second` 为本次任务平均速率。速率单位均为字节/秒（B/s）；实时速率按约 3 秒滑动窗口计算，每 100 毫秒采样，停滞后会降到零；开始不足 3 秒时使用已有采样。发送端按对方已确认的字节数计算，接收端按已写入的字节数计算；平均速率包含本次任务从请求到查询时的耗时，完成回执和 `cp` 进度输出也包含速率。失败原因在两种模式下都显示，进程退出后仍可查询；本机状态只保留顶层 `state`，不重复输出 `connection.local`。
+- `status` 默认显示本机状态（`state`）、双方 ID 和主机名、对方状态（`peer.state`）、实际路径（`path`），以及当前复制进度和速率（`copy.bytes`、`copy.total`、`copy.bytes_per_second`；空闲为 `null`）。`path` 包含 ICE 当前选中的 UDP 本地和远端地址（`local`、`remote`）；`kind` 为 `same_subnet`（本机私有或链路本地接口的同一子网）、`loopback` 或 `direct`（其他直连）。同子网判断依据本机接口掩码，并非对物理网络的保证；VPN 等网络也可能显示为同子网。尚未取得路径或连接未建立时为 `null`，路径变更后约 250 毫秒内更新。`status --verbose` 或 `status -v` 额外显示连接标识、系统、架构、工作目录、最近通信时间、程序路径和完整复制信息，其中 `copy.average_bytes_per_second` 为本次任务平均速率。速率单位均为字节/秒（B/s）；实时速率按约 3 秒滑动窗口计算，每 100 毫秒采样，停滞后会降到零；开始不足 3 秒时使用已有采样。发送端按对方已确认的字节数计算，接收端按已写入的字节数计算；平均速率包含本次任务从请求到查询时的耗时，完成回执和 `cp` 进度输出也包含速率。失败原因在两种模式下都显示，进程退出后仍可查询；本机状态只保留顶层 `state`，不重复输出 `connection.local`。
 - `cp` 只支持单个普通文件，源和目标必须是本机与已连接的对端。客户端 ID 来自 MCP 返回值或 status。Agent ID 为 `agent-<token 字符串最后 6 位>`，直接截取、不解析公开标识字段，同一 token 下保持一致；远端为 `client-<client_id>`，每条 P2P 连接仍有独立的 `connection_id` 和私有凭据，显示 ID 不用于鉴权。路径按第一个冒号分隔，Windows `client-ID:C:\Users\name\file.txt` 的盘符保持完整；含空格的整个操作数需要引号。相对路径以对应后台进程的工作目录为准，建议使用绝对路径。
 - 默认拒绝覆盖。`--overwrite` 会先写入并校验临时文件，然后原子替换，原文件保留到提交成功。目录和目标符号链接拒绝写入。
 - 同一连接一次复制一个文件，可以连续、双向执行多次 cp。完成结果包含字节数、SHA-256 和 `receiver_committed`。
@@ -49,7 +49,7 @@ p2p-cli stop
 
 组件向 `/v1/{session}/register` 注册，从响应获取自己的客户端 ID、协商角色与 STUN 配置。两端凭据不同；只有指定的一端能写 offer，另一端能写 answer。SDP 写入幂等、不可覆盖，每条上限 128 KiB。协商角色与文件方向独立。
 
-只接受 HTTPS，测试时仅对回环地址允许 HTTP，不跟随重定向。连接建立后文件复制和保活直接走 DataChannel；Server 不参与文件数据传输。当前支持 IPv4，候选收集最多等待约五秒；IPv6、目录复制、断点续传和网络切换后自动重连尚未实现。
+只接受 HTTPS，测试时仅对回环地址允许 HTTP，不跟随重定向。ICE 对本机地址的优先级高于 STUN 公网映射地址；同一局域网的地址能够互通时优先使用本机地址，最终选择仍取决于连通性和 ICE 协商。连接建立后文件复制和保活直接走 DataChannel；Server 不参与文件数据传输。当前支持 IPv4，候选收集最多等待约五秒；IPv6、目录复制、断点续传和网络切换后自动重连尚未实现。
 
 可选配置包括 `timeout_seconds`（建连及每次复制的期限，默认 600，范围 1–3600 秒）、`max_bytes`（默认 10 GiB）、`cancel_file` 和 `bind_ip`。测试夹具可显式设置 `register: false` 并提供 `client_id`、`offerer` 和 `stun`，直接测试 SDP 邮箱；正常 Agenterm 初始化不需要这些测试参数。
 

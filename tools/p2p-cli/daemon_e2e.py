@@ -61,8 +61,11 @@ def main(binary):
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             a, b = cli("A", "status"), cli("B", "status")
-            if a["state"] == b["state"] == "connected":
+            if a["state"] == b["state"] == "connected" and a["path"] and b["path"]:
                 assert a["peer"]["id"] == "B" and b["peer"]["id"] == "A"
+                assert a["path"]["kind"] == b["path"]["kind"] == "loopback", (a, b)
+                assert a["path"]["transport"] == b["path"]["transport"] == "udp", (a, b)
+                assert a["path"]["local"] == b["path"]["remote"] and a["path"]["remote"] == b["path"]["local"], (a, b)
                 return
             time.sleep(.05)
         raise AssertionError((a, b))
@@ -74,11 +77,12 @@ def main(binary):
         cli("B", "start", "--config", str(root / "B.json"))
         connected()
         basic = cli("A", "status")
-        assert set(basic) == {"state", "client", "peer", "copy"}, basic
+        assert set(basic) == {"state", "client", "peer", "copy", "path"}, basic
         assert set(basic["client"]) == {"id", "hostname"}, basic
         assert basic["peer"]["state"] == "connected", basic
         for option in ("--verbose", "-v"):
             detailed = cli("A", "status", option)
+            assert detailed["path"] == basic["path"], detailed
             assert detailed["session"] == config["session"] and detailed["executable"], detailed
             assert detailed["client"]["cwd"] and detailed["peer"]["platform"], detailed
             assert detailed["connection"]["peer"] == "connected", detailed

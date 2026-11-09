@@ -14,7 +14,7 @@ use std::{
     error::Error,
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -33,6 +33,38 @@ use str0m::{
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const CONTROL_LIMIT: u64 = 64 * 1024;
+
+// Windows reports an ICMP port-unreachable response on a later UDP receive as
+// WSAECONNRESET. A failed ICE probe must not terminate the entire connection.
+fn transient_udp_receive_error(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::WouldBlock
+        || (cfg!(windows) && error.raw_os_error() == Some(10054))
+}
+
+fn path_kind(
+    local: SocketAddr,
+    remote: SocketAddr,
+    networks: &[(Ipv4Addr, Ipv4Addr)],
+) -> &'static str {
+    match (local.ip(), remote.ip()) {
+        (std::net::IpAddr::V4(a), std::net::IpAddr::V4(b))
+            if a.is_loopback() && b.is_loopback() =>
+        {
+            "loopback"
+        }
+        (std::net::IpAddr::V4(a), std::net::IpAddr::V4(b))
+            if (a.is_private() || a.is_link_local())
+                && networks.iter().any(|(ip, mask)| {
+                    *ip == a
+                        && u32::from(*mask) != 0
+                        && (u32::from(a) & u32::from(*mask)) == (u32::from(b) & u32::from(*mask))
+                }) =>
+        {
+            "same_subnet"
+        }
+        _ => "direct",
+    }
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 struct LocalEndpoint {
@@ -193,6 +225,7 @@ fn status_output(mut status: Value, verbose: bool) -> Value {
     }
     let mut output = json!({
         "state": status["state"],
+        "path": status["path"],
         "client": if status["client"].is_null() { Value::Null } else {
             json!({"id": status["client"]["id"], "hostname": status["client"]["hostname"]})
         },
@@ -543,6 +576,7 @@ fn serve(mut config: Config, dir: &Path) -> Result<()> {
         );
     }
     final_status["connection"]["local"] = final_status["state"].clone();
+    final_status["path"] = Value::Null;
     if result.is_err() {
         final_status["connection"]["peer"] = json!("unknown");
     }
@@ -637,6 +671,8 @@ struct Connection {
     commands: mpsc::Receiver<LocalCommand>,
     shutdown: Arc<AtomicBool>,
     state: String,
+    path: Option<Value>,
+    networks: Vec<(Ipv4Addr, Ipv4Addr)>,
     channel: Option<ChannelId>,
     queue: VecDeque<(bool, Vec<u8>)>,
     copy: Option<CopyJob>,
@@ -662,6 +698,15 @@ impl Connection {
             commands,
             shutdown,
             state: "negotiating".into(),
+            path: None,
+            networks: if_addrs::get_if_addrs()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|interface| match interface.addr {
+                    if_addrs::IfAddr::V4(addr) => Some((addr.ip, addr.netmask)),
+                    _ => None,
+                })
+                .collect(),
             channel: None,
             queue: VecDeque::new(),
             copy: None,
@@ -681,7 +726,7 @@ impl Connection {
         Ok(())
     }
     fn status(&self) -> Value {
-        json!({"ok":true,"done":true,"state":self.state,"session":self.config.session,"executable":std::env::current_exe().ok(),"client":self.client,"peer":self.peer,"connection":{"local":self.state,"peer":if self.last_peer.elapsed()<Duration::from_secs(10){self.peer_state.as_str()}else{"unknown"},"peer_observed_ms_ago":self.last_peer.elapsed().as_millis()},"copy":self.copy.as_ref().map(CopyJob::snapshot),"direct_only":true})
+        json!({"ok":true,"done":true,"state":self.state,"path":if self.state == "connected" { self.path.as_ref() } else { None },"session":self.config.session,"executable":std::env::current_exe().ok(),"client":self.client,"peer":self.peer,"connection":{"local":self.state,"peer":if self.last_peer.elapsed()<Duration::from_secs(10){self.peer_state.as_str()}else{"unknown"},"peer_observed_ms_ago":self.last_peer.elapsed().as_millis()},"copy":self.copy.as_ref().map(CopyJob::snapshot),"direct_only":true})
     }
     fn fail_copy(&mut self, message: &str, notify: bool) -> Result<()> {
         if let Some(mut copy) = self.copy.take() {
@@ -968,6 +1013,11 @@ impl Connection {
                         Err(e) => return Err(e.into()),
                     }
                 }
+                Output::Event(Event::PeerStats(stats)) => {
+                    self.path = stats.selected_candidate_pair.map(|pair| {
+                        json!({"kind":path_kind(pair.local.addr, pair.remote.addr, &self.networks), "transport":"udp", "local":pair.local.addr.to_string(), "remote":pair.remote.addr.to_string()})
+                    });
+                }
                 Output::Event(Event::ChannelOpen(id, label)) => {
                     if label != "p2p-cli-v1" || self.channel.is_some() {
                         return Err("unexpected data channel".into());
@@ -1010,9 +1060,12 @@ impl Connection {
         let sockets = transfer::gather(&self.config, &self.shutdown)?;
         from_feature_flags().install_process_default();
         let mut rtc = Rtc::builder()
+            .set_stats_interval(Some(Duration::from_millis(250)))
             .set_sctp_max_buffered_amount(2 * 1024 * 1024)
             .build(Instant::now());
         for socket in &sockets {
+            // ICE gives host candidates higher priority than server-reflexive
+            // candidates, so a reachable local path is preferred.
             rtc.add_local_candidate(Candidate::host(socket.base, "udp")?)
                 .ok_or("candidate rejected")?;
             self.drain(&mut rtc, &sockets)?;
@@ -1141,7 +1194,7 @@ impl Connection {
                             break;
                         }
                     }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(e) if transient_udp_receive_error(&e) => {}
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -1204,6 +1257,47 @@ fn parse_path(path: &str) -> Result<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn udp_receive_only_ignores_expected_transient_errors() {
+        assert!(transient_udp_receive_error(&io::Error::from(
+            io::ErrorKind::WouldBlock
+        )));
+        assert!(!transient_udp_receive_error(&io::Error::from(
+            io::ErrorKind::PermissionDenied
+        )));
+        assert_eq!(
+            transient_udp_receive_error(&io::Error::from_raw_os_error(10054)),
+            cfg!(windows)
+        );
+    }
+    #[test]
+    fn classifies_selected_addresses_conservatively() {
+        let local = "192.168.1.10:1000".parse().unwrap();
+        let networks = [(
+            "192.168.1.10".parse().unwrap(),
+            "255.255.255.0".parse().unwrap(),
+        )];
+        assert_eq!(
+            path_kind(local, "192.168.1.20:2000".parse().unwrap(), &networks),
+            "same_subnet"
+        );
+        assert_eq!(
+            path_kind(local, "192.168.2.20:2000".parse().unwrap(), &networks),
+            "direct"
+        );
+        assert_eq!(
+            path_kind(local, "192.168.1.20:2000".parse().unwrap(), &[]),
+            "direct"
+        );
+        assert_eq!(
+            path_kind(
+                "127.0.0.1:1".parse().unwrap(),
+                "127.0.0.1:2".parse().unwrap(),
+                &[]
+            ),
+            "loopback"
+        );
+    }
     #[test]
     fn copy_rate_handles_startup_and_empty_progress() {
         let started = Instant::now();
