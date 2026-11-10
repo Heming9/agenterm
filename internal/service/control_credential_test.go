@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 )
 
 func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
@@ -127,6 +128,25 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("device did not connect")
 	}
+	checkLink := func(method, path string, want int) {
+		t.Helper()
+		req, _ := http.NewRequest(method, h.ts.URL+path, nil)
+		req.Header.Set("Accept", "text/html")
+		req.Header.Set(version.Header, version.Current)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != want {
+			t.Fatalf("%s %s: got %d, want %d", method, path, res.StatusCode, want)
+		}
+	}
+	codePath := "/agenterm/c/" + issued["short_code"].(string)
+	checkLink(http.MethodGet, codePath, http.StatusUnauthorized)
+	checkLink(http.MethodPost, codePath, http.StatusUnauthorized)
+	decodedToken, _ := protocol.Decode(rawToken)
+	checkLink(http.MethodGet, "/agenterm/c/"+decodedToken.Secret, http.StatusUnauthorized)
 	call := func(bearer, name string, args map[string]any) (int, bool) {
 		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
 		req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/agenterm/mcp", bytes.NewReader(body))
@@ -169,6 +189,7 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	checkLink(http.MethodGet, codePath, http.StatusOK)
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 	done = make(chan error, 1)

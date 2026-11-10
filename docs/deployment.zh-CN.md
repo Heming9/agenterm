@@ -126,6 +126,8 @@ agenterm-server -help
 
 **从 runtime API 12 升级到 13：** 旧 runtime 与新的短码及认证规则不兼容。启动 API 13 服务端前，请用原有的 API 12 服务端程序停止旧 runtime；若旧程序不可用，按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
 
+**从 runtime API 13 升级到 14：** 单设备在线凭证及重连规则需要新 runtime。启动 API 14 前，请用原有的服务端程序停止 API 13 runtime。这会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
+
 **从 runtime API 7 升级到 8：** 先保留现有 API 7 服务端程序，以相同用户执行 `/path/to/api7/agenterm-server stop -instance <实例名>`，待旧 runtime 停止后，再使用 API 8 程序和预期配置启动。API 8 的 `start`、`stop` 和 `restart` 均无法管理 API 7 runtime；如果没有旧程序，请按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。不要为绕过兼容检查而降级认证或向旧 runtime 发送控制凭证。
 
 | 参数 | 说明 |

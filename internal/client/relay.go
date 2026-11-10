@@ -134,9 +134,12 @@ func runWithCallbacks(ctx context.Context, token string, invitation bool, logWri
 	return reconnect(ctx, t, logWriter, callbacks)
 }
 
-func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, callbacks Callbacks, api API) (result attemptResult) {
+func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, callbacks Callbacks, api API, resumeCredential *string) (result attemptResult) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+t.Secret)
+	if *resumeCredential != "" {
+		headers.Set(protocol.ResumeCredentialHeader, *resumeCredential)
+	}
 	headers.Set(version.Header, version.Current)
 	hostname, _ := os.Hostname()
 	headers.Set(protocol.HostnameHeader, base64.RawURLEncoding.EncodeToString([]byte(hostname)))
@@ -159,7 +162,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 					return attemptResult{err: versionErr, permanent: true}
 				}
 			}
-			if resp.StatusCode == http.StatusUnauthorized {
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusConflict {
 				return attemptResult{err: i18n.NewError("invalid.or.expired.token"), permanent: true}
 			}
 			return attemptResult{err: i18n.NewError("connect.w.http.d", err, resp.StatusCode), permanent: !retryHTTPStatus(resp.StatusCode), retryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
@@ -173,6 +176,7 @@ func connectOnce(ctx context.Context, t protocol.Token, logWriter io.Writer, cal
 	if resp.Header.Get(protocol.ClientAPIHeader) != APIVersion {
 		return attemptResult{err: i18n.NewError("client.api.required"), permanent: true}
 	}
+	*resumeCredential = resp.Header.Get(protocol.ResumeCredentialHeader)
 	c := &connection{ws: ws, api: api, readers: make(map[string]context.CancelFunc), bootstraps: make(map[string]context.CancelFunc), log: logWriter, command: callbacks.Command, output: callbacks.Output}
 	defer func() {
 		// Cancel transport waiters and bootstrap helpers. Terminal ownership

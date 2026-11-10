@@ -128,11 +128,52 @@ func TestReconnectHTTPFailuresAndCancellation(t *testing.T) {
 				}
 				cancel()
 			}})
-			transient := status == 408 || status == 409 || status == 429 || status >= 500
+			transient := status == 408 || status == 429 || status >= 500
 			if retried != transient || (err == nil) != transient || requests.Load() != 1 {
 				t.Fatalf("retry=%v err=%v requests=%d", retried, err, requests.Load())
 			}
 		})
+	}
+}
+
+func TestReconnectSendsResumeCredential(t *testing.T) {
+	isolatedLockHome(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) > 1 {
+			if r.Header.Get(protocol.ResumeCredentialHeader) != "private-resume" {
+				t.Error("missing reconnect credential")
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, http.Header{protocol.ClientAPIHeader: {"1"}, version.Header: {version.Current}, protocol.ResumeCredentialHeader: {"private-resume"}})
+		if err == nil {
+			ws.Close()
+		}
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var retries int
+	err := RunWithCallbacks(ctx, connectionToken(t, server.URL, 1), io.Discard, Callbacks{Reconnecting: func(e ReconnectEvent) { retries++ }})
+	if err == nil || retries != 1 || requests.Load() != 2 {
+		t.Fatalf("err=%v retries=%d requests=%d", err, retries, requests.Load())
+	}
+}
+
+func TestOnlineTokenFailsWithoutRetryOnFirstConnection(t *testing.T) {
+	isolatedLockHome(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	var retried bool
+	err := RunWithCallbacks(context.Background(), connectionToken(t, server.URL, 1), io.Discard, Callbacks{Reconnecting: func(ReconnectEvent) { retried = true }})
+	if err == nil || retried || requests.Load() != 1 {
+		t.Fatalf("err=%v retry=%v requests=%d", err, retried, requests.Load())
 	}
 }
 

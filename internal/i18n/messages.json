@@ -475,10 +475,6 @@
     "en": "installer unavailable",
     "zh-CN": "安装器不可用"
   },
-  "a.client.is.already.connected.with.this.token": {
-    "en": "a client is already connected with this token",
-    "zh-CN": "已有客户端使用此 Token 连接"
-  },
   "agenterm.running.interactive.s": {
     "en": "\n[Agenterm] Running (interactive): %s\n",
     "zh-CN": "\n[Agenterm] 正在执行（交互）：%s\n"

@@ -215,7 +215,6 @@ func TestConnectionValidityStates(t *testing.T) {
 	for _, tc := range []struct{ state, expiry, want string }{
 		{"initial", deadline, "首次连接前，连接令牌和一键命令有效至 2026-11-10 21:18:11（北京时间）"},
 		{"offline", deadline, "设备已断开，连接令牌和一键命令有效至 2026-11-10 21:18:11（北京时间）"},
-		{"online", "", "设备当前在线"},
 		{"", "", "暂时无法获取到期时间"},
 	} {
 		got := connectionValidity(installerInvitation{TokenState: tc.state, TokenExpiresAt: tc.expiry})
@@ -241,8 +240,10 @@ func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 		t.Fatal("initial deadline missing")
 	}
 	conn, _ := h.connect(t, token, "validity")
-	if page := read(); !strings.Contains(page, "设备当前在线") {
-		t.Fatal("online state missing")
+	w := httptest.NewRecorder()
+	h.s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/"+code, nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("online link status: %d", w.Code)
 	}
 	conn.Close()
 	deadline := time.Now().Add(2 * time.Second)

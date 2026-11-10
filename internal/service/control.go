@@ -19,9 +19,9 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-// Version 13 changes short-code and administrator authentication semantics.
-// A version 12 runtime cannot safely serve the new frontend contract.
-const controlVersion = "13"
+// Version 14 changes online single-device credential and reconnection behavior.
+// An older runtime cannot safely serve the new frontend contract.
+const controlVersion = "14"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {
@@ -319,6 +319,13 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 			}
 			return installerInvitation{}, authControlError(status, err)
 		}
+		// An online single-device credential cannot be used to start another
+		// client or disclose its token. Keep it for reconnect after disconnect.
+		candidate := s.tokens[entry.Token]
+		if !s.multiDevice[candidate] && s.hasClientLocked(candidate) {
+			s.mu.Unlock()
+			return installerInvitation{}, &controlError{Status: http.StatusUnauthorized, Message: i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used")}
+		}
 		if len(secret) == shortCodeLength && !in.Consume {
 			if owner := s.clientOwners[s.tokens[entry.Token]]; owner != nil {
 				if !owner.expires.IsZero() {
@@ -327,8 +334,6 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 				switch {
 				case !owner.used:
 					entry.TokenState = "initial"
-				case owner.expires.IsZero():
-					entry.TokenState = "online"
 				default:
 					entry.TokenState = "offline"
 				}

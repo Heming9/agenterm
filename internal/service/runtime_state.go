@@ -26,17 +26,18 @@ import (
 )
 
 type client struct {
-	log       *slog.Logger
-	info      clientInfo
-	secret    string
-	conn      *websocket.Conn
-	write     sync.Mutex
-	mu        sync.Mutex
-	pending   map[string]chan protocol.Message
-	closed    bool
-	closing   bool // guarded by runtimeState.mu; prevents new routing during close
-	done      chan struct{}
-	latencyMS int64 // Latest heartbeat RTT; guarded by mu. Zero means unmeasured.
+	log        *slog.Logger
+	info       clientInfo
+	secret     string
+	resumeHash [sha256.Size]byte
+	conn       *websocket.Conn
+	write      sync.Mutex
+	mu         sync.Mutex
+	pending    map[string]chan protocol.Message
+	closed     bool
+	closing    bool // guarded by runtimeState.mu; prevents new routing during close
+	done       chan struct{}
+	latencyMS  int64 // Latest heartbeat RTT; guarded by mu. Zero means unmeasured.
 }
 
 func (c *client) logger() *slog.Logger {
@@ -104,6 +105,11 @@ func (s *runtimeState) redeemInvitation(w http.ResponseWriter, r *http.Request) 
 	}
 	if !acceptClientVersion(w, r) {
 		s.mu.Unlock()
+		return
+	}
+	if clientSecret := s.tokens[entry.token]; !s.multiDevice[clientSecret] && s.hasClientLocked(clientSecret) {
+		s.mu.Unlock()
+		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
 		return
 	}
 	if !s.multiDevice[s.tokens[entry.token]] {
@@ -223,13 +229,31 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
 		return
 	}
-	if !s.multiDevice[secret] && s.hasClientLocked(secret) {
-		http.Error(w, i18n.Text(i18n.Terminal(), "a.client.is.already.connected.with.this.token"), http.StatusConflict)
-		return
+	var previous *client
+	resume := r.Header.Get(protocol.ResumeCredentialHeader)
+	if !s.multiDevice[secret] {
+		for _, existing := range s.clients {
+			if existing.secret == secret {
+				previous = existing
+				break
+			}
+		}
+		if previous != nil {
+			hash := sha256.Sum256([]byte(resume))
+			if previous.closing || resume == "" || subtle.ConstantTimeCompare(hash[:], previous.resumeHash[:]) != 1 {
+				http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
+				return
+			}
+		} else {
+			resume = randomBytes(32)
+		}
 	}
-	if owner := s.clientOwners[secret]; owner != nil && s.maxClientsPerIP > 0 && s.onlineForIP(owner.ip) >= s.maxClientsPerIP {
+	if owner := s.clientOwners[secret]; previous == nil && owner != nil && s.maxClientsPerIP > 0 && s.onlineForIP(owner.ip) >= s.maxClientsPerIP {
 		http.Error(w, i18n.Text(i18n.Terminal(), "client.ip.limit.reached"), http.StatusTooManyRequests)
 		return
+	}
+	if resume != "" && !s.multiDevice[secret] {
+		w.Header().Set(protocol.ResumeCredentialHeader, resume)
 	}
 	w.Header().Set(protocol.HeartbeatHeader, "1")
 	w.Header().Set(protocol.ClientAPIHeader, terminal.APIVersion)
@@ -237,8 +261,17 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	if previous != nil {
+		previous.closing = true
+		previous.mu.Lock()
+		previous.closed = true
+		previous.mu.Unlock()
+		s.closeP2PClientLocked(previous, "client reconnected")
+		delete(s.clients, previous.info.ID)
+		_ = previous.conn.Close()
+	}
 	id := s.newClientIDLocked()
-	c := &client{conn: conn, secret: secret, done: make(chan struct{}), pending: make(map[string]chan protocol.Message), info: clientInfo{
+	c := &client{conn: conn, secret: secret, resumeHash: sha256.Sum256([]byte(resume)), done: make(chan struct{}), pending: make(map[string]chan protocol.Message), info: clientInfo{
 		ID: id, ConnectedAt: time.Now().UTC(),
 		Environment: clientEnvironment{
 			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),

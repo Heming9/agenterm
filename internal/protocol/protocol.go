@@ -44,6 +44,9 @@ const DefaultCwdHeader = "X-Agenterm-Default-Cwd"
 const SessionControlsHeader = "X-Agenterm-Session-Controls"
 const ClientAPIHeader = "X-Agenterm-Client-API"
 
+// ResumeCredentialHeader carries a private, process-local reconnect credential.
+const ResumeCredentialHeader = "X-Agenterm-Resume-Credential"
+
 const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.

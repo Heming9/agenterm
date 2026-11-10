@@ -61,12 +61,13 @@ func reconnect(ctx context.Context, token protocol.Token, log io.Writer, callbac
 	}
 	api := NewManager(log, TerminalCallbacks{Command: callbacks.Command, Output: callbacks.Output})
 	defer func() { api.Close(); api.WaitCallbacks() }()
+	resumeCredential := ""
 	delay, attempt := time.Second, 0
 	for ctx.Err() == nil {
 		if callbacks.Connecting != nil {
 			callbacks.Connecting()
 		}
-		result := connectOnce(ctx, token, log, callbacks, api)
+		result := connectOnce(ctx, token, log, callbacks, api, &resumeCredential)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -99,7 +100,7 @@ func reconnect(ctx context.Context, token protocol.Token, log io.Writer, callbac
 func nextRetryDelay(delay time.Duration) time.Duration { return min(30*time.Second, 2*delay) }
 
 func retryHTTPStatus(status int) bool {
-	return status == http.StatusRequestTimeout || status == http.StatusConflict || status == http.StatusTooManyRequests || status >= 500
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
 }
 
 func retryAfter(value string, now time.Time) time.Duration {

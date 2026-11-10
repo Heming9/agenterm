@@ -103,7 +103,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
 	decoded, _ := protocol.Decode(tokens[0])
 	_, resp, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), h)
-	if err == nil || resp == nil || resp.StatusCode != http.StatusConflict {
+	if err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("duplicate connection accepted: %v", err)
 	}
 	resp.Body.Close()

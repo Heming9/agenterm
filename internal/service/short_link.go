@@ -63,9 +63,6 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 
 // The runtime tracks the first-connection deadline and later offline expiry.
 func connectionValidity(entry installerInvitation) string {
-	if entry.TokenState == "online" {
-		return "设备当前在线，连接令牌和一键命令保持有效；断开后将进入离线有效期。"
-	}
 	deadline, err := time.Parse(time.RFC3339, entry.TokenExpiresAt)
 	if err != nil {
 		return "暂时无法获取到期时间，请联系邀请发起人确认。"
