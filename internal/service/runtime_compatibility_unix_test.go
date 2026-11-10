@@ -43,9 +43,9 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 	var requests atomic.Int32
 	var oldStopped atomic.Bool
 	runtime := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/v1/runtime/shutdown" && r.Header.Get(controlVersionHeader) == "7" {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/runtime/shutdown" && r.Header.Get(controlVersionHeader) == "12" {
 			oldStopped.Store(true)
-			w.Header().Set(controlVersionHeader, "7")
+			w.Header().Set(controlVersionHeader, "12")
 			_, _ = io.WriteString(w, "true")
 			return
 		}
@@ -53,7 +53,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/config" {
 			t.Errorf("incompatible command attempted more than discovery: %s %s", r.Method, r.URL.Path)
 		}
-		w.Header().Set(controlVersionHeader, "7")
+		w.Header().Set(controlVersionHeader, "12")
 		w.Header().Set(runtimeVersionHeader, "0.4.0")
 		w.Header().Set(runtimePIDHeader, strconv.Itoa(os.Getpid()))
 		w.WriteHeader(http.StatusUpgradeRequired)
@@ -82,7 +82,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s unexpectedly succeeded: %s", action, output)
 		}
-		for _, part := range []string{version.Current, "API " + controlVersion, "0.4.0", "API 7", "runtime PID " + strconv.Itoa(os.Getpid()), "stop -instance staging", "kill -TERM " + strconv.Itoa(os.Getpid())} {
+		for _, part := range []string{version.Current, "API " + controlVersion, "0.4.0", "API 12", "runtime PID " + strconv.Itoa(os.Getpid()), "stop -instance staging", "kill -TERM " + strconv.Itoa(os.Getpid())} {
 			if !strings.Contains(string(output), part) {
 				t.Fatalf("%s missing %q: %s", action, part, output)
 			}
@@ -117,13 +117,13 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 	}
 	connection.Close()
 
-	// A compatible API 7 client can stop the old runtime; only then may API 8 start.
+	// A compatible API 12 client can stop the old runtime; only then may API 8 start.
 	oldHTTP := &http.Client{Transport: unixTransport(paths.Runtime), Timeout: 3 * time.Second}
 	req, err := http.NewRequest(http.MethodPost, "http://runtime/v1/runtime/shutdown", strings.NewReader("{}"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set(controlVersionHeader, "7")
+	req.Header.Set(controlVersionHeader, "12")
 	res, err := oldHTTP.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestIncompatibleRuntimeCommandsPreserveRunningState(t *testing.T) {
 	res.Body.Close()
 	oldHTTP.CloseIdleConnections()
 	if res.StatusCode != http.StatusOK || !oldStopped.Load() {
-		t.Fatal("compatible stop did not reach API 7 runtime")
+		t.Fatal("compatible stop did not reach API 12 runtime")
 	}
 	if err := runtime.Close(); err != nil {
 		t.Fatal(err)

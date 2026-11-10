@@ -189,7 +189,7 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	state.mu.Lock()
 	state.cleanupTokensLocked(time.Now())
 	state.mu.Unlock()
-	if out, err := run(); err != nil || !strings.Contains(out, "arg=-token= invitation=") {
-		t.Fatalf("expired invitation should launch client: %v\n%s", err, out)
+	if out, err := run(); !strings.Contains(out, "401") || strings.Contains(out, "arg=-token") {
+		t.Fatalf("expired token should reject installer: %v\n%s", err, out)
 	}
 }

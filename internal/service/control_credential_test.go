@@ -95,8 +95,8 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	}
 	script, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(script), h.ts.URL+"/agenterm/c/"+issued["short_code"].(string)) || strings.Contains(string(script), strings.TrimPrefix(control, rawToken+":")) {
-		t.Fatal("installer did not deliver only the device invitation")
+	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(script), rawToken) || strings.Contains(string(script), strings.TrimPrefix(control, rawToken+":")) {
+		t.Fatal("short link did not deliver only the device token")
 	}
 	redeemed, err := invite.Redeem(context.Background(), invitation)
 	if err != nil || redeemed != rawToken {

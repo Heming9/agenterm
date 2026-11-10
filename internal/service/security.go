@@ -11,17 +11,16 @@ import (
 )
 
 type failureEntry struct {
-	failures            int
-	start, blockedUntil time.Time
+	failures                  int
+	lastFailure, blockedUntil time.Time
 }
 type authLimiter struct {
 	mu      sync.Mutex
 	entries map[string]failureEntry
 }
 
-const failureLimit = 10
-const failureWindow = time.Minute
-const failureBlock = 5 * time.Minute
+const failureLimit = 3
+const maxFailureBlock = 10 * time.Minute
 const maxFailureEntries = 10000
 
 // Authentication and issuance quotas share one IP source. Headers are trusted
@@ -48,8 +47,8 @@ func (s *runtimeState) requestIP(r *http.Request) (string, error) {
 	return ip.Unmap().String(), nil
 }
 
-// check combines the limit check and failure recording so concurrent attempts cannot bypass it.
-func (l *authLimiter) check(ip string, valid bool, now time.Time) bool {
+// checkWithReset atomically applies the limit; non-consuming lookups retain failure history.
+func (l *authLimiter) checkWithReset(ip string, valid, resetOnSuccess bool, now time.Time) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.entries == nil {
@@ -57,42 +56,82 @@ func (l *authLimiter) check(ip string, valid bool, now time.Time) bool {
 	}
 	e := l.entries[ip]
 	if now.Before(e.blockedUntil) {
-		return false
+		return e.blockedUntil.Sub(now)
 	}
 	if valid {
-		return true
-	}
-	if e.start.IsZero() || now.Sub(e.start) >= failureWindow || !e.blockedUntil.IsZero() {
-		e = failureEntry{start: now}
-	}
-	e.failures++
-	if e.failures >= failureLimit {
-		e.blockedUntil = now.Add(failureBlock)
+		if resetOnSuccess {
+			delete(l.entries, ip)
+		}
+		return 0
 	}
 	if _, exists := l.entries[ip]; !exists && len(l.entries) >= maxFailureEntries {
-		for ip, item := range l.entries {
-			if now.Sub(item.start) >= failureWindow && !now.Before(item.blockedUntil) {
-				delete(l.entries, ip)
+		// Retain actively blocked entries; evict the least recently active
+		// unblocked source. If all are blocked, retry at the earliest expiry.
+		var oldestIP string
+		var oldest, earliestBlocked time.Time
+		for key, item := range l.entries {
+			if now.Before(item.blockedUntil) {
+				if earliestBlocked.IsZero() || item.blockedUntil.Before(earliestBlocked) {
+					earliestBlocked = item.blockedUntil
+				}
+			} else if oldestIP == "" || item.lastFailure.Before(oldest) {
+				oldestIP, oldest = key, item.lastFailure
 			}
 		}
-		if len(l.entries) >= maxFailureEntries {
-			return false
+		if oldestIP == "" {
+			return earliestBlocked.Sub(now)
 		}
+		delete(l.entries, oldestIP)
+	}
+	// Saturation avoids integer overflow after prolonged abuse.
+	if e.failures < failureLimit-1+int(maxFailureBlock/(2*time.Second)) {
+		e.failures++
+	}
+	e.lastFailure = now
+	if e.failures >= failureLimit {
+		delay := time.Duration(e.failures-failureLimit+1) * 2 * time.Second
+		e.blockedUntil = now.Add(delay)
 	}
 	l.entries[ip] = e
-	return true
+	return 0
 }
 
+type authWaitError struct{ wait time.Duration }
+
+func (e *authWaitError) Error() string {
+	return i18n.Text(i18n.Terminal(), "too.many.authentication.failures.try.again.later")
+}
+func retrySeconds(wait time.Duration) int { return int((wait + time.Second - 1) / time.Second) }
+
+// Long credentials remain authenticated but do not use the short-code limiter.
 func (s *runtimeState) authorize(r *http.Request, valid bool) (int, error) {
+	if _, err := s.requestIP(r); err != nil {
+		return http.StatusBadRequest, err
+	}
+	if !valid {
+		return http.StatusUnauthorized, i18n.NewError("unauthorized")
+	}
+	return 0, nil
+}
+
+func (s *runtimeState) authorizeShortCode(r *http.Request, valid, consume bool) (int, error) {
+	return s.authorizeLimited(r, valid, consume, &s.limiter)
+}
+
+func (s *runtimeState) authorizeAdmin(r *http.Request, valid bool) (int, error) {
+	return s.authorizeLimited(r, valid, true, &s.adminLimiter)
+}
+
+func (s *runtimeState) authorizeLimited(r *http.Request, valid, resetOnSuccess bool, limiter *authLimiter) (int, error) {
 	ip, err := s.requestIP(r)
 	if err != nil {
 		return http.StatusBadRequest, err
 	}
-	if !s.limiter.check(ip, valid, time.Now()) {
-		return 429, i18n.NewError("too.many.authentication.failures.try.again.later")
+	if wait := limiter.checkWithReset(ip, valid, resetOnSuccess, time.Now()); wait > 0 {
+		return http.StatusTooManyRequests, &authWaitError{wait: wait}
 	}
 	if !valid {
-		return 401, i18n.NewError("unauthorized")
+		return http.StatusUnauthorized, i18n.NewError("unauthorized")
 	}
 	return 0, nil
 }

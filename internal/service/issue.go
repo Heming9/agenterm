@@ -70,16 +70,13 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		if s.shortCodes == nil {
 			s.shortCodes = make(shortCodeStore)
 		}
-		code, err = s.shortCodes.issue(token, time.Now())
+		code, err = s.shortCodes.issue(token)
 		if err != nil {
 			decoded, _ := protocol.Decode(value)
 			delete(s.invitations, decoded.Secret)
 			return nil, err
 		}
-		codeExpires = s.shortCodes[code].expires
-		if codeExpires.After(expires) {
-			expires = codeExpires
-		}
+		codeExpires = expires
 	}
 	s.multiDevice[secret] = multiDevice
 	s.tokens[token] = secret
@@ -92,6 +89,7 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": valueExpires.UTC().Format(time.RFC3339), "token_initial_expires_at": expires.UTC().Format(time.RFC3339)}
 	if code != "" {
 		result["short_code"] = code
+		result["short_code_url"] = shortCodeURL(token, code)
 		result["short_code_expires_at"] = codeExpires.UTC().Format(time.RFC3339)
 	}
 	shell, powershell := installCommands(token)
@@ -107,12 +105,12 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 func connectionDisplayText(token, shell, powershell, code string, timeoutSeconds int64, expires, codeExpires, tokenExpires time.Time, multiDevice bool) string {
 	shortSection, shortUsage := "", ""
 	if code != "" {
-		shortSection = "\n\nShort Code:\n" + code
+		shortSection = "\n\nShort Code:\n" + code + "\n\nShort Link:\n" + shortCodeURL(token, code)
 		shortUsage = i18n.Text("en", "connection.short.code.usage")
 	}
 	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, shortSection, shortUsage, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
 	if code != "" {
-		text += fmt.Sprintf("\nShort Code validity: 3 minutes, single use (expires at %s UTC).", codeExpires.UTC().Format("2006-01-02 15:04:05"))
+		text += fmt.Sprintf("\nShort Code initial expiry: %s UTC, up to 10 redemptions; follows the connection token lifecycle.", codeExpires.UTC().Format("2006-01-02 15:04:05"))
 	}
 	text += fmt.Sprintf("\nBefore the first connection, the connection token and one-click commands expire at %s UTC.", tokenExpires.UTC().Format("2006-01-02 15:04:05"))
 	if multiDevice {

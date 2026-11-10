@@ -48,6 +48,38 @@ func TestRuntimeIdentityIndependentOfProtocol(t *testing.T) {
 	}
 }
 
+// Version 12 does not implement the current short-code lifecycle, redemption,
+// or authentication limits. Refuse it before issuing misleading instructions.
+func TestVersion12RuntimeCannotServeCurrentShortCodeContract(t *testing.T) {
+	if controlVersion == "12" {
+		t.Fatal("short-code semantic changes require a new control version")
+	}
+	requests := 0
+	c := compatibilityClient(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/config" || r.Header.Get(controlVersionHeader) != controlVersion {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set(controlVersionHeader, "12")
+		w.Header().Set(runtimeVersionHeader, "0.10.7")
+		w.Header().Set(runtimePIDHeader, "12345")
+		w.WriteHeader(http.StatusUpgradeRequired)
+	})
+	_, err := controlCall[runtimeConfig](context.Background(), c, "config", struct{}{})
+	var incompatible *runtimeCompatibilityError
+	if !errors.As(err, &incompatible) || incompatible.Runtime.APIVersion != "12" || requests != 1 {
+		t.Fatalf("old runtime accepted or modified: err=%v requests=%d", err, requests)
+	}
+	// A version-12 frontend must also be unable to use the new runtime.
+	request := httptest.NewRequest(http.MethodPost, "/v1/config", strings.NewReader(`{}`))
+	request.Header.Set(controlVersionHeader, "12")
+	response := httptest.NewRecorder()
+	(&runtimeState{}).controlHandler().ServeHTTP(response, request)
+	if response.Code != http.StatusUpgradeRequired || response.Header().Get(controlVersionHeader) != controlVersion {
+		t.Fatalf("old frontend accepted: status=%d headers=%v", response.Code, response.Header())
+	}
+}
+
 func TestRuntimeCompatibilityDiagnostics(t *testing.T) {
 	for _, status := range []int{http.StatusUpgradeRequired, http.StatusOK, http.StatusNotFound} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {

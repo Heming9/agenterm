@@ -19,7 +19,9 @@ import (
 
 // Version the private API independently of release versions. Additive changes
 // remain compatible; incompatible changes require a new API version.
-const controlVersion = "12"
+// Version 13 changes short-code and administrator authentication semantics.
+// A version 12 runtime cannot safely serve the new frontend contract.
+const controlVersion = "13"
 const controlVersionHeader = "X-Agenterm-Control-Version"
 
 type control interface {
@@ -45,12 +47,28 @@ func newRuntimeClient(socket string) *runtimeClient {
 }
 
 type controlError struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
+	Status     int    `json:"status"`
+	Message    string `json:"message"`
+	RetryAfter int    `json:"retry_after,omitempty"`
 }
 
 func (e *controlError) Error() string { return e.Message }
 
+// A non-prefixed admin key cannot match an Agenterm_ credential. If the
+// configured admin key shares that prefix, ambiguous failures must be counted
+// as admin guesses; already authenticated scoped credentials always bypass it.
+func looksLikeScopedCredential(token, adminKey string) bool {
+	return strings.HasPrefix(token, "Agenterm_") && !strings.HasPrefix(adminKey, "Agenterm_")
+}
+
+func authControlError(status int, err error) *controlError {
+	ce := &controlError{Status: status, Message: err.Error()}
+	var wait *authWaitError
+	if errors.As(err, &wait) {
+		ce.RetryAfter = retrySeconds(wait.wait)
+	}
+	return ce
+}
 func writeControlError(w http.ResponseWriter, err error) {
 	status := http.StatusServiceUnavailable
 	var ce *controlError
@@ -58,7 +76,11 @@ func writeControlError(w http.ResponseWriter, err error) {
 		status = ce.Status
 	}
 	if status == http.StatusTooManyRequests {
-		w.Header().Set("Retry-After", "300")
+		retry := 300 // Older retained runtimes do not report a wait.
+		if ce != nil && ce.RetryAfter > 0 {
+			retry = ce.RetryAfter
+		}
+		w.Header().Set("Retry-After", fmt.Sprint(retry))
 	}
 	if status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="agenterm"`)
@@ -145,9 +167,11 @@ type invitationRequest struct {
 }
 
 type installerInvitation struct {
-	Token       string
-	Secret      string
-	DeviceToken bool
+	Token          string
+	Secret         string
+	DeviceToken    bool
+	TokenExpiresAt string
+	TokenState     string
 }
 
 func registerControl[I, O any](mux *http.ServeMux, method string, f func(context.Context, I) (O, error)) {
@@ -173,7 +197,9 @@ func registerControl[I, O any](mux *http.ServeMux, method string, f func(context
 			status := http.StatusBadRequest
 			var ce *controlError
 			if errors.As(err, &ce) {
-				status = ce.Status
+				w.WriteHeader(ce.Status)
+				_ = json.NewEncoder(w).Encode(ce)
+				return
 			}
 			fail(status, err.Error())
 			return
@@ -210,8 +236,13 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		secret, ok := s.controlSecretLocked(token)
 		s.mu.Unlock()
 		admin := (s.noPassword && header == "") || (s.adminKey != "" && header == "Bearer "+token && subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) == 1)
-		if status, err := s.authorize(r, admin || (header == "Bearer "+token && ok)); err != nil {
-			return mcpPrincipal{}, &controlError{Status: status, Message: err.Error()}
+		scoped := header == "Bearer "+token && ok
+		authenticate := s.authorizeAdmin
+		if !admin && (scoped || looksLikeScopedCredential(token, s.adminKey)) {
+			authenticate = s.authorize
+		}
+		if status, err := authenticate(r, admin || scoped); err != nil {
+			return mcpPrincipal{}, authControlError(status, err)
 		}
 		ip, _ := s.requestIP(r)
 		return mcpPrincipal{Admin: admin, Secret: secret, IP: ip}, nil
@@ -255,7 +286,7 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		var entry installerInvitation
 		var exists bool
 		if len(secret) == shortCodeLength {
-			entry.Token, exists = s.shortCodes.lookup(secret, time.Now())
+			entry.Token, exists = s.shortCodes.lookup(secret)
 			if exists {
 				candidate, ok := s.tokens[entry.Token]
 				exists = ok && !s.multiDevice[candidate] && s.tokenUnexpiredLocked(candidate)
@@ -274,15 +305,47 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 				entry = installerInvitation{Token: invitation.token, Secret: secret}
 			}
 		}
-		if status, err := s.authorize(in.Identity.request(), exists); err != nil {
+		var status int
+		var err error
+		if len(secret) == shortCodeLength {
+			status, err = s.authorizeShortCode(in.Identity.request(), exists, in.Consume)
+		} else {
+			status, err = s.authorize(in.Identity.request(), exists)
+		}
+		if err != nil {
 			s.mu.Unlock()
 			if status == http.StatusUnauthorized {
 				err = i18n.NewError("invitation.invalid.expired.or.already.used")
 			}
-			return installerInvitation{}, &controlError{Status: status, Message: err.Error()}
+			return installerInvitation{}, authControlError(status, err)
+		}
+		if len(secret) == shortCodeLength && !in.Consume {
+			if owner := s.clientOwners[s.tokens[entry.Token]]; owner != nil {
+				if !owner.expires.IsZero() {
+					entry.TokenExpiresAt = owner.expires.UTC().Format(time.RFC3339)
+				}
+				switch {
+				case !owner.used:
+					entry.TokenState = "initial"
+				case owner.expires.IsZero():
+					entry.TokenState = "online"
+				default:
+					entry.TokenState = "offline"
+				}
+			}
 		}
 		if in.Consume && len(secret) == shortCodeLength {
-			delete(s.shortCodes, secret)
+			key := secret
+			if _, ok := s.shortCodes[key]; !ok {
+				key = strings.ToLower(key)
+			}
+			code := s.shortCodes[key]
+			code.redemptions++
+			if code.redemptions >= maxShortCodeRedemptions {
+				delete(s.shortCodes, key)
+			} else {
+				s.shortCodes[key] = code
+			}
 		}
 		s.mu.Unlock()
 		return entry, nil

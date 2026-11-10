@@ -186,3 +186,37 @@ func TestOfflineExpiryRejectedBeforeCleanup(t *testing.T) {
 	}
 	response.Body.Close()
 }
+
+func TestShortCodeFollowsOnlineAndOfflineToken(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
+	token, code := issued["client_token"].(string), issued["short_code"].(string)
+	decoded, _ := protocol.Decode(token)
+	conn, _ := h.connect(t, token, "short-code-test")
+	h.s.mu.Lock()
+	h.s.cleanupTokensLocked(time.Now().Add(48 * time.Hour))
+	_, ok := h.s.shortCodes[code]
+	initialExpiry := h.s.clientOwners[decoded.Secret].expires
+	h.s.mu.Unlock()
+	if !ok || !initialExpiry.IsZero() {
+		t.Fatal("online short code did not follow token")
+	}
+	conn.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		h.s.mu.Lock()
+		ownerExpiry := h.s.clientOwners[decoded.Secret].expires
+		_, ok = h.s.shortCodes[code]
+		h.s.mu.Unlock()
+		if !ownerExpiry.IsZero() {
+			if !ok {
+				t.Fatal("offline short code expiry differs from token")
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("disconnect not processed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

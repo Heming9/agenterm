@@ -21,8 +21,7 @@ type mcpPrincipal struct {
 	IP     string
 }
 
-// Authentication stays outside the SDK so all endpoints share token lifetimes,
-// device isolation and the same source-IP limiter.
+// Authentication stays outside the SDK to enforce token lifetimes and device isolation.
 func (s *frontend) mcp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	principal, err := controlCall[mcpPrincipal](r.Context(), s.control, "authenticate", requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr})
@@ -249,6 +248,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			var codeExpires time.Time
 			code, _ := out["short_code"].(string)
 			if code != "" {
+				out["short_code_url"] = shortCodeURL(out["client_token"].(string), code)
 				codeExpires, err = time.Parse(time.RFC3339, out["short_code_expires_at"].(string))
 				if err != nil {
 					return nil, nil, err

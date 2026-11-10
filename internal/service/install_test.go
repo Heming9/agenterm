@@ -255,7 +255,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 			t.Fatalf("pipeline input %q: %v\n%s", tc.input, waitErr, output)
 		}
 	}
-	// An expired token launches the client without credentials.
+	// An expired token is rejected before an installer can be downloaded.
 	write(cached, client, 0o700)
 	_, _ = protocol.Decode(invitation)
 	state.mu.Lock()
@@ -266,8 +266,8 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
 	cmd.Stdin = strings.NewReader("2\n")
 	out, err = cmd.CombinedOutput()
-	if err != nil || !strings.Contains(string(out), "arg=-token invitation= consent=") {
-		t.Fatalf("expired launch: %v %s", err, out)
+	if err == nil || !strings.Contains(string(out), "401") || strings.Contains(string(out), "arg=-token") {
+		t.Fatalf("expired token should reject installer: %v %s", err, out)
 	}
 	// Connection reachability is also decided by the client.
 	blockWebSocket.Store(true)

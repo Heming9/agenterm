@@ -21,9 +21,6 @@ func (s *runtimeState) probeConnection(w http.ResponseWriter, r *http.Request) {
 		sourceErr == nil && token.URL == source.URL && token.Identifier == source.Identifier && exists && time.Now().Before(entry.expires)
 	s.mu.Unlock()
 	if status, err := s.authorize(r, valid); err != nil {
-		if status == http.StatusTooManyRequests {
-			w.Header().Set("Retry-After", "300")
-		}
 		http.Error(w, err.Error(), status)
 		return
 	}

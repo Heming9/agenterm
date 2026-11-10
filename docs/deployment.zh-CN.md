@@ -124,6 +124,8 @@ agenterm-server -help
 
 `stop` 和 `status` 只接受 `-instance`。其他参数用于 `start` 或 `restart`；修改运行中 runtime 的启动参数需要使用 `restart`。
 
+**从 runtime API 12 升级到 13：** 旧 runtime 与新的短码及认证规则不兼容。启动 API 13 服务端前，请用原有的 API 12 服务端程序停止旧 runtime；若旧程序不可用，按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
+
 **从 runtime API 7 升级到 8：** 先保留现有 API 7 服务端程序，以相同用户执行 `/path/to/api7/agenterm-server stop -instance <实例名>`，待旧 runtime 停止后，再使用 API 8 程序和预期配置启动。API 8 的 `start`、`stop` 和 `restart` 均无法管理 API 7 runtime；如果没有旧程序，请按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。不要为绕过兼容检查而降级认证或向旧 runtime 发送控制凭证。
 
 | 参数 | 说明 |
@@ -138,3 +140,5 @@ agenterm-server -help
 | `-client-ip-header` | 用于读取客户端 IP 的可信请求头，头内须为单个 IP；默认留空，使用直连对端 IP。 |
 | `-enable-short-code` | 启用短码生成和兑换；默认禁用短码。 |
 | `-stdio` | 同时通过标准输入输出提供 MCP 管理接口，信任启动进程的用户。 |
+
+短码查询失败按来源 IP 在浏览器和客户端接口间累计，MCP 管理密钥单独使用相同规则，连接令牌和其他认证接口不进行 IP 限制：连续失败 3 次后等待 2 秒，此后每次失败增加 2 秒，最长等待 10 分钟；等待期间的请求不增加次数。成功兑换短码仅清零短码计数，查看短链接页面不会清零；成功认证管理密钥仅清零管理密钥计数。同类凭证的并发请求共享其限制。

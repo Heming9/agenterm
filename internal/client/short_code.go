@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var codePath = regexp.MustCompile(`/c/[A-Z0-9]{6}$`)
+var codePath = regexp.MustCompile(`/c/[A-Za-z0-9]{6}$`)
 
 // ShortCodeURL validates an address and supplies HTTPS when the scheme is omitted.
 func ShortCodeURL(value string) (*url.URL, bool) {

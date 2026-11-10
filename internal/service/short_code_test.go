@@ -7,59 +7,53 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestShortCodeStore(t *testing.T) {
 	store := make(shortCodeStore)
-	now := time.Unix(100, 0)
-	code, err := store.issue("token", now)
+	code, err := store.issue("token")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(code) != 6 || strings.Trim(code, shortCodeAlphabet) != "" {
 		t.Fatalf("invalid code %q", code)
 	}
-	if token, ok := store.lookup(code, now.Add(shortCodeTTL-time.Nanosecond)); !ok || token != "token" {
-		t.Fatalf("lookup: %q %v", token, ok)
+	for _, value := range []string{code, strings.ToUpper(code)} {
+		if token, ok := store.lookup(value); !ok || token != "token" {
+			t.Fatalf("lookup %q: %q %v", value, token, ok)
+		}
 	}
-	if _, ok := store.lookup(code, now.Add(shortCodeTTL)); ok {
-		t.Fatal("expired code accepted")
+	if !store.available("client") {
+		t.Fatal("client is a valid short code under the /c/ route")
+	}
+	store["ABC123"] = shortCodeEntry{token: "legacy"}
+	if store.available("abc123") {
+		t.Fatal("legacy short code collision")
 	}
 }
 
-func TestShortCodeLifetimeIndependentOfInvitation(t *testing.T) {
+func TestShortCodeLifetimeMatchesToken(t *testing.T) {
 	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
-	issued, err := s.createClientMode("", false, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := issued["short_code"].(string)
-	decoded, err := protocol.Decode(issued["invitation"].(string))
-	if err != nil {
-		t.Fatal(err)
-	}
-	invitation := s.invitations[decoded.Secret]
-	short := s.shortCodes[code]
-	if !short.expires.After(invitation.expires) {
-		t.Fatal("short code expires with invitation")
-	}
-	s.cleanupTokensLocked(invitation.expires.Add(time.Millisecond))
-	if _, ok := s.invitations[decoded.Secret]; ok {
-		t.Fatal("invitation retained after expiry")
-	}
-	if token, ok := s.shortCodes.lookup(code, invitation.expires.Add(time.Millisecond)); !ok || token != issued["client_token"] {
-		t.Fatal("short code lost when invitation expired")
-	}
-	s.cleanupTokensLocked(short.expires)
-	if _, ok := s.shortCodes[code]; ok {
-		t.Fatal("expired short code retained")
-	}
-	if _, ok := s.tokens[issued["client_token"].(string)]; ok {
-		t.Fatal("expired unused token retained")
+	for _, seconds := range []int64{1, 300, 3600} {
+		issued, err := s.createClientMode("", false, seconds)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code := issued["short_code"].(string)
+		decoded, err := protocol.Decode(issued["invitation"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		expiry := s.invitations[decoded.Secret].expires
+		if !s.clientOwners[s.tokens[issued["client_token"].(string)]].expires.Equal(expiry) {
+			t.Fatal("expiry mismatch")
+		}
+		s.cleanupTokensLocked(expiry)
+		if _, ok := s.shortCodes[code]; ok {
+			t.Fatal("expired short code retained")
+		}
 	}
 }
 
@@ -73,30 +67,6 @@ func TestRevocationRemovesShortCode(t *testing.T) {
 	s.revokeTokensLocked(map[string]bool{s.tokens[token]: true})
 	if _, ok := s.shortCodes[issued["short_code"].(string)]; ok {
 		t.Fatal("revoked token retained its short code")
-	}
-}
-
-func TestShortCodeExpiryDoesNotExpireInvitation(t *testing.T) {
-	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
-	issued, err := s.createClientMode("", false, 600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := issued["short_code"].(string)
-	decoded, err := protocol.Decode(issued["invitation"].(string))
-	if err != nil {
-		t.Fatal(err)
-	}
-	expires := s.shortCodes[code].expires
-	s.cleanupTokensLocked(expires)
-	if _, ok := s.shortCodes[code]; ok {
-		t.Fatal("expired short code retained")
-	}
-	if _, ok := s.invitations[decoded.Secret]; !ok {
-		t.Fatal("short code expiry removed invitation")
-	}
-	if _, ok := s.tokens[issued["client_token"].(string)]; !ok {
-		t.Fatal("short code expiry removed token")
 	}
 }
 
@@ -131,39 +101,13 @@ func TestShortCodeLookupEndpoint(t *testing.T) {
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &out) != nil || out["token"] != issued["client_token"] {
 		t.Fatalf("lookup status=%d body=%s", w.Code, w.Body.String())
 	}
+	for i := 1; i < maxShortCodeRedemptions; i++ {
+		if w := request(); w.Code != http.StatusOK {
+			t.Fatalf("redemption %d returned %d", i+1, w.Code)
+		}
+	}
 	if w := request(); w.Code != http.StatusUnauthorized {
-		t.Fatalf("used code returned %d", w.Code)
-	}
-}
-
-func TestShortCodeConcurrentLookupSingleUse(t *testing.T) {
-	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
-	issued, err := s.createClient("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := "/c/" + issued["short_code"].(string)
-	var successes atomic.Int32
-	var unexpected atomic.Int32
-	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest(http.MethodPost, path, nil)
-			r.Header.Set(version.Header, version.Current)
-			s.installWrapper("v1.2.3").ServeHTTP(w, r)
-			if w.Code == http.StatusOK {
-				successes.Add(1)
-			} else if w.Code != http.StatusUnauthorized {
-				unexpected.Add(1)
-			}
-		}()
-	}
-	wg.Wait()
-	if successes.Load() != 1 || unexpected.Load() != 0 {
-		t.Fatalf("successes=%d unexpected=%d", successes.Load(), unexpected.Load())
+		t.Fatalf("exhausted code returned %d", w.Code)
 	}
 }
 
@@ -182,7 +126,7 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 		t.Fatal("multi-device mode registered a short code")
 	}
 	token := issued["client_token"].(string)
-	s.shortCodes = shortCodeStore{"ABC123": {token: token, expires: time.Now().Add(time.Minute)}}
+	s.shortCodes = shortCodeStore{"ABC123": {token: token}}
 	req := httptest.NewRequest(http.MethodPost, "/c/ABC123", nil)
 	req.Header.Set(version.Header, version.Current)
 	w := httptest.NewRecorder()
@@ -212,7 +156,7 @@ func TestShortCodesDisabled(t *testing.T) {
 	if remaining := time.Until(s.clientOwners[s.tokens[issued["client_token"].(string)]].expires); remaining > time.Second {
 		t.Fatalf("token lifetime unexpectedly extended: %v", remaining)
 	}
-	s.shortCodes = shortCodeStore{"ABC123": {token: issued["client_token"].(string), expires: time.Now().Add(time.Minute)}}
+	s.shortCodes = shortCodeStore{"ABC123": {token: issued["client_token"].(string)}}
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(method, "/c/ABC123", nil)
@@ -230,5 +174,32 @@ func TestShortCodesDisabled(t *testing.T) {
 	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+decoded.Secret, nil))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), issued["client_token"].(string)) {
 		t.Fatal("device token installer unavailable")
+	}
+}
+
+func TestNewShortCodeCanBeRedeemedInUppercase(t *testing.T) {
+	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/client"}
+	issued, err := s.createClient("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := issued["short_code"].(string)
+	redeem := func(value string) int {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/c/"+value, nil)
+		r.Header.Set(version.Header, version.Current)
+		s.installWrapper("v1.2.3").ServeHTTP(w, r)
+		return w.Code
+	}
+	if got := redeem(strings.ToUpper(code)); got != http.StatusOK {
+		t.Fatalf("uppercase redemption: %d", got)
+	}
+	for i := 1; i < maxShortCodeRedemptions; i++ {
+		if got := redeem(code); got != http.StatusOK {
+			t.Fatalf("redemption %d: %d", i+1, got)
+		}
+	}
+	if got := redeem(code); got != http.StatusUnauthorized {
+		t.Fatalf("exhausted code: %d", got)
 	}
 }

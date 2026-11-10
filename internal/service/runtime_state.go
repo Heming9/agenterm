@@ -74,8 +74,9 @@ type runtimeState struct {
 	multiDevice     map[string]bool             // client credential -> multi-device mode
 	mu              sync.Mutex
 	limiter         authLimiter
+	adminLimiter    authLimiter
 	invitations     map[string]invitation
-	shortCodes      shortCodeStore // independently expiring code -> connection token
+	shortCodes      shortCodeStore // code -> connection token and redemption count
 	maxClientsPerIP int
 	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
 	nextClientOrder uint64
@@ -98,9 +99,6 @@ func (s *runtimeState) redeemInvitation(w http.ResponseWriter, r *http.Request) 
 	ok = ok && r.Header.Get("Authorization") == "Bearer "+secret && time.Now().Before(entry.expires)
 	if status, err := s.authorize(r, ok); err != nil {
 		s.mu.Unlock()
-		if status == http.StatusTooManyRequests {
-			w.Header().Set("Retry-After", "300")
-		}
 		http.Error(w, err.Error(), status)
 		return
 	}
@@ -212,9 +210,6 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if status, err := s.authorize(r, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret) && s.validClientRoute(secret, r.URL.Path)); err != nil {
-		if status == http.StatusTooManyRequests {
-			w.Header().Set("Retry-After", "300")
-		}
 		http.Error(w, err.Error(), status)
 		return
 	}

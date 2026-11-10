@@ -8,7 +8,6 @@ import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -22,7 +21,7 @@ import (
 const downloadTag = "v" + version.Current
 
 var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
-var validInstallCredential = regexp.MustCompile(`^(?:[A-Z0-9]{6}|[A-Za-z0-9_-]{14})$`)
+var validInstallCredential = regexp.MustCompile(`^(?:[A-Za-z0-9]{6}|[A-Za-z0-9_-]{14})$`)
 var safeShellURL = regexp.MustCompile(`^[A-Za-z0-9._~:/%-]+$`)
 
 const shortCodeLength = 6
@@ -52,25 +51,28 @@ func installCommands(token string) (string, string) {
 		return "", ""
 	}
 	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + secret
-	commandBase := base
-	if u, err := url.Parse(base); err == nil && u.Scheme == "https" && u.Host == "agenterm.net" {
-		commandBase = strings.TrimPrefix(base, "https://")
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return "", ""
 	}
-	shellBase := strings.TrimPrefix(commandBase, "http://")
-	shellURL := shellBase
+	address := u.Host + u.EscapedPath()
+	if u.Scheme == "https" {
+		address = u.String()
+	}
+	shellURL := address
 	if !safeShellURL.MatchString(shellURL) {
 		shellURL = shQuote(shellURL)
 	}
 	shell := fmt.Sprintf("curl -fL %s|sh", shellURL)
-	powershell := "powershell -NoP " + psQuote("irm "+commandBase+".ps1|iex")
+	powershell := "powershell -NoP " + psQuote("irm "+address+".ps1|iex")
 	return shell, powershell
 }
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// GET serves the installer; POST resolves an independent short code to a token.
-// GET also accepts a client-token secret or a legacy full invitation secret.
+// A short code serves the connection page on GET and redeems on POST.
+// Installer scripts require a connection-token secret.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -90,6 +92,14 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if len(credential) == shortCodeLength && r.Method != http.MethodPost {
+			if powershell {
+				http.NotFound(w, r)
+				return
+			}
+			s.shortLink(w, r)
+			return
+		}
 		if r.Method == http.MethodPost && !acceptClientVersion(w, r) {
 			return
 		}
@@ -103,41 +113,21 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
 			return
 		}
-		value := ""
-		clientURL := s.clientURL
 		if err != nil {
-			var ce *controlError
-			if !errors.As(err, &ce) || ce.Status != http.StatusUnauthorized {
-				writeControlError(w, err)
-				return
-			}
-		} else {
-			source, decodeErr := protocol.Decode(entry.Token)
-			if decodeErr == nil {
-				clientURL = source.URL
-				if len(credential) == shortCodeLength {
-					u, e := url.Parse(source.URL)
-					decodeErr = e
-					if e == nil {
-						if u.Scheme == "wss" {
-							u.Scheme = "https"
-						} else {
-							u.Scheme = "http"
-						}
-						u.Path = strings.TrimSuffix(u.Path, "/client") + "/c/" + credential
-						value = u.String()
-					}
-				} else if entry.DeviceToken {
-					value = entry.Token
-				} else {
-					value, decodeErr = protocol.Encode(protocol.Token{URL: source.URL, Secret: entry.Secret, Identifier: source.Identifier})
-				}
-			}
-			if decodeErr != nil {
-				http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
-				return
-			}
+			writeControlError(w, err)
+			return
 		}
+		if !entry.DeviceToken {
+			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusUnauthorized)
+			return
+		}
+		source, decodeErr := protocol.Decode(entry.Token)
+		if decodeErr != nil {
+			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
+			return
+		}
+		value := entry.Token
+		clientURL := source.URL
 		u, parseErr := url.Parse(clientURL)
 		if parseErr != nil || u.Host == "" || (u.Scheme != "ws" && u.Scheme != "wss") {
 			http.Error(w, i18n.Text(i18n.Terminal(), "installer.unavailable"), http.StatusServiceUnavailable)
@@ -160,10 +150,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		body := strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)
-		kind := "invitation"
-		if entry.DeviceToken {
-			kind = "token"
-		}
+		kind := "token"
 		if powershell {
 			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + " " + psQuote(kind) + "\n"
 		} else {

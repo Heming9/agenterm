@@ -3,23 +3,23 @@ package service
 import (
 	"crypto/rand"
 	"math/big"
-	"time"
+	"strings"
 )
 
-const shortCodeTTL = 3 * time.Minute
+const shortCodeAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 
-const shortCodeAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const maxShortCodeRedemptions = 10
 
 type shortCodeEntry struct {
-	token   string
-	expires time.Time
+	token       string
+	redemptions int
 }
 
 // shortCodeStore is guarded by runtimeState.mu. Codes are independent random
 // credentials, and never derived from the connection token or invitation.
 type shortCodeStore map[string]shortCodeEntry
 
-func (s shortCodeStore) issue(token string, now time.Time) (string, error) {
+func (s shortCodeStore) issue(token string) (string, error) {
 	for {
 		var code [shortCodeLength]byte
 		for i := range code {
@@ -30,21 +30,24 @@ func (s shortCodeStore) issue(token string, now time.Time) (string, error) {
 			code[i] = shortCodeAlphabet[n.Int64()]
 		}
 		value := string(code[:])
-		if _, exists := s[value]; !exists {
-			s[value] = shortCodeEntry{token: token, expires: now.Add(shortCodeTTL)}
+		if s.available(value) {
+			s[value] = shortCodeEntry{token: token}
 			return value, nil
 		}
 	}
 }
 
-func (s shortCodeStore) lookup(code string, now time.Time) (string, bool) {
+// Avoid collisions with legacy uppercase codes.
+func (s shortCodeStore) available(code string) bool {
+	_, exists := s[code]
+	_, legacyExists := s[strings.ToUpper(code)]
+	return !exists && !legacyExists
+}
+
+func (s shortCodeStore) lookup(code string) (string, bool) {
 	entry, ok := s[code]
 	if !ok {
-		return "", false
+		entry, ok = s[strings.ToLower(code)]
 	}
-	if !now.Before(entry.expires) {
-		delete(s, code)
-		return "", false
-	}
-	return entry.token, true
+	return entry.token, ok
 }

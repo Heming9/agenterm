@@ -35,11 +35,6 @@ func (s *runtimeState) cleanupTokensLocked(now time.Time) {
 			delete(s.invitations, key)
 		}
 	}
-	for code, entry := range s.shortCodes {
-		if !now.Before(entry.expires) {
-			delete(s.shortCodes, code)
-		}
-	}
 	for secret, owner := range s.clientOwners {
 		if !online[secret] && !owner.expires.IsZero() && !now.Before(owner.expires) {
 			expired[secret] = true

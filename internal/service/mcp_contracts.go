@@ -45,6 +45,7 @@ type invitationResult struct {
 	Invitation               string `json:"invitation"`
 	ExpiresAt                string `json:"expires_at"`
 	ShortCode                string `json:"short_code,omitempty"`
+	ShortCodeURL             string `json:"short_code_url,omitempty"`
 	ShortCodeExpiresAt       string `json:"short_code_expires_at,omitempty"`
 	TokenInitialExpiresAt    string `json:"token_initial_expires_at"`
 	MacOSLinuxCommand        string `json:"macos_linux_command"`

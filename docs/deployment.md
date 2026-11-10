@@ -124,6 +124,8 @@ agenterm-server -help
 
 `stop` and `status` accept only `-instance`. The other options apply to `start` and `restart`; changing the startup settings of a running runtime requires `restart`.
 
+**Upgrading runtime API 12 to 13:** The old runtime is incompatible with the new short-code and authentication behavior. Stop it with its existing API 12 server executable before starting the API 13 server. If it is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and clears in-memory credentials and sessions; recreate connections after upgrading.
+
 **Upgrading runtime API 7 to 8:** Keep the existing API 7 server executable until the old runtime has been stopped. Run `/path/to/api7/agenterm-server stop -instance <name>` using the same user and instance, then start the API 8 server with the intended configuration. API 8 `start`, `stop`, and `restart` cannot manage an API 7 runtime; if the previous executable is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and discards in-memory credentials and sessions; create new connections after the upgrade. Never downgrade authentication or send control credentials to an older runtime to bypass this check.
 
 | Option | Description |
@@ -138,3 +140,5 @@ agenterm-server -help
 | `-client-ip-header` | Trusted request header containing a single client IP; empty by default, using the directly connected peer IP. |
 | `-enable-short-code` | Enable issuing and redeeming short codes; short codes are disabled by default. |
 | `-stdio` | Also serve management MCP over standard input/output, trusting the process owner. |
+
+Short-code lookup failures share a per-IP counter across the browser and client endpoints. MCP administrator key authentication uses an independent counter with the same policy; connection tokens and other authentication interfaces are not rate-limited. After three consecutive failures, requests are rejected for 2 seconds; each subsequent failure adds 2 seconds to the wait, up to 10 minutes. Requests during the wait do not increase the counter. Successful short-code redemption resets the short-code counter; viewing a short-link page does not. Successful administrator authentication resets only the administrator counter. Concurrent requests for each kind of credential share its limiter.

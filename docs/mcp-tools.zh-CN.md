@@ -48,7 +48,9 @@
 <details>
 <summary>邀请创建与展示</summary>
 
-`create_client` 的 MCP 文本内容直接返回固定的英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致，不受服务器语言设置影响；凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。模板依次包含 Windows 命令、macOS / Linux 命令、连接令牌、使用方法和邀请有效期；多设备模式会追加复用提示。
+`create_client` 的 MCP 文本内容直接返回固定的英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致，不受服务器语言设置影响；凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。模板依次包含 Windows 命令、macOS / Linux 命令、连接令牌、启用时的短码和短链接、使用方法和邀请有效期；多设备模式会追加复用提示。
+
+单设备邀请启用短码时，`short_code_url` 是可在浏览器查看连接信息的私密链接（例如 `example.com/c/abcdef`）。它与短码共用有效期，并在第 10 次成功兑换后失效；查看页面不计入兑换次数。
 
 通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `client_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后将返回的 `control_token` 填入 `client_token` 参数，调用 `list_client`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
 

@@ -41,7 +41,7 @@ For self-hosting, replace the URL with the MCP address shown after deployment an
 ## 🤝 Start a remote assistance session
 
 1. Describe the task to your agent and ask it to create an invitation for the target computer.
-2. Privately share the connection command or short-code address with the person at that computer. The short-code address can be used once and expires after 3 minutes. The connection command follows the connection token’s lifetime.
+2. Privately share the connection command or short-code address with the person at that computer. Open the short link (for example, `example.com/c/abcdef`) in a browser on the target computer to view the commands and connection token. The short link and code follow the connection token’s lifetime, including its online and offline lifecycle. Viewing the page does not count as a redemption; after the tenth successful client redemption the code and link become invalid. GET displays the page; clients redeem using POST. Installer scripts use a separate connection-token secret in the path. The connection command follows the connection token’s lifetime. Share the link privately with trusted people because it provides access to credentials.
 3. They run the command for their operating system, read the notice, and authorize access.
 4. Keep the agent conversation active while the device connects, then start the task. The other person can see commands and output in the client and disconnect at any time.
 5. Close or disconnect the client when finished.
