@@ -100,6 +100,20 @@ jobs:
       - name: Install Linux static-link tools
         if: matrix.platform == 'linux' && steps.reuse.outputs.usable != 'true'
         run: |
+          # Fall back to a signed Ubuntu mirror if the runner cannot resolve
+          # Ubuntu's archive host. Keep the normal mirror when it is available.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            if [ "$(dpkg --print-architecture)" = arm64 ]; then
+              host=ports.ubuntu.com
+              fallback=https://mirrors.ustc.edu.cn/ubuntu-ports
+            else
+              host=archive.ubuntu.com
+              fallback=https://mirrors.ustc.edu.cn/ubuntu
+            fi
+            if ! getent ahosts "$host" >/dev/null; then
+              echo "$fallback" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            fi
+          fi
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools
       - name: Install pinned Rust tools
