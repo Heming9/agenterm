@@ -102,17 +102,22 @@ jobs:
         run: |
           # Fall back to a signed Ubuntu mirror if the runner cannot resolve
           # Ubuntu's archive host. Keep the normal mirror when it is available.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            if [ "$(dpkg --print-architecture)" = arm64 ]; then
-              host=ports.ubuntu.com
-              fallback=https://mirrors.ustc.edu.cn/ubuntu-ports
-            else
-              host=archive.ubuntu.com
-              fallback=https://mirrors.ustc.edu.cn/ubuntu
-            fi
-            if ! getent ahosts "$host" >/dev/null; then
+          if [ "$(dpkg --print-architecture)" = arm64 ]; then
+            host=ports.ubuntu.com
+            fallback=https://mirrors.ustc.edu.cn/ubuntu-ports
+          else
+            host=archive.ubuntu.com
+            fallback=https://mirrors.ustc.edu.cn/ubuntu
+          fi
+          if ! getent ahosts "$host" >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
               echo "$fallback" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
             fi
+            for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+              if [ -f "$source" ]; then
+                sudo sed -i "s|http://ports.ubuntu.com/ubuntu-ports|$fallback|g; s|https://ports.ubuntu.com/ubuntu-ports|$fallback|g" "$source"
+              fi
+            done
           fi
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools
