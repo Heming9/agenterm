@@ -189,7 +189,16 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	state.mu.Lock()
 	state.cleanupTokensLocked(time.Now())
 	state.mu.Unlock()
-	if out, err := run(); !strings.Contains(out, "401") || strings.Contains(out, "arg=-token") {
+	token, err := protocol.Decode(issued["client_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	state.testFrontend().installWrapper(installerTestTag).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/c/"+token.Secret+".ps1", nil))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expired installer status: %d", response.Code)
+	}
+	if out, err := run(); strings.Contains(out, "arg=-token") || strings.Contains(out, "连接进度") {
 		t.Fatalf("expired token should reject installer: %v\n%s", err, out)
 	}
 }
