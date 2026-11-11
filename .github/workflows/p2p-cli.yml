@@ -100,15 +100,6 @@ jobs:
       - name: Install Linux static-link tools
         if: matrix.platform == 'linux' && steps.reuse.outputs.usable != 'true'
         run: |
-          # Hosted runners may advertise an Azure mirror that fails DNS.
-          # Use Ubuntu's signed official repositories for each architecture.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            if [ "$(dpkg --print-architecture)" = arm64 ]; then
-              echo 'http://ports.ubuntu.com/ubuntu-ports' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            else
-              echo 'http://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            fi
-          fi
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools
       - name: Install pinned Rust tools
