@@ -1,0 +1,17 @@
+# agenterm
+
+> A service that lets an AI agent assist with a remote computer through terminal access after the target user runs a connection command and authorizes it.
+
+Agents connect via the MCP service at https://agenterm.net/mcp (Streamable HTTP), create invitations, and share a one-time connection command; no SSH or inbound ports are needed. Use the CLI or GUI client on the target computer, which supports reconnects and multiple devices; hosted or self-hosted servers are available, with a user guide, deployment docs, and Apache-2.0 license.
+
+## Docs
+
+- [agenterm README](https://raw.githubusercontent.com/Heming9/agenterm/main/README.md): Overview of agenterm: MCP-based remote assistance, quick start steps, use cases and trust warnings.
+- [User guide](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/usage.md): How to configure the MCP service for Codex, Claude Code and Gemini CLI, and start a remote session.
+- [Terminal client API](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/client-api.md): Architecture of internal/client: terminal Manager, transport adapters, JSON dispatch, protocol envelopes and service forwarding.
+- [Deployment guide](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/deployment.md): How to run the server directly, with Docker Compose or systemd, including management key and MCP URL setup.
+- [MCP tool reference](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/mcp-tools.md): Reference for the eight MCP tools: invitation creation, session reuse, execute_command, session_control and output schemas.
+
+## Demo
+
+- [Agenterm cloud demo / 云托管演示](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/demo/README.md): Demo materials showing invitation, authorization, connection and cleanup with a 1:42 video, subtitles and narration scripts.
