@@ -54,6 +54,10 @@ The agent and target computer connect through the server. After running the clie
 
 Use the hosted service or [deploy your own server](docs/deployment.md).
 
+## ☁️ One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/AgenTerm/)
+
 ## ❓ FAQ
 
 <details>
