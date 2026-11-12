@@ -23,6 +23,7 @@ class NativeCacheTests(unittest.TestCase):
             'tools/p2p-cli/src/main.rs': 'fn main() {}\n',
             'tools/p2p-cli/daemon_e2e.py': '# native validation\n',
             'scripts/build_p2p_cli.py': '# packaging\n',
+            'scripts/install_linux_musl.sh': '# Linux build setup\n',
             'scripts/p2p_cache.py': '# cache contract\n',
             '.github/workflows/p2p-cli.yml': '# toolchain and flags\n',
         }
@@ -63,7 +64,7 @@ class NativeCacheTests(unittest.TestCase):
     def test_native_sources_lockfile_packaging_and_validation_changes_invalidate(self):
         for name in ('tools/p2p-cli/src/main.rs', 'tools/p2p-cli/Cargo.lock',
                      'tools/p2p-cli/daemon_e2e.py', 'scripts/build_p2p_cli.py',
-                     'scripts/p2p_cache.py', '.github/workflows/p2p-cli.yml'):
+                     'scripts/p2p_cache.py', 'scripts/install_linux_musl.sh', '.github/workflows/p2p-cli.yml'):
             with self.subTest(file=name):
                 path = self.root / name
                 original = path.read_bytes()

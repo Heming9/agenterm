@@ -15,7 +15,7 @@ def identity(root, target, rust, runner):
     if target not in TARGETS:
         raise ValueError('Unsupported native target')
     required = {'tools/p2p-cli/Cargo.toml', 'tools/p2p-cli/Cargo.lock',
-                'scripts/build_p2p_cli.py', 'scripts/p2p_cache.py', '.github/workflows/p2p-cli.yml'}
+                'scripts/build_p2p_cli.py', 'scripts/install_linux_musl.sh', 'scripts/p2p_cache.py', '.github/workflows/p2p-cli.yml'}
     tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', 'tools/p2p-cli'], cwd=root)
     files = required | {name.decode() for name in tracked.split(b'\0') if name}
     digest = hashlib.sha256()

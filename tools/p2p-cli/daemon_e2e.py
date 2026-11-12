@@ -151,7 +151,7 @@ def main(binary):
             for field in ("bytes_per_second", "average_bytes_per_second"):
                 assert math.isfinite(detailed[field]) and detailed[field] > 0, detailed
             result = cli("B", "stop")
-            assert result["peer_confirmed"], result
+            assert result.get("peer_confirmed") is True, result
             assert not (states["B"] / "daemon.json").exists(), "stop returned before local cleanup"
             assert copying.wait(timeout=8) != 0
         finally:

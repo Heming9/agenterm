@@ -7,7 +7,7 @@ on:
         type: string
         required: true
       skip_checks:
-        description: 'The caller already passed Build checks for source_ref'
+        description: 'The caller runs Build checks separately and gates publication on them'
         type: boolean
         default: false
 
@@ -100,27 +100,13 @@ jobs:
       - name: Install Linux static-link tools
         if: matrix.platform == 'linux' && steps.reuse.outputs.usable != 'true'
         run: |
-          # Fall back to a signed Ubuntu mirror if the runner cannot resolve
-          # Ubuntu's archive host. Keep the normal mirror when it is available.
-          if [ "$(dpkg --print-architecture)" = arm64 ]; then
-            host=ports.ubuntu.com
-            fallback=https://mirrors.ustc.edu.cn/ubuntu-ports
+          if [ -f scripts/install_linux_musl.sh ]; then
+            bash scripts/install_linux_musl.sh
           else
-            host=archive.ubuntu.com
-            fallback=https://mirrors.ustc.edu.cn/ubuntu
+            # Older source refs may predate the helper.
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends musl-tools
           fi
-          if ! getent ahosts "$host" >/dev/null; then
-            if [ -f /etc/apt/apt-mirrors.txt ]; then
-              echo "$fallback" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            fi
-            for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
-              if [ -f "$source" ]; then
-                sudo sed -i "s|http://ports.ubuntu.com/ubuntu-ports|$fallback|g; s|https://ports.ubuntu.com/ubuntu-ports|$fallback|g" "$source"
-              fi
-            done
-          fi
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools
       - name: Install pinned Rust tools
         if: steps.reuse.outputs.usable != 'true'
         shell: bash
