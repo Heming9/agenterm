@@ -178,11 +178,11 @@ func TestShortLinkPage(t *testing.T) {
 					t.Fatal("missing current version")
 				}
 				wantAppURL := "agenterm://connect?" + url.Values{"url": {link}}.Encode()
-				if !strings.Contains(text, `href="`+wantAppURL+`"`) || !strings.Contains(text, "打开桌面版并连接") {
+				if !strings.Contains(text, `data-url="`+wantAppURL+`"`) || !strings.Contains(text, "打开桌面版并连接") {
 					t.Fatalf("missing deep link %q: %s", wantAppURL, text)
 				}
 				wantCLIURL := "agenterm-cli://connect?" + url.Values{"url": {link}}.Encode()
-				if !strings.Contains(text, `href="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版并连接") {
+				if !strings.Contains(text, `data-url="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版并连接") {
 					t.Fatalf("missing CLI deep link %q", wantCLIURL)
 				}
 				if res.StatusCode != http.StatusOK || !strings.Contains(text, issued["client_token"].(string)) || !strings.Contains(text, issued["windows_powershell_command"].(string)) || !strings.Contains(text, issued["macos_linux_command"].(string)) || strings.Contains(text, issued["control_token"].(string)) {

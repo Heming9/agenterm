@@ -71,7 +71,7 @@ func installCommands(token string) (string, string) {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// A short code serves the connection page on GET and redeems on POST.
+// A short code serves the invitation page on GET and redeems on POST.
 // Installer scripts require a connection-token secret.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

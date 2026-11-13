@@ -114,7 +114,7 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 		Remaining                         int64
 		AppURL, CLIURL                    template.URL
 	}{windows, shell, entry.Token, version.Current, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(appURL), template.URL(cliURL)}); err != nil {
-		http.Error(w, "Unable to render connection page", http.StatusInternalServerError)
+		http.Error(w, "Unable to render invitation page", http.StatusInternalServerError)
 		return
 	}
 	body := rendered.Bytes()
@@ -124,7 +124,7 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 		_, writeErr := writer.Write(body)
 		closeErr := writer.Close()
 		if writeErr != nil || closeErr != nil {
-			http.Error(w, "Unable to compress connection page", http.StatusInternalServerError)
+			http.Error(w, "Unable to compress invitation page", http.StatusInternalServerError)
 			return
 		}
 		body = compressed.Bytes()

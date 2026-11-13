@@ -1,6 +1,6 @@
 package service
 
-// Text for the browser-localized connection page.
+// Text for the browser-localized invitation page.
 var shortLinkTexts = map[string]map[string]string{
 	"zh-CN": {
 		"PageTitle":    "连接到 Agenterm",
@@ -9,6 +9,7 @@ var shortLinkTexts = map[string]map[string]string{
 		"OpenHeading":  "一键打开 Agenterm",
 		"OpenIntro":    "如果这台电脑已经打开过 Agenterm，选择你使用的版本。",
 		"Desktop":      "打开桌面版并连接",
+		"OpenConfirm":  "确认允许远程连接吗？连接后，对方可以在这台电脑上执行命令。",
 		"Terminal":     "打开终端版并连接",
 		"FirstTime":    "第一次使用，或按钮无法打开？",
 		"CommandIntro": "复制对应系统的命令，在终端中运行并按提示确认。",
@@ -25,7 +26,7 @@ var shortLinkTexts = map[string]map[string]string{
 		"TokenIntro":   "也可以打开 Agenterm，将以下令牌粘贴到连接输入框。",
 		"After":        "连接后保持 Agenterm 运行",
 		"AfterIntro":   "需要结束远程协助时，断开连接或关闭客户端即可。",
-		"Footer":       "本页是Agenterm的远程连接受邀展示页，可以按本页文档进行授权远程连接，如您在意外或不知情的情况下打开了本页，请无视并关闭本页面",
+		"Footer":       "本页是Agenterm的远程连接受邀页面，可以按本页文档进行授权远程连接，如您在意外或不知情的情况下打开了本页，请无视并关闭本页面",
 	},
 	"en": {
 		"PageTitle":    "Connect to Agenterm",
@@ -34,6 +35,7 @@ var shortLinkTexts = map[string]map[string]string{
 		"OpenHeading":  "Open Agenterm",
 		"OpenIntro":    "If you have opened Agenterm on this computer before, choose your version.",
 		"Desktop":      "Open desktop app",
+		"OpenConfirm":  "Allow this remote connection? Once connected, the other party can run commands on this computer.",
 		"Terminal":     "Open terminal app",
 		"FirstTime":    "First time here, or can’t open the app?",
 		"CommandIntro": "Copy the command for your operating system, run it in a terminal, and follow the prompts.",
