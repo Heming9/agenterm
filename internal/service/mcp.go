@@ -264,6 +264,9 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		timeout.Default, _ = json.Marshal(defaultInvitationTimeoutSeconds)
 		mcp.AddTool(ms, toolDefinition("create_client", "mcp.create.a.client.connection.token.and.a.one", input), func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, map[string]any, error) {
 			principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
+			if a.TimeoutSeconds == 0 {
+				a.TimeoutSeconds = defaultInvitationTimeoutSeconds
+			}
 			out, err := controlCall[map[string]any](ctx, s.control, "create", createRequest{IP: principal.IP, Args: a})
 			if err != nil {
 				return nil, nil, err
@@ -272,10 +275,6 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
-			timeoutSeconds := a.TimeoutSeconds
-			if timeoutSeconds == 0 {
-				timeoutSeconds = defaultInvitationTimeoutSeconds
-			}
 			code, _ := out["short_code"].(string)
 			if code != "" {
 				out["short_code_url"] = shortCodeURL(out["client_token"].(string), code)
@@ -283,7 +282,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			shell, powershell := installCommands(out["client_token"].(string))
 			out["macos_linux_command"] = shell
 			out["windows_powershell_command"] = powershell
-			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, timeoutSeconds, expires, out["multi_device"].(bool))
+			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, a.TimeoutSeconds, expires, out["multi_device"].(bool))
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})
 	}

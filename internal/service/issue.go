@@ -9,7 +9,7 @@ import (
 	"agenterm/internal/protocol"
 )
 
-const defaultInvitationTimeoutSeconds int64 = 300
+const defaultInvitationTimeoutSeconds int64 = 900
 const maxInvitationTimeoutSeconds int64 = (1<<63 - 1) / int64(time.Second)
 
 func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutSeconds int64) (map[string]any, error) {

@@ -24,11 +24,11 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 		args map[string]any
 		want time.Duration
 	}{
-		{"default", map[string]any{}, 5 * time.Minute},
-		{"default multi-device", map[string]any{"multi_device": true}, 5 * time.Minute},
+		{"default", map[string]any{}, 15 * time.Minute},
+		{"default multi-device", map[string]any{"multi_device": true}, 15 * time.Minute},
 		{"custom", map[string]any{"timeout_seconds": 60}, time.Minute},
 		{"custom multi-device", map[string]any{"timeout_seconds": 120, "multi_device": true}, 2 * time.Minute},
-		{"longer than default", map[string]any{"timeout_seconds": 600}, 10 * time.Minute},
+		{"longer than default", map[string]any{"timeout_seconds": 1200}, 20 * time.Minute},
 		{"minimum", map[string]any{"timeout_seconds": 1}, time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,7 +123,7 @@ func TestCreateClientTimeoutSchema(t *testing.T) {
 			t.Fatal(err)
 		}
 		timeout := schema.Properties["timeout_seconds"]
-		if timeout.Type != "integer" || timeout.Description == "" || timeout.Default != 300 || timeout.Minimum != 1 || timeout.Maximum != maxInvitationTimeoutSeconds {
+		if timeout.Type != "integer" || timeout.Description == "" || timeout.Default != 900 || timeout.Minimum != 1 || timeout.Maximum != maxInvitationTimeoutSeconds {
 			t.Fatalf("incorrect timeout schema: %s", data)
 		}
 		for _, required := range schema.Required {
@@ -157,12 +157,12 @@ func TestCreateClientDisplayText(t *testing.T) {
 		t.Fatal(err)
 	}
 	display := result["display_text"].(string)
-	for _, part := range []string{"Connection token / short code ( " + result["short_code"].(string) + " ):\n```\n" + result["client_token"].(string) + "\n```", "How to connect:\n1.", "\n2.", "\n3.", "If Agenterm is already installed,", "Invitation validity: 300 seconds"} {
+	for _, part := range []string{"Connection token / short code ( " + result["short_code"].(string) + " ):\n```\n" + result["client_token"].(string) + "\n```", "How to connect:\n1.", "\n2.", "\n3.", "If Agenterm is already installed,", "Invitation validity: 900 seconds"} {
 		if !strings.Contains(display, part) {
 			t.Fatalf("display missing %q: %s", part, display)
 		}
 	}
-	if !strings.HasSuffix(display, "Invitation validity: 300 seconds (expires at "+strings.Replace(result["expires_at"].(string), "T", " ", 1)[:19]+" UTC).") {
+	if !strings.HasSuffix(display, "Invitation validity: 900 seconds (expires at "+strings.Replace(result["expires_at"].(string), "T", " ", 1)[:19]+" UTC).") {
 		t.Fatalf("unexpected validity footer: %s", display)
 	}
 	sections := strings.Split(display, "\n\n")

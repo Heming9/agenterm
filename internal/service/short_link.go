@@ -19,7 +19,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-// shortCodeURL returns a scheme-free address using the token’s public endpoint.
+// shortCodeURL retains HTTPS and omits HTTP, matching the installation commands.
 func shortCodeURL(token, code string) string {
 	endpoint, _, err := invite.Endpoint(token)
 	if err != nil {
@@ -30,6 +30,9 @@ func shortCodeURL(token, code string) string {
 		return ""
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/invite/redeem") + "/c/" + code
+	if u.Scheme == "https" {
+		return u.String()
+	}
 	return u.Host + u.EscapedPath()
 }
 

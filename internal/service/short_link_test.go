@@ -411,9 +411,10 @@ func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 	}
 }
 
-func TestShortCodeAddressOmitsScheme(t *testing.T) {
+func TestShortCodeAddressScheme(t *testing.T) {
 	for _, tc := range []struct{ clientURL, want string }{
-		{"wss://agenterm.net/client", "agenterm.net/c/abcdef"},
+		{"wss://agenterm.net/client", "https://agenterm.net/c/abcdef"},
+		{"wss://example.com/remote/client", "https://example.com/remote/c/abcdef"},
 		{"ws://example.com:8080/remote/client", "example.com:8080/remote/c/abcdef"},
 		{"ws://[::1]:8080/client", "[::1]:8080/c/abcdef"},
 	} {
