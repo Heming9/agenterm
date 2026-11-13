@@ -11,7 +11,7 @@ import (
 // The signed-in user's AppleScript app receives the URL and asks Terminal to
 // launch the CLI. The link travels through a private file, not shell history.
 func registerCLILink() error {
-	executable, err := os.Executable()
+	executable, err := stableCLILinkExecutable()
 	if err != nil {
 		return err
 	}

@@ -30,8 +30,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Only a manually opened CLI registers a handler; installer and scripted runs stay side-effect free.
-	if len(os.Args) == 1 && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
+	// Link launches already have a handler; avoid replacing it while it is in use.
+	if !isCLILinkLaunch(os.Args[1:]) {
 		if err := registerCLILink(); err != nil {
 			fmt.Fprintf(os.Stderr, "Agenterm link registration: %v\n", err)
 		}

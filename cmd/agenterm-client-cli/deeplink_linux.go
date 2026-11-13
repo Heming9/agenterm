@@ -9,7 +9,7 @@ import (
 )
 
 func registerCLILink() error {
-	exe, err := os.Executable()
+	exe, err := stableCLILinkExecutable()
 	if err != nil {
 		return err
 	}

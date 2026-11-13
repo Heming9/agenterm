@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+
 	"golang.org/x/sys/windows/registry"
-	"os"
 )
 
 func registerCLILink() error {
-	exe, err := os.Executable()
+	exe, err := stableCLILinkExecutable()
 	if err != nil {
 		return err
 	}
