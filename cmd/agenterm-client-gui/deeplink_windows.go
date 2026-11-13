@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+func installDeepLinkHandler() {}
+
 func registerDeepLink() error {
 	exe, err := os.Executable()
 	if err != nil {

@@ -2,4 +2,6 @@
 
 package main
 
+func installDeepLinkHandler() {}
+
 func registerDeepLink() error { return nil }

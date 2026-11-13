@@ -16,8 +16,9 @@ import (
 	"unsafe"
 )
 
+func installDeepLinkHandler() { C.installAgentermURLHandler() }
+
 func registerDeepLink() error {
-	C.installAgentermURLHandler()
 	exe, err := os.Executable()
 	if err != nil {
 		return err

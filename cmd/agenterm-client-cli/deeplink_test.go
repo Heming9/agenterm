@@ -13,10 +13,12 @@ func TestDeepLinkArgs(t *testing.T) {
 		t.Fatalf("got %v: %v", got, err)
 	}
 	for _, mode := range []string{"temporary", "persistent"} {
-		value := "agenterm-cli://connect?" + url.Values{"url": {address}, "mode": {mode}}.Encode()
-		got, err := deepLinkArgs([]string{value})
-		if err != nil || len(got) != 4 || got[0] != "-token" || got[1] != address || got[2] != "-connection-mode" || got[3] != mode {
-			t.Fatalf("mode %s: %v %v", mode, got, err)
+		for _, path := range []string{"", "/"} {
+			value := "agenterm-cli://connect" + path + "?" + url.Values{"url": {address}, "mode": {mode}}.Encode()
+			got, err := deepLinkArgs([]string{value})
+			if err != nil || len(got) != 4 || got[0] != "-token" || got[1] != address || got[2] != "-connection-mode" || got[3] != mode {
+				t.Fatalf("mode %s path %q: %v %v", mode, path, got, err)
+			}
 		}
 	}
 	for _, bad := range []string{"agenterm-cli://connect?url=https%3A%2F%2Fexample.com%2Fc%2Fab1234&extra=x", "agenterm-cli://connect?url=file%3A%2F%2Fetc%2Fpasswd", "agenterm-cli://connect?url=" + url.QueryEscape(address) + "&mode=other", "agenterm-cli://connect?url=" + url.QueryEscape(address) + "&mode=temporary&mode=persistent"} {

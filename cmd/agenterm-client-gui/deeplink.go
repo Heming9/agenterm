@@ -1,7 +1,10 @@
 package main
 
 import (
+	"sync"
+
 	"agenterm/internal/client"
+
 	"fyne.io/fyne/v2"
 )
 
@@ -33,10 +36,32 @@ func openDeepLink(view *clientView, raw string) {
 	view.window.RequestFocus()
 }
 
-var deepLinkReceiver func(string)
+var deepLinkState struct {
+	sync.Mutex
+	receiver func(string)
+	pending  []string
+}
+
+func setDeepLinkReceiver(receiver func(string)) {
+	deepLinkState.Lock()
+	deepLinkState.receiver = receiver
+	pending := deepLinkState.pending
+	deepLinkState.pending = nil
+	deepLinkState.Unlock()
+	for _, raw := range pending {
+		raw := raw
+		fyne.Do(func() { receiver(raw) })
+	}
+}
 
 func receiveDeepLink(raw string) {
-	if deepLinkReceiver != nil {
-		fyne.Do(func() { deepLinkReceiver(raw) })
+	deepLinkState.Lock()
+	receiver := deepLinkState.receiver
+	if receiver == nil {
+		deepLinkState.pending = append(deepLinkState.pending, raw)
+		deepLinkState.Unlock()
+		return
 	}
+	deepLinkState.Unlock()
+	fyne.Do(func() { receiver(raw) })
 }

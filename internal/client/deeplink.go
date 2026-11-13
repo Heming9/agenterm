@@ -10,7 +10,7 @@ import (
 func ParseDeepLink(raw, scheme string) (string, string, error) {
 	invalid := func() (string, string, error) { return "", "", errors.New("invalid Agenterm link") }
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != scheme || u.Host != "connect" || u.User != nil || u.Path != "" || u.Fragment != "" {
+	if err != nil || u.Scheme != scheme || u.Host != "connect" || u.User != nil || (u.Path != "" && u.Path != "/") || u.Fragment != "" {
 		return invalid()
 	}
 	q, err := url.ParseQuery(u.RawQuery)

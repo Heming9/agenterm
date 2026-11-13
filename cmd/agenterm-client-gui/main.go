@@ -21,6 +21,7 @@ import (
 var appIcon []byte
 
 func main() {
+	installDeepLinkHandler()
 	args := os.Args[1:]
 	deepLink := ""
 	if len(args) == 1 && len(args[0]) >= len("agenterm:") && args[0][:len("agenterm:")] == "agenterm:" {
@@ -47,7 +48,7 @@ func main() {
 		win.Close()
 	})
 	view.startUpdates()
-	deepLinkReceiver = func(raw string) { openDeepLink(view, raw) }
+	setDeepLinkReceiver(func(raw string) { openDeepLink(view, raw) })
 	if err := registerDeepLink(); err != nil {
 		log.Printf("register Agenterm link: %v", err)
 	}
