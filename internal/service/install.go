@@ -7,6 +7,8 @@ import (
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -15,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 // Downloads are available in every build, using the program's own version.
@@ -23,6 +26,7 @@ const downloadTag = "v" + version.Current
 var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 var validInstallCredential = regexp.MustCompile(`^(?:[A-Za-z0-9]{6}|[A-Za-z0-9_-]{14})$`)
 var safeShellURL = regexp.MustCompile(`^[A-Za-z0-9._~:/%-]+$`)
+var safeWindowsURL = regexp.MustCompile(`^[A-Za-z0-9._~:/-]+$`)
 
 const shortCodeLength = 6
 
@@ -64,7 +68,17 @@ func installCommands(token string) (string, string) {
 		shellURL = shQuote(shellURL)
 	}
 	shell := fmt.Sprintf("curl -fL %s|sh", shellURL)
-	powershell := "powershell -NoP " + psQuote("irm "+address+".ps1|iex")
+	powershell := `powershell -NoP "irm ` + address + `.ps1|iex"`
+	if !safeWindowsURL.MatchString(address) {
+		// Avoid cmd expansion and shell metacharacters in uncommon URLs.
+		script := "irm " + psQuote(address+".ps1") + "|iex"
+		code := utf16.Encode([]rune(script))
+		bytes := make([]byte, len(code)*2)
+		for i, value := range code {
+			binary.LittleEndian.PutUint16(bytes[i*2:], value)
+		}
+		powershell = "powershell -NoP -EncodedCommand " + base64.StdEncoding.EncodeToString(bytes)
+	}
 	return shell, powershell
 }
 

@@ -88,11 +88,11 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		}
 		// Execute the returned launcher's inner command in this PowerShell.
 		// Starting another process would discard the fallback command overrides.
-		script, ok := strings.CutPrefix(command, `powershell -NoP '`)
-		if !ok || !strings.HasSuffix(script, `'`) {
+		script, ok := strings.CutPrefix(command, `powershell -NoP "`)
+		if !ok || !strings.HasSuffix(script, `"`) {
 			t.Fatalf("unexpected PowerShell launcher: %s", command)
 		}
-		script = strings.TrimSuffix(script, `'`)
+		script = strings.TrimSuffix(script, `"`)
 		cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "+customPrefix+prefix+script+`; Write-Output ("restored-lang=" + $env:AGENTERM_LANG)`)
 		// CI runs under PowerShell 7. Let Windows PowerShell construct its own
 		// module path instead of trying to load the inherited PowerShell 7 modules.

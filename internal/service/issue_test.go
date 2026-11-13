@@ -205,7 +205,7 @@ func TestInstallCommandsForPublicHost(t *testing.T) {
 	if want := "curl -fL " + base + "|sh"; shell != want {
 		t.Fatalf("shell command = %q, want %q", shell, want)
 	}
-	if want := "powershell -NoP 'irm " + base + ".ps1|iex'"; windows != want {
+	if want := `powershell -NoP "irm ` + base + `.ps1|iex"`; windows != want {
 		t.Fatalf("PowerShell command = %q, want %q", windows, want)
 	}
 }
