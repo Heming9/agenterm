@@ -166,7 +166,7 @@ func TestCreateClientDisplayText(t *testing.T) {
 		t.Fatalf("unexpected validity footer: %s", display)
 	}
 	sections := strings.Split(display, "\n\n")
-	if len(sections) != 7 || sections[3] != "Browser invitation link:\n```\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): "+result["short_code_url"].(string)+"\n```" || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token / short code ( "+result["short_code"].(string)+" ):\n```\n"+result["client_token"].(string)+"\n```" {
+	if len(sections) != 7 || sections[3] != "Browser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): "+result["short_code_url"].(string) || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token / short code ( "+result["short_code"].(string)+" ):\n```\n"+result["client_token"].(string)+"\n```" {
 		t.Fatalf("incorrect connection instructions order or line breaks: %s", display)
 	}
 	if strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
@@ -244,7 +244,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != shortCodeURL(structured.ClientToken, structured.ShortCode) || structured.ShortCode == "" {
 						t.Fatal("single-device output lacks short code or expiry")
 					}
-					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.ClientToken + "\n```\n\nBrowser invitation link:\n```\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL + "\n```"
+					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.ClientToken + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL
 					if !strings.Contains(structured.DisplayText, expected) {
 						t.Fatal("short code is not directly after the token")
 					}

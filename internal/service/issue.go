@@ -107,7 +107,7 @@ func connectionDisplayText(token, shell, powershell, code string, timeoutSeconds
 	firstStep := "run the command above for your system."
 	tokenAlternative := ""
 	if code != "" {
-		connectionSection = "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\n```\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + shortCodeURL(token, code) + "\n```"
+		connectionSection = "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + shortCodeURL(token, code)
 		firstStep = "open the browser invitation link above or run the command for your system."
 		tokenAlternative = " or short code above"
 	}
