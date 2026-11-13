@@ -35,13 +35,26 @@ function Write-BannerRow([string]$Mark, [string]$Message, [string]$Color = '') {
   Write-Styled '│' 'DarkGray'
 }
 function Show-Banner {
-  Write-Styled "`n╭──────────────────────────────────────────────────────╮" 'DarkGray'
-  Write-Styled '│                                                      │' 'DarkGray'
-  Write-BannerRow '▚▖     ▗▞' '▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█' 'Cyan'
-  Write-BannerRow ' ▸     ◂ ' '█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █' 'DarkCyan'
-  Write-BannerRow '▞▘ ▄▄▄ ▝▚' "Agenterm   [ $Version ]"
-  Write-Styled '│                                                      │' 'DarkGray'
-  Write-Styled "╰──────────────────────────────────────────────────────╯`n" 'DarkGray'
+  # Only use the block-character banner in known modern terminal hosts.
+  $useUnicodeBanner = -not [Console]::IsOutputRedirected -and $env:TERM -ne 'dumb' -and
+    ($env:WT_SESSION -or $env:TERM_PROGRAM -eq 'vscode')
+  if ($useUnicodeBanner) {
+    Write-Styled "`n╭──────────────────────────────────────────────────────╮" 'DarkGray'
+    Write-Styled '│                                                      │' 'DarkGray'
+    Write-BannerRow '▚▖     ▗▞' '▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█' 'Cyan'
+    Write-BannerRow ' ▸     ◂ ' '█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █' 'DarkCyan'
+    Write-BannerRow '▞▘ ▄▄▄ ▝▚' "Agenterm   [ $Version ]"
+    Write-Styled '│                                                      │' 'DarkGray'
+    Write-Styled "╰──────────────────────────────────────────────────────╯`n" 'DarkGray'
+  } else {
+    Write-Host ''
+    Write-Styled '  > _ <' 'Yellow' -NoNewline
+    Write-Styled '   AGENTERM' 'Cyan'
+    Write-Styled '  --------------------------------------------------' 'DarkGray'
+    Write-Host '  > AI remote terminal'
+    Write-Host "  > Version: $Version"
+    Write-Host ''
+  }
   Write-Host (Text 'installer.project.s' @('https://github.com/Heming9/agenterm'))
   Say 'installer.license'
 }
