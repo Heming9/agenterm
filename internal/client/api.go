@@ -6,11 +6,12 @@ import "context"
 const APIVersion = "1"
 
 const (
-	DefaultWaitMS    = 10000
-	MaxWaitMS        = 20000
-	MinReadBytes     = 4
-	DefaultReadBytes = 16 << 10
-	MaxReadBytes     = 64 << 10
+	DefaultWaitMS              = 10000
+	MaxWaitMS                  = 20000
+	MinReadBytes               = 4
+	DefaultReadBytes           = 16 << 10
+	MaxReadBytes               = 64 << 10
+	SessionCommandPreviewChars = 160
 )
 
 // API defines terminal operations independently of their transport.
@@ -72,6 +73,24 @@ type SessionInfo struct {
 	ExitCode  *int   `json:"exit_code,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
+
+// Summarize bounds display metadata without changing the submitted command.
+// The relay also applies this to responses from older clients.
+func (s *SessionInfo) Summarize() {
+	const suffix = "... (truncated)"
+	n, cut := 0, 0
+	for offset := range s.Command {
+		if n == SessionCommandPreviewChars-len(suffix) {
+			cut = offset
+		}
+		if n == SessionCommandPreviewChars {
+			s.Command = s.Command[:cut] + suffix
+			return
+		}
+		n++
+	}
+}
+
 type ListResult struct {
 	Sessions []SessionInfo `json:"sessions"`
 }

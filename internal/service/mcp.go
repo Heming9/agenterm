@@ -55,6 +55,11 @@ type listClientsArgs struct {
 	targetArgs
 	WaitMS int `json:"wait_ms,omitempty"`
 }
+
+// Legacy requests may still ask for 300 seconds. Bound each HTTP response;
+// agents perform separate polls within their overall connection-wait budget.
+const maxConnectionPollMS = 30000
+
 type closeClientArgs struct {
 	targetArgs
 	ClientIDs []string `json:"client_ids,omitempty"`
@@ -72,6 +77,7 @@ type readSessionArgs struct {
 type listSessionsArgs struct {
 	targetArgs
 	ClientID string `json:"client_id,omitempty"`
+	Status   string `json:"status,omitempty"`
 }
 
 type sessionActionArgs struct {
@@ -104,6 +110,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 		"max_bytes":  "mcp.session.max.bytes",
 		"command_id": "mcp.execution.command.id",
 		"action":     "mcp.session.control.action",
+		"status":     "mcp.session.list.status",
 	}
 	for field, property := range schema.Properties {
 		if key := descriptions[field]; key != "" {
@@ -123,6 +130,8 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 			property.Items.Pattern = "^[a-z0-9]{6}$"
 		case "cursor":
 			property.Minimum = new(float64(0))
+		case "status":
+			property.Enum = []any{"all", "live", "running", "idle", "closed"}
 		case "max_bytes":
 			property.Minimum, property.Maximum = new(float64(terminal.MinReadBytes)), new(float64(terminal.MaxReadBytes))
 			property.Default, _ = json.Marshal(terminal.DefaultReadBytes)
@@ -193,6 +202,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		return nil, out, err
 	})
 	addTargetTool(s, ms, admin, "list_client", "mcp.list.clients", func(ctx context.Context, secret string, a listClientsArgs) (*mcp.CallToolResult, map[string]any, error) {
+		a.WaitMS = min(a.WaitMS, maxConnectionPollMS)
 		clients, err := controlCall[[]clientInfo](ctx, s.control, "clients", toolRequest[listClientsArgs]{Secret: secret, Args: a})
 		if err != nil {
 			return nil, nil, i18n.NewError("mcp.connection.wait.failed", err)
@@ -214,6 +224,27 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 	})
 	addTargetTool(s, ms, admin, "session_list", "mcp.session.list", func(ctx context.Context, secret string, a listSessionsArgs) (*mcp.CallToolResult, sessionListResult, error) {
 		out, err := controlCall[sessionListResult](ctx, s.control, "terminal/list", toolRequest[listSessionsArgs]{Secret: secret, Args: a})
+		if err == nil {
+			// Presentation stays in the frontend, including with a retained older
+			// runtime or client. Session states still come solely from the client.
+			sessions := make([]sessionInfo, 0, len(out.Sessions))
+			for _, info := range out.Sessions {
+				switch a.Status {
+				case "", "all":
+				case "live":
+					if info.Status != "running" && info.Status != "idle" {
+						continue
+					}
+				default:
+					if info.Status != a.Status {
+						continue
+					}
+				}
+				info.Summarize()
+				sessions = append(sessions, info)
+			}
+			out.Sessions = sessions
+		}
 		return nil, out, err
 	})
 	addTargetTool(s, ms, admin, "session_control", "mcp.session.control", func(ctx context.Context, secret string, a sessionActionArgs) (*mcp.CallToolResult, map[string]any, error) {

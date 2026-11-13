@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math/big"
 	"os/exec"
 	"slices"
 	"sort"
@@ -110,6 +111,37 @@ func randomID(bytes int) (string, error) {
 	return hex.EncodeToString(b), err
 }
 
+// commandIDLocked uses short display identifiers, not authentication secrets.
+// Keep every currently retained command distinct, including this shell's prior
+// command, so a pinned read cannot accidentally select its replacement.
+func (m *Manager) commandIDLocked(source io.Reader) (string, error) {
+	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	bound := big.NewInt(int64(len(alphabet)))
+	for {
+		var id [8]byte
+		for i := range id {
+			n, err := rand.Int(source, bound)
+			if err != nil {
+				return "", err
+			}
+			id[i] = alphabet[n.Int64()]
+		}
+		candidate := string(id[:])
+		duplicate := false
+		for _, r := range m.history {
+			r.mu.Lock()
+			duplicate = r.commandID == candidate
+			r.mu.Unlock()
+			if duplicate {
+				break
+			}
+		}
+		if !duplicate {
+			return candidate, nil
+		}
+	}
+}
+
 type execution struct {
 	request   ExecuteRequest
 	commandID string
@@ -165,7 +197,7 @@ func (m *Manager) admit(a ExecuteRequest, wait int) (execution, error) {
 	if a.SessionID != "" && p == nil {
 		return execution{}, i18n.NewError("unknown.session")
 	}
-	commandID, err := randomID(16)
+	commandID, err := m.commandIDLocked(rand.Reader)
 	if err != nil {
 		return execution{}, err
 	}

@@ -52,7 +52,7 @@
 
 单设备邀请启用短码时，`short_code_url` 是可在浏览器查看连接信息的私密链接（例如 `example.com/c/abcdef`）。设备在线期间短链接和短码不可使用，断线后仍在有效期内时可重新使用。它与短码共用有效期，并在第 10 次成功兑换后失效；查看页面不计入兑换次数。
 
-通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `client_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后将返回的 `control_token` 填入 `client_token` 参数，调用 `list_client`，设置 `wait_ms: 300000`，以 300 秒为超时时间检查是否连接成功。任一设备在线时立即返回；300 秒内仍未连接则向用户报告超时。这些要求直接写在 MCP 工具说明中。
+通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `client_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后将返回的 `control_token` 填入 `client_token` 参数，分多次调用 `list_client`，每轮 `wait_ms: 30000`，总预算为实际经过的 300 秒。任一设备在线立即结束等待；单轮空列表仅表示该轮没有在线设备，应在剩余预算内继续。预算耗尽后用 `wait_ms: 0` 最后检查一次，仍无设备才报告连接等待超时。临时网络错误后用 `wait_ms: 0` 即时复查一次；复查仍失败则报告检查失败、设备状态未知。重试不重置预算；用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧参数至 `300000`，但前端会将每轮实际等待限制为 30000 毫秒，向保留的旧 runtime 转发时同样生效。这些要求直接写在 MCP 工具说明中。
 
 </details>
 
@@ -88,6 +88,8 @@ Manager 由客户端进程持有，位于重连循环外。临时断线只取消
 
 目录、变量、函数和虚拟环境状态在同一 shell 中保留。`cwd` 和 `env` 只存在于 setup 中，用于初始化新终端；复用时不传 setup，通过 cd、export 或目标 shell 对应命令修改状态。每个终端同一时间执行一条命令，忙碌时返回 session_busy，不另开终端、不排队。
 
+普通命令保留默认 10 秒等待，完成会提前返回；相关命令复用 idle 会话。等待新输出优先用 `session_read(wait_ms=10000–20000)`。读完输出后 stop 本任务已不再需要的会话。满额时用 `session_list(status="idle")` 查找可复用终端，或用 `status="live"` 检查清理对象；关闭后确认 `closed` 再创建新终端。
+
 `wait_ms` 默认 10000（10 秒），范围 0–20000，从客户端接受开始计时，包括新 shell 的启动时间。0 立即保留匿名终端，仍需等待接受回执。等待到期不会终止命令。执行中返回 status=running，完成且保留 shell 时返回 idle，会话不可用后返回 closed。具名和等待到期保留的终端需 session_control(action=stop) 主动关闭，不按空闲时间回收。MCP 等待取消不会取消已接受任务。
 
 execute_command 返回 command_id、status、output、next_cursor、has_more。具名或已保留终端返回 session_id；匿名终端仅在等待到期、输出超出单次响应上限或保留历史已被截断时返回 session_id。执行结果最多返回 16 KiB UTF-8 输出；has_more=true 表示可通过 session_read 继续读取剩余输出。已完成的匿名 shell 仍然关闭，返回的 ID 可用于读取客户端缓存。session_read 始终返回 session_id。status 为 running（终端忙碌，包括停止待确认）、idle（命令结束，终端可复用）、closed（客户端确认 shell 已结束）。快速匿名命令结束后为 closed，具名或保留终端的命令完成后为 idle。命令完成时额外返回 exit_code，包括成功的 0；仅有错误时返回 error，仅旧输出被丢弃时返回 truncated=true。
@@ -103,7 +105,9 @@ Linux/macOS 使用上报的 shell 和 PTY；Windows 使用 PowerShell 和管道�
 
 `session_read.max_bytes` 默认 16384，范围 4–65536 字节，输出不会拆开 UTF-8 字符。每次使用 next_cursor 继续读取；即使 status 为 idle/closed，也应读到 has_more=false。没有输出或分页读完不代表命令结束；请检查 status。truncated 仅在旧输出丢失时出现，分页本身不会触发它。
 
-`session_list` 查询此 token 下的在线客户端，可按 client_id 筛选。设备顺序固定，各客户端内部按会话创建时间排序。每条返回 session_id、client_id、command、command_id、status 及按需的 exit_code/error，状态为 running/idle/closed。各客户端独立保留最多 10 条已关闭记录，最长 30 分钟。离线设备不贡献服务端缓存记录；未知或无权限的 client_id 筛选报错。
+`session_list` 查询在线客户端，可按 `client_id` 和 `status` 筛选：`all`（默认）、`live`（running 或 idle）、`running`、`idle`、`closed`。复用查 `idle`，检查占用查 `live`。返回 `session_id`、`client_id`、`command`、`command_id`、`status` 及按需的 `exit_code`/`error`。命令预览最多 160 个 Unicode 字符，截断时包含末尾的 `... (truncated)`。已关闭历史不占终端名额，每客户端最多保留 30 分钟、10 条。
+
+新命令 ID 为区分大小写的 8 位字母数字；旧客户端返回的较长 ID 仍原样使用。
 
 `session_read` 可附带 `command_id` 固定读取的命令；若终端已执行下一条命令则报错，避免把新命令的状态当成旧命令结果。不带此字段仍可按字节游标读取整个会话的保留输出。客户端为保留终端缓存最近 1 MiB，较旧输出被丢弃时设置 `truncated=true`，单纯分页不会设置它。命令完成后仍应读到 `has_more=false`。
 

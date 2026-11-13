@@ -101,6 +101,7 @@ func (r *record) info() (SessionInfo, time.Time, time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := SessionInfo{SessionID: r.id, Command: r.command, CommandID: r.commandID, Status: r.status()}
+	out.Summarize()
 	if r.commandDone {
 		out.ExitCode = new(r.exitCode)
 		out.Error = r.err
