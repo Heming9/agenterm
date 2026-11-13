@@ -1,10 +1,15 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/base64"
 	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -30,6 +35,7 @@ func TestShortLinkPage(t *testing.T) {
 					return nil, err
 				}
 				request.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+				request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
 				return ts.Client().Do(request)
 			}
 			issued, err := s.createClient("")
@@ -42,6 +48,121 @@ func TestShortLinkPage(t *testing.T) {
 				t.Fatalf("link: %s", link)
 			}
 			link = "http://" + link
+			for _, tc := range []struct{ encoding, want string }{
+				{"gzip", "gzip"}, {"gzip;q=0", ""}, {"*;q=1, gzip;q=0", ""}, {"br, gzip;q=0.7", "gzip"},
+			} {
+				req, err := http.NewRequest(http.MethodGet, link, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Accept-Encoding", tc.encoding)
+				req.Header.Set("Accept-Language", "zh-CN")
+				res, err := ts.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := io.ReadAll(res.Body)
+				res.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if res.Header.Get("Content-Encoding") != tc.want {
+					t.Fatalf("encoding %q got %q", tc.encoding, res.Header.Get("Content-Encoding"))
+				}
+				if !strings.Contains(strings.Join(res.Header.Values("Vary"), ","), "Accept-Encoding") {
+					t.Fatal("missing Accept-Encoding Vary")
+				}
+				if tc.want == "gzip" {
+					zr, err := gzip.NewReader(bytes.NewReader(data))
+					if err != nil {
+						t.Fatal(err)
+					}
+					expanded, err := io.ReadAll(zr)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := zr.Close(); err != nil {
+						t.Fatal(err)
+					}
+					if len(data) >= len(expanded) {
+						t.Fatalf("gzip did not reduce payload: %d >= %d", len(data), len(expanded))
+					}
+					data = expanded
+				}
+				content := string(data)
+				scriptStart := strings.Index(content, "<script>")
+				scriptEnd := strings.Index(content, "</script>")
+				if scriptStart < 0 || scriptEnd < scriptStart {
+					t.Fatal("missing inline script")
+				}
+				digest := sha256.Sum256([]byte(content[scriptStart+len("<script>") : scriptEnd]))
+				if !strings.Contains(res.Header.Get("Content-Security-Policy"), "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'") {
+					t.Fatal("script CSP hash does not match response")
+				}
+				if !strings.Contains(content, `src="data:image/webp;base64,`) || !strings.Contains(content, "打开桌面版并连接") {
+					t.Fatal("incorrect page content")
+				}
+			}
+			reqHead, _ := http.NewRequest(http.MethodHead, link, nil)
+			reqHead.Header.Set("Accept-Encoding", "gzip")
+			headRes, err := ts.Client().Do(reqHead)
+			if err != nil {
+				t.Fatal(err)
+			}
+			headData, err := io.ReadAll(headRes.Body)
+			headRes.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if headRes.Header.Get("Content-Encoding") != "gzip" || len(headData) != 0 || headRes.ContentLength <= 0 {
+				t.Fatalf("invalid gzip HEAD response: %v", headRes.Header)
+			}
+
+			for _, tc := range []struct{ query, browserLanguage, htmlLanguage, activeLabel string }{
+				{"?lang=en", "zh-CN", "en", "English"},
+				{"?lang=zh-CN", "en-US", "zh-CN", "中文"},
+				{"?lang=unsupported", "zh-CN", "zh-CN", "中文"},
+			} {
+				req, err := http.NewRequest(http.MethodGet, link+tc.query, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Accept-Language", tc.browserLanguage)
+				res, err := ts.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := io.ReadAll(res.Body)
+				res.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := string(data)
+				if res.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="`+tc.htmlLanguage+`">`) || !strings.Contains(body, `aria-current="page">`+tc.activeLabel+`</a>`) || !strings.Contains(body, `href="?lang=en"`) || !strings.Contains(body, `href="?lang=zh-CN"`) {
+					t.Fatalf("language switch %q: status=%d body=%s", tc.query, res.StatusCode, body)
+				}
+			}
+
+			for _, languageHeader := range []string{"en-US,en;q=0.9", "fr-FR,fr;q=0.9", ""} {
+				req, err := http.NewRequest(http.MethodGet, link, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Accept-Language", languageHeader)
+				res, err := ts.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := io.ReadAll(res.Body)
+				res.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := string(data)
+				if res.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="en">`) || !strings.Contains(body, "Request to connect to this computer") || !strings.Contains(body, "How to use?") || !strings.Contains(body, "Expires in ") || strings.Contains(body, "如何使用") || !strings.Contains(res.Header.Get("Vary"), "Accept-Language") {
+					t.Fatalf("language %q: status=%d body=%s", languageHeader, res.StatusCode, body)
+				}
+			}
 			for i := 0; i < 2; i++ {
 				res, err := browser(http.MethodGet, link)
 				if err != nil {
@@ -50,6 +171,20 @@ func TestShortLinkPage(t *testing.T) {
 				body, _ := io.ReadAll(res.Body)
 				res.Body.Close()
 				text := html.UnescapeString(string(body))
+				if !strings.Contains(text, `src="data:image/webp;base64,`) || !strings.Contains(text, "<script>") || strings.Contains(text, "short-link-countdown.js") || !strings.Contains(res.Header.Get("Content-Security-Policy"), "'sha256-"+shortLinkScriptHash+"'") {
+					t.Fatal("page is not self-contained")
+				}
+				if !strings.Contains(text, `class="brand-version">v`+version.Current+`</span>`) {
+					t.Fatal("missing current version")
+				}
+				wantAppURL := "agenterm://connect?" + url.Values{"url": {link}}.Encode()
+				if !strings.Contains(text, `href="`+wantAppURL+`"`) || !strings.Contains(text, "打开桌面版并连接") {
+					t.Fatalf("missing deep link %q: %s", wantAppURL, text)
+				}
+				wantCLIURL := "agenterm-cli://connect?" + url.Values{"url": {link}}.Encode()
+				if !strings.Contains(text, `href="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版并连接") {
+					t.Fatalf("missing CLI deep link %q", wantCLIURL)
+				}
 				if res.StatusCode != http.StatusOK || !strings.Contains(text, issued["client_token"].(string)) || !strings.Contains(text, issued["windows_powershell_command"].(string)) || !strings.Contains(text, issued["macos_linux_command"].(string)) || strings.Contains(text, issued["control_token"].(string)) {
 					t.Fatalf("page status %d: %s", res.StatusCode, body)
 				}
@@ -58,7 +193,7 @@ func TestShortLinkPage(t *testing.T) {
 					t.Fatal(err)
 				}
 				expected := expires.In(time.FixedZone("北京时间", 8*60*60)).Format("2006-01-02 15:04:05") + "（北京时间）"
-				if !strings.Contains(text, "连接方法") || !strings.Contains(text, "有效期") || !strings.Contains(text, expected) || strings.Contains(text, "短码最多") {
+				if !strings.Contains(text, "请在需要远程协助的电脑上打开此页面") || !strings.Contains(text, "有效期") || !strings.Contains(text, expected) || strings.Contains(text, "短码最多") {
 					t.Fatalf("missing instructions or deadline: %s", text)
 				}
 				if res.Header.Get("Cache-Control") != "no-store" || res.Header.Get("Referrer-Policy") != "no-referrer" {
@@ -230,7 +365,9 @@ func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 	token, code := issued["client_token"].(string), issued["short_code"].(string)
 	read := func() string {
 		w := httptest.NewRecorder()
-		h.s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/"+code, nil))
+		req := httptest.NewRequest(http.MethodGet, "/c/"+code, nil)
+		req.Header.Set("Accept-Language", "zh-CN")
+		h.s.testFrontend().shortLink(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("page status: %d", w.Code)
 		}
@@ -276,6 +413,57 @@ func TestShortCodeAddressOmitsScheme(t *testing.T) {
 		}
 		if got := shortCodeURL(token, "abcdef"); got != tc.want {
 			t.Fatalf("%s: got %q want %q", tc.clientURL, got, tc.want)
+		}
+	}
+}
+
+func TestCountdownSnapshot(t *testing.T) {
+	now := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		state, expiry, label string
+		remaining            int64
+	}{
+		{"initial", "2026-11-13T08:05:00Z", "有效期剩余 ", 300},
+		{"offline", "2026-11-13T08:00:01Z", "有效期剩余 ", 1},
+		{"initial", "2026-11-13T07:59:59Z", "有效期剩余 ", 0},
+		{"initial", "invalid", "", 0},
+		{"unknown", "2026-11-13T08:05:00Z", "", 0},
+	} {
+		label, remaining := countdown(installerInvitation{TokenState: tc.state, TokenExpiresAt: tc.expiry}, now)
+		if label != tc.label || remaining != tc.remaining {
+			t.Errorf("%q: got %q %d", tc.state, label, remaining)
+		}
+	}
+}
+
+func TestShortLinkLanguage(t *testing.T) {
+	for _, tc := range []struct{ header, want string }{
+		{"zh-CN,zh;q=0.9,en;q=0.8", "zh-CN"},
+		{"zh-TW,zh;q=0.9", "zh-CN"},
+		{"en-US,en;q=0.9,zh;q=0.8", "en"},
+		{"fr-FR,zh;q=0.8", "en"},
+		{"zh;q=0,en;q=1", "en"},
+		{"", "en"},
+		{"invalid;q=oops", "en"},
+	} {
+		if got := shortLinkLanguage(tc.header); got != tc.want {
+			t.Errorf("%q: got %q want %q", tc.header, got, tc.want)
+		}
+	}
+}
+
+func TestAcceptsGzip(t *testing.T) {
+	for _, tc := range []struct {
+		values []string
+		want   bool
+	}{
+		{nil, false}, {[]string{"gzip"}, true}, {[]string{"br, GZIP;q=0.5"}, true},
+		{[]string{"gzip;q=0"}, false}, {[]string{"*;q=1, gzip;q=0"}, false},
+		{[]string{"gzip;q=0", "*;q=1"}, false}, {[]string{"*;q=0.5"}, true},
+		{[]string{"gzip;q=invalid"}, false}, {[]string{"gzip;q=2"}, false},
+	} {
+		if got := acceptsGzip(tc.values); got != tc.want {
+			t.Errorf("%q: got %v", tc.values, got)
 		}
 	}
 }

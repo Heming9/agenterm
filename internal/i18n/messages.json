@@ -1,4 +1,8 @@
 {
+  "deep.link.already.connected": {
+    "en": "Disconnect the current connection before opening another link.",
+    "zh-CN": "请先断开当前连接，再打开新的连接链接。"
+  },
   "mcp.stdio.transport": {
     "en": "also serve management MCP over stdin/stdout (trusted process owner)",
     "zh-CN": "同时通过标准输入输出提供 MCP 管理接口（信任启动进程的用户）"

@@ -1,13 +1,22 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/base64"
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"agenterm/internal/invite"
+	"agenterm/internal/version"
+
+	"golang.org/x/text/language"
 )
 
 // shortCodeURL returns a scheme-free address using the token’s public endpoint.
@@ -24,16 +33,25 @@ func shortCodeURL(token, code string) string {
 	return u.Host + u.EscapedPath()
 }
 
-var shortLinkPage = template.Must(template.New("connection").Parse(`<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>Agenterm 连接信息</title><style>
-body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1.25rem;color:#172033}h1{font-size:1.6rem}h2{font-size:1.05rem;margin:1.5rem 0 .4rem}pre{background:#f2f4f8;padding:1rem;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:all}p{color:#4b5563}
-</style></head><body><h1>Agenterm 连接信息</h1><p>在需要远程协助的电脑上，复制并运行对应系统的命令。请只将此页面分享给可信任的人。</p><h2>Windows（PowerShell）</h2><pre>{{.Windows}}</pre><h2>macOS / Linux（终端）</h2><pre>{{.Shell}}</pre><h2>连接令牌</h2><pre>{{.Token}}</pre><h2>连接方法</h2><ol><li>在目标电脑上打开 PowerShell（Windows）或终端（macOS / Linux），运行对应系统的命令。</li><li>阅读授权提示，确认允许连接后按提示继续。</li><li>连接后请保持客户端运行。点击“断开连接”或关闭客户端即可结束远程协助。</li><li>如果已安装 Agenterm 客户端，也可以直接粘贴连接令牌连接。</li></ol><h2>有效期</h2><p>{{.Validity}}</p></body></html>`))
+//go:embed assets/short-link.html
+var shortLinkHTML string
+
+var shortLinkPage = template.Must(template.New("connection").Parse(shortLinkHTML))
+
+// Hash the exact inline script so the page can retain a restrictive CSP.
+var shortLinkScriptHash = func() string {
+	script := strings.SplitN(strings.SplitN(shortLinkHTML, "<script>", 2)[1], "</script>", 2)[0]
+	digest := sha256.Sum256([]byte(script))
+	return base64.StdEncoding.EncodeToString(digest[:])
+}()
 
 func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Accept-Language")
+	w.Header().Add("Vary", "Accept-Encoding")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'sha256-"+shortLinkScriptHash+"'; base-uri 'none'; frame-ancestors 'none'")
 	code, ok := strings.CutPrefix(r.URL.Path, "/c/")
 	if !ok {
 		http.NotFound(w, r)
@@ -54,10 +72,68 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shell, windows := installCommands(entry.Token)
+	endpoint, _, err := invite.Endpoint(entry.Token)
+	if err != nil {
+		http.Error(w, "Invalid connection endpoint", http.StatusInternalServerError)
+		return
+	}
+	shortURL, err := url.Parse(endpoint)
+	if err != nil {
+		http.Error(w, "Invalid connection endpoint", http.StatusInternalServerError)
+		return
+	}
+	shortURL.Path = strings.TrimSuffix(shortURL.Path, "/invite/redeem") + "/c/" + code
+	query := url.Values{"url": {shortURL.String()}}.Encode()
+	appURL := "agenterm://connect?" + query
+	cliURL := "agenterm-cli://connect?" + query
+	lang := shortLinkLanguage(r.Header.Get("Accept-Language"))
+	switch r.URL.Query().Get("lang") {
+	case "en":
+		lang = "en"
+	case "zh-CN":
+		lang = "zh-CN"
+	}
 	validity := connectionValidity(entry)
+	label, remaining := countdown(entry, time.Now())
+	if lang == "en" {
+		validity = englishConnectionValidity(entry)
+		if label != "" {
+			label = "Expires in "
+		}
+	}
+	fallback := ""
+	if label != "" {
+		fallback = validity
+	}
+	var rendered bytes.Buffer
+	if err := shortLinkPage.Execute(&rendered, struct {
+		Windows, Shell, Token, Version    string
+		Language                          string
+		Text                              map[string]string
+		CountdownLabel, CountdownFallback string
+		Remaining                         int64
+		AppURL, CLIURL                    template.URL
+	}{windows, shell, entry.Token, version.Current, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(appURL), template.URL(cliURL)}); err != nil {
+		http.Error(w, "Unable to render connection page", http.StatusInternalServerError)
+		return
+	}
+	body := rendered.Bytes()
+	if acceptsGzip(r.Header.Values("Accept-Encoding")) {
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		_, writeErr := writer.Write(body)
+		closeErr := writer.Close()
+		if writeErr != nil || closeErr != nil {
+			http.Error(w, "Unable to compress connection page", http.StatusInternalServerError)
+			return
+		}
+		body = compressed.Bytes()
+		w.Header().Set("Content-Encoding", "gzip")
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	if r.Method == http.MethodGet {
-		_ = shortLinkPage.Execute(w, struct{ Windows, Shell, Token, Validity string }{windows, shell, entry.Token, validity})
+		_, _ = w.Write(body)
 	}
 }
 
@@ -75,4 +151,80 @@ func connectionValidity(entry installerInvitation) string {
 		return "首次连接前，连接令牌和一键命令有效至 " + deadlineText + "；过期后请重新生成连接信息，已连接设备不受影响。"
 	}
 	return "暂时无法获取到期时间，请联系邀请发起人确认。"
+}
+
+// countdown uses the token expiry reported when the page is loaded.
+func countdown(entry installerInvitation, now time.Time) (string, int64) {
+	deadline, err := time.Parse(time.RFC3339, entry.TokenExpiresAt)
+	if err != nil {
+		return "", 0
+	}
+	label := ""
+	switch entry.TokenState {
+	case "initial", "offline":
+		label = "有效期剩余 "
+	default:
+		return "", 0
+	}
+	duration := deadline.Sub(now)
+	if duration <= 0 {
+		return label, 0
+	}
+	return label, int64((duration + time.Second - 1) / time.Second)
+}
+
+// shortLinkLanguage chooses Chinese only when it is the browser's top preference.
+func shortLinkLanguage(header string) string {
+	tags, _, err := language.ParseAcceptLanguage(header)
+	if err != nil || len(tags) == 0 {
+		return "en"
+	}
+	base, _ := tags[0].Base()
+	if base.String() == "zh" {
+		return "zh-CN"
+	}
+	return "en"
+}
+
+func englishConnectionValidity(entry installerInvitation) string {
+	deadline, err := time.Parse(time.RFC3339, entry.TokenExpiresAt)
+	if err != nil || (entry.TokenState != "initial" && entry.TokenState != "offline") {
+		return "Expiration time unavailable. Please contact the sender."
+	}
+	return "Token expires at " + deadline.UTC().Format("2006-01-02 15:04:05") + " UTC."
+}
+
+// Explicit gzip preferences override the wildcard; q=0 forbids compression.
+func acceptsGzip(headers []string) bool {
+	gzipSeen, gzipOK, wildcardOK := false, false, false
+	for _, header := range headers {
+		for _, item := range strings.Split(header, ",") {
+			parts := strings.Split(item, ";")
+			encoding := strings.ToLower(strings.TrimSpace(parts[0]))
+			if encoding != "gzip" && encoding != "*" {
+				continue
+			}
+			q := 1.0
+			for _, parameter := range parts[1:] {
+				key, value, ok := strings.Cut(strings.TrimSpace(parameter), "=")
+				if ok && strings.EqualFold(strings.TrimSpace(key), "q") {
+					parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+					if err != nil || parsed < 0 || parsed > 1 {
+						q = 0
+					} else {
+						q = parsed
+					}
+				}
+			}
+			if encoding == "gzip" {
+				gzipSeen, gzipOK = true, q > 0
+			} else {
+				wildcardOK = q > 0
+			}
+		}
+	}
+	if gzipSeen {
+		return gzipOK
+	}
+	return wildcardOK
 }

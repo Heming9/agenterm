@@ -21,7 +21,13 @@ import (
 var appIcon []byte
 
 func main() {
-	options, err := client.ParseOptions(flag.NewFlagSet(os.Args[0], flag.ExitOnError), os.Args[1:], false,
+	args := os.Args[1:]
+	deepLink := ""
+	if len(args) == 1 && len(args[0]) >= len("agenterm:") && args[0][:len("agenterm:")] == "agenterm:" {
+		deepLink = args[0]
+		args = nil
+	}
+	options, err := client.ParseOptions(flag.NewFlagSet(os.Args[0], flag.ExitOnError), args, false,
 		func(key string) string { return i18n.Text(i18n.Current(), key) })
 	if err != nil {
 		log.Fatal(err)
@@ -41,6 +47,13 @@ func main() {
 		win.Close()
 	})
 	view.startUpdates()
+	deepLinkReceiver = func(raw string) { openDeepLink(view, raw) }
+	if err := registerDeepLink(); err != nil {
+		log.Printf("register Agenterm link: %v", err)
+	}
+	if deepLink != "" {
+		openDeepLink(view, deepLink)
+	}
 	// Explicit startup credentials retain their existing persistent behavior;
 	// the selector applies to connections started from the form.
 	if options.Token != "" || invitation != "" {
