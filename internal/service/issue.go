@@ -95,24 +95,23 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	shell, powershell := installCommands(token)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
-	result["display_text"] = connectionDisplayText(token, shell, powershell, code, timeoutSeconds, valueExpires, codeExpires, expires, multiDevice)
+	result["display_text"] = connectionDisplayText(token, shell, powershell, code, timeoutSeconds, valueExpires, multiDevice)
 	return result, nil
 }
 
 // Presentation belongs to the replaceable frontend too: a retained runtime may
 // still return an older display_text while its credentials and commands remain
 // valid. Never reconstruct or change those credentials when updating the prose.
-func connectionDisplayText(token, shell, powershell, code string, timeoutSeconds int64, expires, codeExpires, tokenExpires time.Time, multiDevice bool) string {
-	shortSection, shortUsage := "", ""
+func connectionDisplayText(token, shell, powershell, code string, timeoutSeconds int64, expires time.Time, multiDevice bool) string {
+	connectionSection := "Connection token:\n```\n" + token + "\n```"
+	firstStep := "run the command above for your system."
+	tokenAlternative := ""
 	if code != "" {
-		shortSection = "\n\nShort Code:\n" + code + "\n\nShort Link:\n" + shortCodeURL(token, code)
-		shortUsage = i18n.Text("en", "connection.short.code.usage")
+		connectionSection = "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\n```\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + shortCodeURL(token, code) + "\n```"
+		firstStep = "open the browser invitation link above or run the command for your system."
+		tokenAlternative = " or short code above"
 	}
-	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, token, shortSection, shortUsage, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
-	if code != "" {
-		text += fmt.Sprintf("\nShort Code initial expiry: %s UTC, up to 10 redemptions; follows the connection token lifecycle.", codeExpires.UTC().Format("2006-01-02 15:04:05"))
-	}
-	text += fmt.Sprintf("\nBefore the first connection, the connection token and one-click commands expire at %s UTC.", tokenExpires.UTC().Format("2006-01-02 15:04:05"))
+	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, firstStep, tokenAlternative, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
 	if multiDevice {
 		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
 	}

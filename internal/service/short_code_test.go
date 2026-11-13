@@ -134,7 +134,7 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("multi-device short code lookup: %d", w.Code)
 	}
-	if strings.Contains(issued["display_text"].(string), "Short Code:") {
+	if strings.Contains(issued["display_text"].(string), "short code ( ") {
 		t.Fatal("multi-device instructions contain a short code")
 	}
 }
@@ -150,7 +150,7 @@ func TestShortCodesDisabled(t *testing.T) {
 			t.Fatalf("disabled short code returned %s", key)
 		}
 	}
-	if len(s.shortCodes) != 0 || strings.Contains(issued["display_text"].(string), "Short Code:") {
+	if len(s.shortCodes) != 0 || strings.Contains(issued["display_text"].(string), "short code ( ") {
 		t.Fatal("disabled short code issued or displayed")
 	}
 	if remaining := time.Until(s.clientOwners[s.tokens[issued["client_token"].(string)]].expires); remaining > time.Second {

@@ -157,13 +157,16 @@ func TestCreateClientDisplayText(t *testing.T) {
 		t.Fatal(err)
 	}
 	display := result["display_text"].(string)
-	for _, part := range []string{"Connection token:\n" + result["client_token"].(string), "How to connect:\n1.", "\n2.", "\n3.", "\n4.", "Invitation validity: 300 seconds", "devices already connected are not affected"} {
+	for _, part := range []string{"Connection token / short code ( " + result["short_code"].(string) + " ):\n```\n" + result["client_token"].(string) + "\n```", "How to connect:\n1.", "\n2.", "\n3.", "If Agenterm is already installed,", "Invitation validity: 300 seconds"} {
 		if !strings.Contains(display, part) {
 			t.Fatalf("display missing %q: %s", part, display)
 		}
 	}
+	if !strings.HasSuffix(display, "Invitation validity: 300 seconds (expires at "+strings.Replace(result["expires_at"].(string), "T", " ", 1)[:19]+" UTC).") {
+		t.Fatalf("unexpected validity footer: %s", display)
+	}
 	sections := strings.Split(display, "\n\n")
-	if len(sections) != 7 || sections[4] != "Short Link:\n"+result["short_code_url"].(string) || sections[3] != "Short Code:\n"+result["short_code"].(string) || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token:\n"+result["client_token"].(string) {
+	if len(sections) != 7 || sections[3] != "Browser invitation link:\n```\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): "+result["short_code_url"].(string)+"\n```" || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token / short code ( "+result["short_code"].(string)+" ):\n```\n"+result["client_token"].(string)+"\n```" {
 		t.Fatalf("incorrect connection instructions order or line breaks: %s", display)
 	}
 	if strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
@@ -234,19 +237,19 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 				_, hasCode := fields["short_code"]
 				_, hasExpiry := fields["short_code_expires_at"]
 				if multi {
-					if hasCode || hasExpiry || hasURL || structured.ShortCode != "" || strings.Contains(structured.DisplayText, "Short Code:") || strings.Contains(structured.DisplayText, "5. For clients") {
+					if hasCode || hasExpiry || hasURL || structured.ShortCode != "" || strings.Contains(structured.DisplayText, "short code ( ") || strings.Contains(structured.DisplayText, "or short code above") {
 						t.Fatal("multi-device output includes a short code")
 					}
 				} else {
 					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != shortCodeURL(structured.ClientToken, structured.ShortCode) || structured.ShortCode == "" {
 						t.Fatal("single-device output lacks short code or expiry")
 					}
-					expected := "Connection token:\n" + structured.ClientToken + "\n\nShort Code:\n" + structured.ShortCode
+					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.ClientToken + "\n```\n\nBrowser invitation link:\n```\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL + "\n```"
 					if !strings.Contains(structured.DisplayText, expected) {
 						t.Fatal("short code is not directly after the token")
 					}
-					if !strings.Contains(structured.DisplayText, "5. For clients that already know the server address, using the short code is recommended.\n\nInvitation validity:") {
-						t.Fatal("short code recommendation is not at the end of the usage instructions")
+					if !strings.Contains(structured.DisplayText, "open the browser invitation link above or run the command for your system.") || !strings.Contains(structured.DisplayText, "enter the connection token or short code above.") {
+						t.Fatal("short-code connection instructions are missing")
 					}
 					if strings.Contains(structured.DisplayText, "Client connection address (single use") {
 						t.Fatal("obsolete short-code URL section remains in display text")
@@ -260,7 +263,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 					t.Fatalf("invalid English connection instructions: %s", display)
 				}
 				sections := strings.Split(display, "\n\n")
-				if (!multi && len(sections) != 7) || (multi && (len(sections) != 6 || !strings.HasPrefix(sections[5], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
+				if (!multi && len(sections) != 7) || (multi && (len(sections) != 7 || !strings.HasPrefix(sections[6], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
 					t.Fatalf("incorrect multi-device notice: %s", display)
 				}
 			})
@@ -409,7 +412,7 @@ func TestCreateClientMCPWithShortCodesDisabled(t *testing.T) {
 			t.Fatalf("unexpected %s", key)
 		}
 	}
-	if fields["control_token"] == "" || fields["client_token"] == "" || strings.Contains(fields["display_text"].(string), "Short Code:") {
+	if fields["control_token"] == "" || fields["client_token"] == "" || strings.Contains(fields["display_text"].(string), "short code ( ") {
 		t.Fatalf("invalid result: %v", fields)
 	}
 }
