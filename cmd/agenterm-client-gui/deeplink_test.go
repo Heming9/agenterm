@@ -3,25 +3,53 @@ package main
 import (
 	"net/url"
 	"testing"
+
+	"agenterm/internal/client"
+	"fyne.io/fyne/v2/test"
 )
 
 func TestParseDeepLink(t *testing.T) {
 	address := "https://example.com/agenterm/c/Ab1234"
 	valid := "agenterm://connect?" + url.Values{"url": {address}}.Encode()
-	if got, err := parseDeepLink(valid); err != nil || got != address {
+	if got, mode, err := parseDeepLink(valid); err != nil || got != address || mode != "" {
 		t.Fatalf("got %q, %v", got, err)
+	}
+	for _, requested := range []string{"temporary", "persistent"} {
+		value := "agenterm://connect?" + url.Values{"url": {address}, "mode": {requested}}.Encode()
+		got, mode, err := parseDeepLink(value)
+		if err != nil || got != address || mode != requested {
+			t.Fatalf("mode %s: %s %s %v", requested, got, mode, err)
+		}
 	}
 	for _, bad := range []string{
 		"https://connect?url=" + url.QueryEscape(address),
 		"agenterm://other?url=" + url.QueryEscape(address),
+		"agenterm://connect?url=" + url.QueryEscape(address) + "&mode=other",
 		"agenterm://connect/path?url=" + url.QueryEscape(address),
 		"agenterm://connect?url=" + url.QueryEscape(address) + "&url=" + url.QueryEscape(address),
 		"agenterm://connect?url=" + url.QueryEscape("example.com/c/Ab1234"),
 		"agenterm://connect?url=" + url.QueryEscape("https://example.com/c/Ab1234?secret=x"),
 		"agenterm://connect?url=" + url.QueryEscape("https://user@example.com/c/Ab1234"),
 	} {
-		if _, err := parseDeepLink(bad); err == nil {
+		if _, _, err := parseDeepLink(bad); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
+	}
+}
+
+func TestOpenDeepLinkAppliesSelectedMode(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	for _, mode := range []string{client.ConnectionModeTemporary, client.ConnectionModePersistent} {
+		win := app.NewWindow("Agenterm")
+		view := newClientView(win)
+		win.SetContent(view.content)
+		raw := "agenterm://connect?" + url.Values{"url": {"http://127.0.0.1:1/c/abc123"}, "mode": {mode}}.Encode()
+		openDeepLink(view, raw)
+		if !view.connecting || view.temporary != (mode == client.ConnectionModeTemporary) {
+			t.Errorf("mode=%s connecting=%v temporary=%v", mode, view.connecting, view.temporary)
+		}
+		view.close()
+		win.Close()
 	}
 }

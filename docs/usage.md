@@ -57,7 +57,7 @@ After a successful connection, the client saves the server address locally. Ente
 - 🖥️ **Terminal client:** On macOS, Windows, and Linux desktops, start the CLI interactively without arguments once to register its link handler. Then choose **Open terminal client and connect** on the invitation page. On macOS the first launch may request permission to control Terminal. The registered executable must remain in place; start it again after moving it. Alternatively, paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to browse, drag to select and copy text, press `c` to clear the display, and `q` to disconnect and exit.
 - 🪟 **Desktop client:** On macOS and Windows, open the app once to register its link handler. On the invitation page, choose **Open desktop client and connect**, or paste a connection token or short-code address (for example, `https://example.com/agenterm/c/XXXXXX`), connect or disconnect, and view live commands and output. Change the interface language from **Language / 语言** in the app menu, then restart the app.
 
-The page asks for confirmation before opening a client. Direct protocol links can launch clients and connect without that page confirmation, so open connection links only from people you trust.
+Before opening a client, the invitation page offers temporary connection, persistent connection, or denial. Direct protocol links can launch clients and connect without that page confirmation, so open connection links only from people you trust.
 
 The terminal client accepts `-connection-mode=temporary` or `-connection-mode=persistent`; the default is `temporary`. One-click connections and invitations use the mode selected during authorization.
 

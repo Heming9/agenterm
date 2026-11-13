@@ -42,25 +42,37 @@ func consumeLinkFile(path, dir string) (string, error) {
 	if err := os.Remove(path); err != nil {
 		return "", err
 	}
-	return client.ParseDeepLink(string(b), "agenterm-cli")
+	raw := string(b)
+	if _, _, err := client.ParseDeepLink(raw, "agenterm-cli"); err != nil {
+		return "", err
+	}
+	return raw, nil
 }
 
 func deepLinkArgs(args []string) ([]string, error) {
+	raw := ""
 	if len(args) == 1 && strings.HasPrefix(args[0], "agenterm-cli:") {
-		address, err := client.ParseDeepLink(args[0], "agenterm-cli")
-		if err != nil {
-			return nil, err
-		}
-		return []string{"-token", address}, nil
+		raw = args[0]
 	}
 	if len(args) == 2 && args[0] == "-link-file" {
-		address, err := linkFile(args[1])
+		var err error
+		raw, err = linkFile(args[1])
 		if err != nil {
 			return nil, err
 		}
-		return []string{"-token", address}, nil
 	}
-	return args, nil
+	if raw == "" {
+		return args, nil
+	}
+	address, mode, err := client.ParseDeepLink(raw, "agenterm-cli")
+	if err != nil {
+		return nil, err
+	}
+	result := []string{"-token", address}
+	if mode != "" {
+		result = append(result, "-connection-mode", mode)
+	}
+	return result, nil
 }
 
 func linkInbox() (string, error) {

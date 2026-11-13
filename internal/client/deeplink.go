@@ -6,22 +6,35 @@ import (
 	"strings"
 )
 
-// ParseDeepLink accepts only a full short-code address, never a command or token.
-func ParseDeepLink(raw, scheme string) (string, error) {
+// ParseDeepLink accepts only a short-code address and an optional connection mode.
+func ParseDeepLink(raw, scheme string) (string, string, error) {
+	invalid := func() (string, string, error) { return "", "", errors.New("invalid Agenterm link") }
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != scheme || u.Host != "connect" || u.User != nil || u.Path != "" || u.Fragment != "" {
-		return "", errors.New("invalid Agenterm link")
+		return invalid()
 	}
 	q, err := url.ParseQuery(u.RawQuery)
-	if err != nil || len(q) != 1 || len(q["url"]) != 1 {
-		return "", errors.New("invalid Agenterm link")
+	if err != nil || len(q["url"]) != 1 || len(q) < 1 || len(q) > 2 {
+		return invalid()
+	}
+	for key := range q {
+		if key != "url" && key != "mode" {
+			return invalid()
+		}
+	}
+	mode := ""
+	if values, ok := q["mode"]; ok {
+		if len(values) != 1 || (values[0] != ConnectionModeTemporary && values[0] != ConnectionModePersistent) {
+			return invalid()
+		}
+		mode = values[0]
 	}
 	address := q.Get("url")
 	if !strings.Contains(address, "://") {
-		return "", errors.New("invalid Agenterm link")
+		return invalid()
 	}
 	if _, ok := ShortCodeURL(address); !ok {
-		return "", errors.New("invalid Agenterm link")
+		return invalid()
 	}
-	return address, nil
+	return address, mode, nil
 }

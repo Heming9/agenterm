@@ -5,10 +5,10 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-func parseDeepLink(raw string) (string, error) { return client.ParseDeepLink(raw, "agenterm") }
+func parseDeepLink(raw string) (string, string, error) { return client.ParseDeepLink(raw, "agenterm") }
 
 func openDeepLink(view *clientView, raw string) {
-	address, err := parseDeepLink(raw)
+	address, mode, err := parseDeepLink(raw)
 	if err != nil {
 		view.showConnectionError(err.Error())
 		return
@@ -22,7 +22,11 @@ func openDeepLink(view *clientView, raw string) {
 		view.showConnectionError(tr("deep.link.already.connected"))
 		return
 	}
-	view.modeSelect.SetSelected(tr("connection.mode.short.persistent"))
+	if mode == client.ConnectionModeTemporary {
+		view.modeSelect.SetSelected(tr("connection.mode.short.temporary"))
+	} else {
+		view.modeSelect.SetSelected(tr("connection.mode.short.persistent"))
+	}
 	view.token.SetText(address)
 	view.connect()
 	view.window.Show()

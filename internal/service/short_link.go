@@ -93,6 +93,10 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 	case "zh-CN":
 		lang = "zh-CN"
 	}
+	baseURL := *shortURL
+	baseURL.Path = strings.TrimSuffix(baseURL.Path, "/c/"+code)
+	baseURL.RawPath = ""
+	serverAddress := baseURL.String()
 	validity := connectionValidity(entry)
 	label, remaining := countdown(entry, time.Now())
 	if lang == "en" {
@@ -107,13 +111,13 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 	}
 	var rendered bytes.Buffer
 	if err := shortLinkPage.Execute(&rendered, struct {
-		Windows, Shell, Token, Version    string
-		Language                          string
-		Text                              map[string]string
-		CountdownLabel, CountdownFallback string
-		Remaining                         int64
-		AppURL, CLIURL                    template.URL
-	}{windows, shell, entry.Token, version.Current, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(appURL), template.URL(cliURL)}); err != nil {
+		Windows, Shell, Token, Version, Server string
+		Language                               string
+		Text                                   map[string]string
+		CountdownLabel, CountdownFallback      string
+		Remaining                              int64
+		AppURL, CLIURL                         template.URL
+	}{windows, shell, entry.Token, version.Current, serverAddress, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(appURL), template.URL(cliURL)}); err != nil {
 		http.Error(w, "Unable to render invitation page", http.StatusInternalServerError)
 		return
 	}

@@ -159,6 +159,10 @@ func TestShortLinkPage(t *testing.T) {
 					t.Fatal(err)
 				}
 				body := string(data)
+				english := html.UnescapeString(body)
+				if !strings.Contains(english, "Server: ") || !strings.Contains(english, "<strong>"+origin+prefix+"</strong>") || !strings.Contains(english, "accessing or modifying files") {
+					t.Fatal("missing English authorization details")
+				}
 				if res.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="en">`) || !strings.Contains(body, "Request to connect to this computer") || !strings.Contains(body, "How to use?") || !strings.Contains(body, "Expires in ") || strings.Contains(body, "如何使用") || !strings.Contains(res.Header.Get("Vary"), "Accept-Language") {
 					t.Fatalf("language %q: status=%d body=%s", languageHeader, res.StatusCode, body)
 				}
@@ -171,6 +175,12 @@ func TestShortLinkPage(t *testing.T) {
 				body, _ := io.ReadAll(res.Body)
 				res.Body.Close()
 				text := html.UnescapeString(string(body))
+				if !strings.Contains(text, "允许授权（临时连接）") || !strings.Contains(text, "允许授权（持久连接）") || !strings.Contains(text, "拒绝授权") {
+					t.Fatal("missing authorization options")
+				}
+				if !strings.Contains(text, "服务器：") || !strings.Contains(text, "<strong>"+origin+prefix+"</strong>") || !strings.Contains(text, "访问和修改文件") {
+					t.Fatal("missing Chinese authorization details")
+				}
 				if !strings.Contains(text, `src="data:image/webp;base64,`) || !strings.Contains(text, "<script>") || strings.Contains(text, "short-link-countdown.js") || !strings.Contains(res.Header.Get("Content-Security-Policy"), "'sha256-"+shortLinkScriptHash+"'") {
 					t.Fatal("page is not self-contained")
 				}
