@@ -2,6 +2,7 @@ package main
 
 import (
 	"agenterm/internal/client"
+	"agenterm/internal/elevation"
 	"agenterm/internal/i18n"
 	"agenterm/internal/invite"
 	"bufio"
@@ -26,6 +27,9 @@ func tr(key string) string { return i18n.Text(cliLanguage, key) }
 var progressConnected = tr("4.4.connected")
 
 func main() {
+	if handled, exitCode := elevation.Relaunch(); handled {
+		os.Exit(exitCode)
+	}
 	args, err := deepLinkArgs(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)

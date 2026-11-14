@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"agenterm/internal/client"
+	"agenterm/internal/elevation"
 	"agenterm/internal/i18n"
 	"agenterm/internal/invite"
 
@@ -21,6 +22,9 @@ import (
 var appIcon []byte
 
 func main() {
+	if handled, exitCode := elevation.Relaunch(); handled {
+		os.Exit(exitCode)
+	}
 	installDeepLinkHandler()
 	args := os.Args[1:]
 	deepLink := ""
