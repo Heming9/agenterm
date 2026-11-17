@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -172,7 +173,7 @@ type liveTUI struct {
 	token       string
 }
 
-func newLiveTUI(t *testing.T, invite bool) *liveTUI {
+func newLiveTUI(t *testing.T, invite bool, linkMode string) *liveTUI {
 	t.Helper()
 	binary := os.Getenv("AGENTERM_RUST_CLI")
 	if binary == "" {
@@ -180,8 +181,16 @@ func newLiveTUI(t *testing.T, invite bool) *liveTUI {
 	}
 	f := &liveTUI{capture: &tuiCapture{width: 80, height: 16}, peers: make(chan *websocket.Conn, 8), done: make(chan error, 1)}
 	secret := base64.RawURLEncoding.EncodeToString([]byte("device-key"))
+	tokenReady := make(chan struct{})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/invite/redeem", func(w http.ResponseWriter, r *http.Request) {
+		<-tokenReady
+		f.redemptions.Add(1)
+		w.Header().Set(version.Header, version.Current)
+		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
+	})
+	mux.HandleFunc("/agenterm/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
+		<-tokenReady
 		f.redemptions.Add(1)
 		w.Header().Set(version.Header, version.Current)
 		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
@@ -204,13 +213,21 @@ func newLiveTUI(t *testing.T, invite bool) *liveTUI {
 	if err != nil {
 		t.Fatal(err)
 	}
+	close(tokenReady)
 	args := []string{"-token", f.token, "-connection-mode", "persistent"}
 	if invite {
 		args = []string{"-invite", f.token}
 	}
+	if linkMode != "" {
+		query := neturl.Values{"url": {server.URL + "/agenterm/c/ABC123"}}
+		if linkMode != "default" {
+			query.Set("mode", linkMode)
+		}
+		args = []string{"agenterm-cli://connect?" + query.Encode()}
+	}
 	f.command = exec.Command(binary, args...)
 	home := t.TempDir()
-	f.command.Env = append(os.Environ(), "HOME="+home, "USERPROFILE="+home, "AGENTERM_LANG=en", "NO_COLOR=1", "TERM=xterm-256color", "SHELL=/bin/sh", "SSH_CONNECTION=local-test")
+	f.command.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "USERPROFILE="+home, "AGENTERM_LANG=en", "NO_COLOR=1", "TERM=xterm-256color", "SHELL=/bin/sh", "SSH_CONNECTION=local-test")
 	f.terminal, err = pty.StartWithSize(f.command, &pty.Winsize{Cols: 80, Rows: 16})
 	if err != nil {
 		t.Fatal(err)
@@ -266,7 +283,7 @@ func (f *liveTUI) execute(t *testing.T, command string) {
 }
 
 func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
-	f := newLiveTUI(t, false)
+	f := newLiveTUI(t, false, "")
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (persistent)")
 	if err := f.peer.WriteJSON(protocol.Message{Type: "latency", LatencyMS: 42}); err != nil {
@@ -305,7 +322,7 @@ func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 }
 
 func TestRustTUIInvitationAndReusableCredential(t *testing.T) {
-	f := newLiveTUI(t, true)
+	f := newLiveTUI(t, true, "")
 	// Consent is rendered in the normal terminal before the alternate screen.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -351,7 +368,7 @@ func TestRustPlainPromptInterrupt(t *testing.T) {
 		t.Skip("set AGENTERM_RUST_CLI to run real PTY tests")
 	}
 	command := exec.Command(binary, "-plain")
-	command.Env = append(os.Environ(), "AGENTERM_LANG=en", "NO_COLOR=1")
+	command.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "AGENTERM_LANG=en", "NO_COLOR=1")
 	terminal, err := pty.Start(command)
 	if err != nil {
 		t.Fatal(err)
@@ -377,5 +394,24 @@ func TestRustPlainPromptInterrupt(t *testing.T) {
 		finished = true
 	case <-time.After(2 * time.Second):
 		t.Fatal("plain input prompt swallowed SIGINT")
+	}
+}
+
+func TestRustTUIProtocolLinkModes(t *testing.T) {
+	for _, mode := range []string{"default", "temporary", "persistent"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newLiveTUI(t, false, mode)
+			f.nextPeer(t)
+			expected := mode
+			if mode == "default" {
+				expected = "temporary"
+			}
+			f.capture.wait(t, "Connected ("+expected+")")
+			if f.redemptions.Load() != 1 {
+				t.Fatal("short code was not redeemed exactly once")
+			}
+			f.execute(t, "printf 'linked terminal works\\n'")
+			f.capture.wait(t, "linked terminal works")
+		})
 	}
 }

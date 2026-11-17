@@ -104,12 +104,12 @@ pub struct Options {
     pub mode_provided: bool,
 }
 impl Options {
-    pub fn parse() -> Result<Option<Self>> {
+    pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Self>> {
         let mut o = Self {
             temporary: true,
             ..Self::default()
         };
-        let mut args = std::env::args().skip(1);
+        let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
                 return Err("unexpected positional argument; use -token or -invite".into());
@@ -121,7 +121,7 @@ impl Options {
             match flag {
                 "h" | "help" => {
                     println!(
-                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n\n  -token VALUE              Connection token, short code, or short-code URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
+                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n       agenterm-cli \"agenterm-cli://connect?url=ENCODED_URL[&mode=temporary|persistent]\"\n\n  -token VALUE              Connection token, short code, or short-code URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
                     );
                     return Ok(None);
                 }

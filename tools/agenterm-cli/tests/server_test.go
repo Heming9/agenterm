@@ -50,7 +50,7 @@ func TestRustCLIRealServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer log.Close()
-	env := append(os.Environ(), "HOME="+home, "TMPDIR="+home, "AGENTERM_LANG=en")
+	env := append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "TMPDIR="+home, "AGENTERM_LANG=en")
 	server := exec.Command(serverPath, "start", "-instance", instance, "-listen", address, "-public-url", url, "-passwd", "prototype-test-password", "-enable-short-code")
 	server.Env = env
 	server.Stdout = log

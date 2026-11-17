@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,10 +50,21 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	secret := base64.RawURLEncoding.EncodeToString([]byte("device-key"))
 	inviteSecret := base64.RawURLEncoding.EncodeToString([]byte("invite-key"))
 	var token string
+	tokenReady := make(chan struct{})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/prototype/invite/redeem", func(w http.ResponseWriter, r *http.Request) {
+		<-tokenReady
 		if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer "+inviteSecret {
 			http.Error(w, "unauthorized", 401)
+			return
+		}
+		w.Header().Set(version.Header, version.Current)
+		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	})
+	mux.HandleFunc("/prototype/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
+		<-tokenReady
+		if r.Method != "POST" {
+			http.Error(w, "method", 405)
 			return
 		}
 		w.Header().Set(version.Header, version.Current)
@@ -92,6 +104,7 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	close(tokenReady)
 	args := []string{"-token", token, "-connection-mode", "persistent"}
 	if mode == "invite" {
 		args = []string{"-invite", invitation}
@@ -99,9 +112,16 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	if mode == "deny" {
 		args = []string{"-invite", invitation}
 	}
+	if strings.HasPrefix(mode, "link-") {
+		query := neturl.Values{"url": {server.URL + "/prototype/c/ABC123"}}
+		if mode != "link-default" {
+			query.Set("mode", strings.TrimPrefix(mode, "link-"))
+		}
+		args = []string{"agenterm-cli://connect?" + query.Encode()}
+	}
 	f.command = exec.Command(binary, args...)
 	home := t.TempDir()
-	f.command.Env = append(os.Environ(), "HOME="+home, "USERPROFILE="+home, "AGENTERM_LANG=zh-CN", "NO_COLOR=1", "SHELL=/bin/sh")
+	f.command.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "USERPROFILE="+home, "AGENTERM_LANG=zh-CN", "NO_COLOR=1", "SHELL=/bin/sh")
 	if tls {
 		path := filepath.Join(home, "ca.pem")
 		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
@@ -248,4 +268,22 @@ func TestRustCLIDeniesInvitation(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 	// Cleanup waits for the process and checks its exit status.
+}
+
+func TestRustCLIProtocolLinks(t *testing.T) {
+	for _, mode := range []string{"link-default", "link-temporary", "link-persistent"} {
+		for _, tls := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/TLS=%v", mode, tls), func(t *testing.T) {
+				f := newFixture(t, tls, mode)
+				command := "printf 'protocol-link-ok'"
+				if runtime.GOOS == "windows" {
+					command = "Write-Output 'protocol-link-ok'"
+				}
+				result := f.call("execute", map[string]any{"command": command, "wait_ms": 5000})
+				if !strings.Contains(result["output"].(string), "protocol-link-ok") {
+					t.Fatal(result)
+				}
+			})
+		}
+	}
 }

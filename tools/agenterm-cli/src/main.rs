@@ -1,4 +1,5 @@
 mod connection;
+mod deeplink;
 mod protocol;
 mod storage;
 mod terminal;
@@ -16,7 +17,17 @@ use std::{
 };
 
 fn run() -> Result<()> {
-    let Some(mut options) = ui::Options::parse()? else {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let link_launch = deeplink::is_launch(&args);
+    let args = deeplink::arguments(args)?;
+    if !link_launch
+        && std::env::var_os("AGENTERM_SKIP_LINK_REGISTRATION").as_deref()
+            != Some(std::ffi::OsStr::new("1"))
+        && let Err(error) = deeplink::register()
+    {
+        eprintln!("Agenterm link registration: {error}");
+    }
+    let Some(mut options) = ui::Options::parse(args)? else {
         return Ok(());
     };
     if !options.invite.is_empty() {

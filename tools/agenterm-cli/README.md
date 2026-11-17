@@ -27,6 +27,35 @@ tools/agenterm-cli/target/release/agenterm-cli -token TOKEN -connection-mode per
 tools/agenterm-cli/target/release/agenterm-cli -token https://SERVER/agenterm/c/ABC123
 ```
 
+## Protocol links
+
+Ordinary launches automatically register the current user's `agenterm-cli:`
+protocol handler. Browser links use the same terminal-client format as before:
+
+```text
+agenterm-cli://connect?url=https%3A%2F%2Fexample.com%2Fagenterm%2Fc%2FABC123&mode=persistent
+```
+
+Only an HTTP(S) short-code address and the optional `mode=temporary` or
+`mode=persistent` are accepted. The connection opens directly in the TUI using
+that mode; omitting the mode defaults to temporary. The invitation page's mode
+selection is preserved. These links follow `-token` behavior; `-invite` continues
+to show its authorization prompt. Unsupported/duplicate parameters and malformed
+links are rejected before a connection starts. The former GUI's `agenterm:`
+scheme is not claimed by this terminal client.
+
+The handler keeps a checksum-verified, content-addressed executable under the
+user's configuration directory, so deleting the original download or installer
+cache does not break browser launch. macOS installs `Agenterm CLI.app`, signs and
+registers it with Launch Services, and opens Terminal using a private, one-use
+`-link-file` rather than putting the link in shell history. Windows registers
+`HKCU\Software\Classes\agenterm-cli`; Linux installs a `Terminal=true` desktop
+entry and associates it using `xdg-mime`. Registration failure is reported as a
+warning and does not prevent ordinary terminal connections. Protocol launches
+skip registration to avoid replacing an active handler.
+
+## Interactive interface
+
 Invitations show the same authorization explanation and temporary/persistent/deny
 choices as the Go CLI, using arrow keys on a terminal and numbered input when
 redirected. Temporary connections disconnect
@@ -90,8 +119,7 @@ only Windows system DLLs; it does not require a separate VC runtime DLL.
 the system trust store. `AGENTERM_POWERSHELL` can select a PowerShell executable
 on Windows. Unix supports sh/bash/zsh and otherwise uses `/bin/sh`.
 
-Not ported yet: P2P bootstrap (not advertised to the server), deep-link
-registration/launch, elevation/relaunch, proxy configuration,
+Not ported yet: P2P bootstrap (not advertised to the server), elevation/relaunch, proxy configuration,
 fish integration, or Windows legacy-code-page output decoding. Session behavior
 has dedicated tests, but this is not yet a complete parity replacement for Go.
 Errors currently use English where there is no ported localized message.
@@ -119,6 +147,11 @@ AGENTERM_GO_SERVER="$PWD/tools/agenterm-cli/target/agenterm-server" \
 
 python3 tools/agenterm-cli/measure.py
 
+# macOS only, opt-in: registers the real handler and opens a Terminal window.
+AGENTERM_RUST_CLI="$PWD/tools/agenterm-cli/target/release/agenterm-cli" \
+AGENTERM_TEST_NATIVE_LINK=1 \
+  go test -v ./tools/agenterm-cli/tests -run '^TestRustNativeMacProtocolLaunch$'
+
 # Regenerate the screen references directly from the Go TUI after intentional UI changes.
 python3 tools/agenterm-cli/tests/generate_tui_reference.py
 ```
@@ -126,7 +159,9 @@ python3 tools/agenterm-cli/tests/generate_tui_reference.py
 The tests use local servers, a temporary home, and an explicitly trusted temporary
 certificate. On macOS/Linux, PTY integration tests exercise actual authorization,
 connection, latency, log folding, mouse selection / OSC 52, reconnect, disconnect,
-and reuse of redeemed invitations. They do not modify the system clipboard.
+reuse of redeemed invitations, and protocol-link connection modes over WS/WSS.
+They do not modify the system clipboard or OS protocol registration; child
+processes set `AGENTERM_SKIP_LINK_REGISTRATION=1` to keep those tests isolated.
 One hundred reference screens cover English/Chinese, five terminal widths, and
 ten UI states, compared with the actual Go renderer. The full-server test owns a
 uniquely named instance and stops it on cleanup. No production server or system
