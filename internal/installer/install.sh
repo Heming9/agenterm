@@ -126,7 +126,13 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 say installer.2.4.preparing.client
 name="agenterm-client-cli-$os-$arch"
 binary="$cache/$name"
-curl -fsS --connect-timeout 5 --max-time 15 "$base/SHA256SUMS" -o "$work/SHA256SUMS"
+download_asset() {
+  timeout=$1
+  shift
+  curl --connect-timeout 10 --max-time "$timeout" --retry 2 --retry-delay 1 \
+    --retry-max-time "$timeout" "$@"
+}
+download_asset 15 -fsS "$base/SHA256SUMS" -o "$work/SHA256SUMS"
 checksum() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi
 }
@@ -154,14 +160,14 @@ else
   if [ "$archive_format" != raw ]; then asset="$name.$archive_format"; fi
   expected_asset=$expected_binary
   if [ "$archive_format" != raw ]; then
-    curl -fsS --connect-timeout 5 --max-time 30 "$base/$asset.sha256" -o "$work/archive.sha256"
+    download_asset 30 -fsS "$base/$asset.sha256" -o "$work/archive.sha256"
     expected_asset=$(awk 'NR == 1 && $1 ~ /^[[:xdigit:]]+$/ && length($1) == 64 { print tolower($1) }' "$work/archive.sha256")
   fi
   [ -n "$expected_asset" ] || { say installer.missing.archive.checksum >&2; exit 1; }
   if [ -t 2 ]; then
-    curl -fS --progress-bar --connect-timeout 5 --max-time 180 "$base/$asset" -o "$work/$asset"
+    download_asset 180 -fS --progress-bar "$base/$asset" -o "$work/$asset"
   else
-    curl -fsS --connect-timeout 5 --max-time 180 "$base/$asset" -o "$work/$asset"
+    download_asset 180 -fsS "$base/$asset" -o "$work/$asset"
   fi
   say installer.download.complete.verifying.and.extracting
   [ "$(checksum "$work/$asset")" = "$expected_asset" ] || { say installer.archive.checksum.mismatch >&2; exit 1; }
