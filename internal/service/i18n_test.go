@@ -5,4 +5,11 @@ import (
 	"testing"
 )
 
-func TestMain(m *testing.M) { _ = os.Setenv("AGENTERM_LANG", "zh-CN"); os.Exit(m.Run()) }
+func TestMain(m *testing.M) {
+	_ = os.Setenv("AGENTERM_LANG", "zh-CN")
+	code := m.Run()
+	if rustClientDir != "" {
+		_ = os.RemoveAll(rustClientDir)
+	}
+	os.Exit(code)
+}

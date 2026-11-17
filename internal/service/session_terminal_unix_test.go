@@ -77,28 +77,3 @@ func TestSessionInterruptAndEOFKeepShellState(t *testing.T) {
 	wait("__RESTORED__:state")
 	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id}, false)
 }
-
-func TestSessionInterruptWhileStdinWriteIsBlocked(t *testing.T) {
-	h := newMultiHarness(t, 0)
-	token := h.create(t, false)
-	connectExecutionClient(t, h, token)
-	id := h.call(t, token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 0,
-		"command": "stty raw -echo; printf '__%s__\\n' BLOCKED; sleep 30",
-	}, false).(map[string]any)["session_id"].(string)
-	var output strings.Builder
-	var cursor float64
-	for !strings.Contains(output.String(), "__BLOCKED__") {
-		r := h.call(t, token, "session_read", map[string]any{"session_id": id, "cursor": cursor, "wait_ms": 1000}, false).(map[string]any)
-		cursor = r["next_cursor"].(float64)
-		output.WriteString(r["output"].(string))
-		if r["status"] == "closed" {
-			t.Fatalf("process ended before readiness: %v", r)
-		}
-	}
-	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": strings.Repeat("x", 256<<10)}, false)
-	// A blocking PTY write must not prevent the reader from receiving SIGINT.
-	h.call(t, token, "session_control", map[string]any{"action": "interrupt", "session_id": id}, false)
-	h.call(t, token, "session_control", map[string]any{"action": "stop", "session_id": id}, false)
-	// The same connection remains usable and cleanup does not wait for sleep.
-	h.call(t, token, "execute_command", map[string]any{"command": "printf connection-alive"}, false)
-}

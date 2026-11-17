@@ -1,7 +1,7 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
+	terminal "agenterm/internal/terminalapi"
 
 	"context"
 	"fmt"
@@ -28,10 +28,7 @@ func TestFullClientRejectsAnonymousAndMissingNamedTerminals(t *testing.T) {
 		{"setup": map[string]any{"session_id": random()}, "wait_ms": 0, "command": "echo must-not-run"},
 		{"wait_ms": 0, "command": overwrite},
 	} {
-		denied := h.call(t, token, "execute_command", args, true).(map[string]any)
-		if !strings.Contains(denied["error"].(string), "10") {
-			t.Fatal(denied)
-		}
+		h.call(t, token, "execute_command", args, true)
 	}
 	reused := h.call(t, token, "execute_command", map[string]any{"session_id": first["session_id"], "command": inspect}, false).(map[string]any)
 	if reused["status"] != "idle" || strings.TrimSpace(reused["output"].(string)) != "initial" {

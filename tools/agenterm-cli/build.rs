@@ -9,7 +9,7 @@ fn main() {
         .expect("version constant");
     println!("cargo:rustc-env=AGENTERM_VERSION={version}");
 
-    // Keep the Rust UI's wording identical to the Go client without embedding
+    // Share UI wording with the server and installers without embedding
     // the server's entire translation catalog in the executable.
     let catalog = "../../internal/i18n/messages.json";
     println!("cargo:rerun-if-changed={catalog}");

@@ -1,9 +1,9 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
 	"agenterm/internal/i18n"
 	"agenterm/internal/logging"
+	terminal "agenterm/internal/terminalapi"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"

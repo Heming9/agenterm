@@ -75,8 +75,8 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
-		if r.Header.Get(protocol.P2PCapabilityHeader) != "" {
-			t.Error("prototype must not advertise unimplemented P2P")
+		if r.Header.Get(protocol.P2PCapabilityHeader) != "1" {
+			t.Error("Rust CLI did not advertise P2P")
 		}
 		if r.Header.Get(protocol.ResumeCredentialHeader) == "resume-test" {
 			f.resumes.Add(1)

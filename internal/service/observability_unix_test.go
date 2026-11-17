@@ -3,11 +3,9 @@
 package service
 
 import (
-	remoteclient "agenterm/internal/client"
 	"agenterm/internal/logging"
 	"agenterm/internal/protocol"
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -75,17 +73,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	waitReady(t, origin+"/healthz", http.DefaultTransport, first)
 	h := &multiHarness{ts: &httptest.Server{URL: origin}}
 	token := h.create(t, false)
-	ctx, cancel := context.WithCancel(context.Background())
-	ended := make(chan error, 1)
-	go func() { ended <- remoteclient.RunWithCallbacks(ctx, token, io.Discard, remoteclient.Callbacks{}) }()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-ended:
-		case <-time.After(5 * time.Second):
-			t.Error("client did not stop")
-		}
-	})
+	startRustClient(t, token)
 	h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false)
 	command := "printf 'private-command-output'"
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{

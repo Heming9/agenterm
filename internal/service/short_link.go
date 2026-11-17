@@ -87,7 +87,6 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 	}
 	shortURL.Path = strings.TrimSuffix(shortURL.Path, "/invite/redeem") + "/c/" + code
 	query := url.Values{"url": {shortURL.String()}}.Encode()
-	appURL := "agenterm://connect?" + query
 	cliURL := "agenterm-cli://connect?" + query
 	lang := shortLinkLanguage(r.Header.Get("Accept-Language"))
 	switch r.URL.Query().Get("lang") {
@@ -119,8 +118,8 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 		Text                                   map[string]string
 		CountdownLabel, CountdownFallback      string
 		Remaining                              int64
-		AppURL, CLIURL                         template.URL
-	}{windows, shell, entry.Token, version.Current, serverAddress, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(appURL), template.URL(cliURL)}); err != nil {
+		CLIURL                                 template.URL
+	}{windows, shell, entry.Token, version.Current, serverAddress, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL)}); err != nil {
 		http.Error(w, "Unable to render invitation page", http.StatusInternalServerError)
 		return
 	}

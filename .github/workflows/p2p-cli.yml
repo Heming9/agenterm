@@ -160,14 +160,8 @@ jobs:
         with:
           path: .p2p-native-cache
           key: ${{ steps.native-key.outputs.key }}
-      - name: Exercise current Go builtin bootstrap
-        shell: bash
-        run: |
-          python - <<'PY'
-          import os, pathlib, subprocess
-          env = dict(os.environ, P2P_CLI_TEST_ASSETS=str(pathlib.Path('dist/p2p-assets').resolve()))
-          subprocess.run(['go', 'test', './internal/client', './internal/p2p', './internal/service', '-run', 'TestP2P|TestManifest', '-count=1'], env=env, check=True)
-          PY
+      - name: Test server P2P signaling and bootstrap scripts
+        run: go test ./internal/p2p ./internal/service -run 'TestP2P|TestManifest' -count=1
       - uses: actions/upload-artifact@v4
         with:
           name: p2p-cli-${{ matrix.platform }}-${{ matrix.arch }}

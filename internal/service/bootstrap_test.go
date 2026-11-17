@@ -3,7 +3,6 @@
 package service
 
 import (
-	remoteclient "agenterm/internal/client"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -110,20 +108,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 		t.Fatal("default server issued a short code")
 	}
 	token := created["client_token"].(string)
-	clientCtx, stopClient := context.WithCancel(context.Background())
-	clientDone := make(chan error, 1)
-	var connections atomic.Int32
-	go func() {
-		clientDone <- remoteclient.RunWithCallbacks(clientCtx, token, io.Discard, remoteclient.Callbacks{Connected: func() { connections.Add(1) }})
-	}()
-	t.Cleanup(func() {
-		stopClient()
-		select {
-		case <-clientDone:
-		case <-time.After(5 * time.Second):
-			t.Error("client did not exit")
-		}
-	})
+	startRustClient(t, token)
 	devices := h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
 	if len(devices) != 1 {
 		t.Fatal(devices)
@@ -173,7 +158,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 		t.Fatalf("session interrupted: %q", output.String())
 	}
 	devices = h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any)
-	if connections.Load() != 1 || devices[0].(map[string]any)["client_id"] != deviceID {
+	if len(devices) != 1 || devices[0].(map[string]any)["client_id"] != deviceID {
 		t.Fatal("client reconnected during automatic bootstrap")
 	}
 	changed := append([]string(nil), args...)

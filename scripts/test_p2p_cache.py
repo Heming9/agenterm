@@ -52,10 +52,10 @@ class NativeCacheTests(unittest.TestCase):
             return cache.restore(self.root, self.directory, self.assets, self.binary, value or self.value)
 
     def test_go_changes_and_untracked_build_outputs_keep_the_native_key(self):
-        go = self.root / 'internal/client/client.go'
+        go = self.root / 'internal/terminalapi/types.go'
         go.parent.mkdir(parents=True)
-        go.write_text('package client\n')
-        subprocess.run(['git', '-c', 'core.autocrlf=false', 'add', 'internal/client/client.go'], cwd=self.root, check=True)
+        go.write_text('package terminalapi\n')
+        subprocess.run(['git', '-c', 'core.autocrlf=false', 'add', 'internal/terminalapi/types.go'], cwd=self.root, check=True)
         target = self.root / 'tools/p2p-cli/target/output'
         target.parent.mkdir(parents=True)
         target.write_bytes(b'compiled object')

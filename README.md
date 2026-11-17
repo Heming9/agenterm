@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="cmd/agenterm-client-gui/assets/app-icon-agent.png" alt="Agenterm" width="96">
+  <img src="docs/design/app-icon-agent.png" alt="Agenterm" width="96">
   <h1>Agenterm</h1>
   <p><strong>Let an AI agent assist with a remote computer through one authorized connection command.</strong></p>
   <p>
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Supports macOS, Linux, and Windows">
-    <img src="https://img.shields.io/badge/interface-CLI%20%7C%20GUI-7c3aed" alt="Supports CLI and GUI">
+    <img src="https://img.shields.io/badge/interface-Rust%20CLI-7c3aed" alt="Rust CLI client">
     <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-0891b2" alt="Supports MCP Streamable HTTP">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="Apache 2.0 license"></a>
   </p>
@@ -47,7 +47,7 @@ Connections grant terminal access with the target computer's current user permis
 - **Work on another development machine or server:** Keep using your existing agent without configuring a full agent and model account on the target machine.
 - **Check multiple computers:** Connect test machines, inspect their environments, and summarize the results.
 
-Interactive terminal tasks are supported. Use the CLI or GUI on the target computer to follow progress; the client automatically attempts to reconnect after temporary network failures.
+Interactive terminal tasks are supported. Use the Rust CLI on the target computer to follow progress; the client automatically attempts to reconnect after temporary network failures.
 
 ## 🔗 How it works
 

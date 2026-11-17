@@ -70,12 +70,12 @@ After generating connection instructions with `create_client`, the agent must pr
 
 | Responsibility | Owner |
 | --- | --- |
-| Terminal IDs, creation/reuse, busy and input validation | Shared client execution core for CLI and GUI |
+| Terminal IDs, creation/reuse, busy and input validation | Client execution core |
 | Ten live-terminal limit, processes, retention on wait expiry and closure | Client |
 | Authorization, device selection and RPC forwarding | Server |
 | Result waiting, output caching, pagination and finished-result retention | Client; result cleanup never closes a terminal |
 
-`client/api.go` defines the terminal API and data contracts independently of transport. `client.Manager` implements execution, validation, waiting, control, output storage and retention. All client code lives in the same package, organized by file. The WebSocket adapter forwards requests to that same API; a future direct P2P adapter can call it unchanged. The server holds connection and request-correlation state only. It does not index sessions, infer completion, enforce terminal quotas or clean up terminal results.
+`internal/terminalapi` defines the Go server's terminal wire contract. The Rust CLI owns execution, validation, waiting, control, output storage, and retention. The server tracks connections and routes requests to the client over WebSocket.
 
 The manager belongs to the client process, outside the reconnect loop. A temporary transport loss cancels response waiters while accepted commands, shell state and output remain available. Reconnect can query the same manager through session_list/session_read without replaying commands. Explicit client shutdown or permanent disconnection closes its manager. Canceling a result waiter does not stop its command. Offline clients cannot be queried.
 
@@ -96,7 +96,7 @@ execute_command returns command_id, status, output, next_cursor and has_more. It
 
 Linux/macOS use the reported shell and a PTY. Windows uses PowerShell and pipes for basic input interaction without full terminal emulation. Persistent terminals inherit client environment but do not load user shell startup files, so the integration remains reliable. Prompt hooks/PS1 are reserved; do not override them or terminal echo settings. Initialize additional environments explicitly in commands. Both server and client must support the current client API version; the handshake advertises and checks that version. There is no legacy execution protocol.
 
-Each client process permits at most 10 live terminals, including starting, running, idle and closing shells until the OS process exits. CLI/GUI share the same client execution layer and quota; multiple connections within a process share the limit. Other processes using the same token have independent limits. At capacity, anonymous creation or a missing named terminal returns a terminal-limit error. Explicitly selecting an existing terminal by session_id still permits reuse; another terminal is never chosen automatically. Closed output history consumes no slots. The client owns output-cache retention. Temporary transport disconnection preserves terminals and results in the client manager; reconnect does not replay commands. Explicit client shutdown or a permanent rejection closes its terminals. Restarting the server frontend preserves runtime-owned connections; restarting the server runtime loses server credentials and connections, without synthesizing terminal results.
+Each client process permits at most 10 live terminals, including starting, running, idle and closing shells until the OS process exits. Multiple connections within a process share the limit. Other processes using the same token have independent limits. At capacity, anonymous creation or a missing named terminal returns a terminal-limit error. Explicitly selecting an existing terminal by session_id still permits reuse; another terminal is never chosen automatically. Closed output history consumes no slots. The client owns output-cache retention. Temporary transport disconnection preserves terminals and results in the client manager; reconnect does not replay commands. Explicit client shutdown or a permanent rejection closes its terminals. Restarting the server frontend preserves runtime-owned connections; restarting the server runtime loses server credentials and connections, without synthesizing terminal results.
 
 </details>
 

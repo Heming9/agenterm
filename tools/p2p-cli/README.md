@@ -7,7 +7,7 @@ Rust 实现的独立 P2P 文件传输组件。`start` 建立并维护一条后�
 Server 和 Client 都需要支持此功能的源码版本。P2P 和 Client CLI 的下载资源统一内嵌到 Server 的 `components.tar.xz`；现有线上部署不会因本地源码变化自动获得新组件。
 
 1. Agent 调用 `p2p_transfer_start`，按现有认证规则提供目标设备的 `client_id`，管理调用还需 `client_token`。
-2. Client 执行内置脚本，自动下载、校验并以前台受控进程运行远端 `p2p-cli`。
+2. Rust CLI 执行服务端生成的脚本，下载、校验并以前台受控进程运行远端 `p2p-cli`。连接断开时，客户端会停止该进程。
 3. 远端注册协商后，MCP 返回 `shell_script` 和 `powershell_script`，状态为 `waiting_for_agent`。此时不等待直连成功。
 4. Agent 按自己的执行平台运行对应脚本，自动获取本机组件并启动后台连接。脚本输出 JSON，包含组件的 `executable` 绝对路径。
 5. 使用该绝对路径执行下面的命令，避免依赖当前 shell 的 PATH。`status` 返回 `connected` 后再复制文件。
@@ -80,15 +80,15 @@ python3 scripts/build_p2p_cli.py --merge build-macos-* build-windows-* build-lin
 将 P2P 原生构建产物与 Client CLI 一起生成统一包并内嵌到 Server：
 
 ```sh
-python3 scripts/build_components.py --p2p-assets dist/p2p-assets
+python3 scripts/build_components.py --client-dir dist --p2p-assets dist/p2p-assets
 python3 scripts/build_server.py --output dist/agenterm-server
 ```
 
-唯一内嵌资源为 `internal/components/assets/components.tar.xz`，内部包含 `client-cli/`、`p2p-cli/` 的原始程序和全包校验清单，在同一个 XZ 流中整体压缩。生成统一包时要求 P2P 六种组合齐全，缺少任意一种直接失败。Server 启动时只把原始程序和源文件校验清单原子解压到实例运行目录的 `components/<包哈希>/`，不需要额外部署组件目录；组件下载路由继续使用公开路径前缀。收到下载请求后，Server 才按目标平台和格式打包，合并同一包的并发构建并缓存结果。客户端实际探测解压能力：macOS/Linux 优先 `tar.xz`、其次 `tar.gz`；Windows 优先 `tar.xz`、其次 ZIP；缺少解压能力时直接下载源程序。每种方式最终都核对同一个源程序 SHA-256，无需额外安装解压工具。Server 内置 Go XZ 编解码器。缺少目标平台归档或校验不通过时，MCP 明确返回错误。修改 CLI 可运行 `go generate ./internal/components`，它会复用统一包中既有的 P2P 原始程序。
+唯一内嵌资源为 `internal/components/assets/components.tar.xz`，内部包含 `client-cli/`、`p2p-cli/` 的原始程序和全包校验清单，在同一个 XZ 流中整体压缩。生成统一包时要求 P2P 六种组合齐全，缺少任意一种直接失败。Server 启动时只把原始程序和源文件校验清单原子解压到实例运行目录的 `components/<包哈希>/`，不需要额外部署组件目录；组件下载路由继续使用公开路径前缀。收到下载请求后，Server 才按目标平台和格式打包，合并同一包的并发构建并缓存结果。客户端实际探测解压能力：macOS/Linux 优先 `tar.xz`、其次 `tar.gz`；Windows 优先 `tar.xz`、其次 ZIP；缺少解压能力时直接下载源程序。每种方式最终都核对同一个源程序 SHA-256，无需额外安装解压工具。Server 内置 Go XZ 编解码器。缺少目标平台归档或校验不通过时，MCP 明确返回错误。修改 Rust CLI 后，先在各原生平台用 `python3 scripts/build_client.py --output dist` 构建，收齐六个程序再运行 `go generate ./internal/components`，它会复用统一包中既有的 P2P 原始程序。
 
 `P2P_CLI_STUN` 在 Runtime 启动时配置 STUN 主机与端口，默认 `stun.l.google.com:19302`，本机测试设为 `none`。它由协商协议返回给组件，组件使用者无需另行配置；更改已有 Runtime 的环境配置需要按既有规则重启 Runtime。
 
-`.github/workflows/p2p-cli.yml` 为 Linux、macOS、Windows 的 amd64、arm64 分别指定原生 runner，六个任务各自执行单测、命令端到端测试和真实初始化链路验证，再合并完整分发产物。此工作流只构建和上传工作流产物，不自动发布或部署服务。
+`.github/workflows/p2p-cli.yml` 为 Linux、macOS、Windows 的 amd64、arm64 分别指定原生 runner，六个任务验证原生组件和服务端协议，再合并完整分发产物。此工作流只构建和上传工作流产物，不自动发布或部署服务。
 
 ## 验证
 
@@ -100,14 +100,17 @@ python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli
 python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli --delayed-only
 ```
 
-真实 MCP、脚本下载、双向复制与 Client 退出清理测试：
+服务端信令和启动脚本测试：
 
 ```sh
-P2P_CLI_TEST_ASSETS="$PWD/dist/p2p-assets" \
-go test ./internal/service -run TestP2PBootstrapEndToEnd -count=1
+go test ./internal/p2p ./internal/service -run 'TestP2P|TestManifest' -count=1
 ```
 
-Windows 的直接命令测试使用相应 `.exe` 路径，初始化链路测试从分发目录选择本机程序。单元测试覆盖 SDP 兼容、拒绝中转、STUN、Windows 路径、校验失败、目标写入竞争和覆盖提交；持久连接测试覆盖连续双向复制、空文件、块边界、32 MiB 与 256 MiB 文件、大小限制、拒绝目录、未经授权的本地命令，以及 stop、取消文件和复制调用方退出时的清理。大文件测试在 macOS/Linux 采样后台进程 RSS，延迟启动回归让另一端等待 45 秒后再加入连接。所有端到端用例均通过 `start/status/cp/stop` 执行。
+设置 `AGENTERM_RUST_CLI` 与 `AGENTERM_GO_SERVER` 指向已构建的二进制后，运行
+`go test ./tools/agenterm-cli/tests -run 'P2PBootstrapLifecycle|RustCLIRealServer' -count=1`
+可验证协议回执、停止和重连清理。在 macOS 和 Linux 上也会通过真实 MCP 启动组件并双向传输文件。
+
+Windows 的直接命令测试使用相应 `.exe` 路径。单元测试覆盖 SDP 兼容、拒绝中转、STUN、Windows 路径、校验失败、目标写入竞争和覆盖提交；持久连接测试覆盖连续双向复制、空文件、块边界、32 MiB 与 256 MiB 文件、大小限制、拒绝目录、未经授权的本地命令，以及 stop、取消文件和复制调用方退出时的清理。大文件测试在 macOS/Linux 采样后台进程 RSS，延迟启动回归让另一端等待 45 秒后再加入连接。所有端到端用例均通过 `start/status/cp/stop` 执行。
 
 此前原型已在 macOS 与 Windows 的不同网络之间双向传过 64 MiB 并核对落盘哈希，成功测试由 macOS 发起连接；Windows 发起的跨网 ICE 失败原因仍未定位。这些历史测量不能替代新版本的完整跨网络验证，也不能保证所有 NAT/防火墙环境都能直连。
 

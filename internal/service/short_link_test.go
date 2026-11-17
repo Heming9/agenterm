@@ -99,7 +99,7 @@ func TestShortLinkPage(t *testing.T) {
 				if !strings.Contains(res.Header.Get("Content-Security-Policy"), "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'") {
 					t.Fatal("script CSP hash does not match response")
 				}
-				if !strings.Contains(content, `src="data:image/webp;base64,`) || !strings.Contains(content, "打开桌面版并连接") {
+				if !strings.Contains(content, `src="data:image/webp;base64,`) || !strings.Contains(content, "打开终端版并连接") {
 					t.Fatal("incorrect page content")
 				}
 			}
@@ -187,9 +187,8 @@ func TestShortLinkPage(t *testing.T) {
 				if !strings.Contains(text, `class="brand-version">v`+version.Current+`</span>`) {
 					t.Fatal("missing current version")
 				}
-				wantAppURL := "agenterm://connect?" + url.Values{"url": {link}}.Encode()
-				if !strings.Contains(text, `data-url="`+wantAppURL+`"`) || !strings.Contains(text, "打开桌面版并连接") {
-					t.Fatalf("missing deep link %q: %s", wantAppURL, text)
+				if strings.Contains(text, "agenterm://connect") || strings.Contains(text, "打开桌面版并连接") {
+					t.Fatal("invitation still advertises the discontinued GUI")
 				}
 				wantCLIURL := "agenterm-cli://connect?" + url.Values{"url": {link}}.Encode()
 				if !strings.Contains(text, `data-url="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版并连接") {

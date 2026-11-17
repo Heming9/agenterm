@@ -50,7 +50,7 @@ func TestRustCLIRealServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer log.Close()
-	env := append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "TMPDIR="+home, "AGENTERM_LANG=en")
+	env := append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "TMPDIR="+home, "AGENTERM_LANG=en", "P2P_CLI_STUN=none")
 	server := exec.Command(serverPath, "start", "-instance", instance, "-listen", address, "-public-url", url, "-passwd", "prototype-test-password", "-enable-short-code")
 	server.Env = env
 	server.Stdout = log
@@ -97,7 +97,7 @@ func TestRustCLIRealServer(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "rust-prototype-test", Version: "1"}, nil).Connect(ctx, &mcp.StreamableClientTransport{Endpoint: url + "/agenterm/mcp", HTTPClient: &http.Client{Transport: authenticatedTransport{"prototype-test-password"}}, DisableStandaloneSSE: true}, nil)
 	if err != nil {
@@ -131,7 +131,9 @@ func TestRustCLIRealServer(t *testing.T) {
 	}
 	defer clientLog.Close()
 	client := exec.Command(clientPath, "-token", url+"/agenterm/c/"+created["short_code"].(string), "-connection-mode", "persistent")
-	client.Env = append(env, "SHELL=/bin/sh", "NO_COLOR=1")
+	remoteState := filepath.Join(home, "p2p-remote")
+	client.Env = append(env, "SHELL=/bin/sh", "NO_COLOR=1", "P2P_CLI_STATE_DIR="+remoteState,
+		"XDG_CACHE_HOME="+filepath.Join(home, "cache-remote"))
 	client.Stdout = clientLog
 	client.Stderr = clientLog
 	if err := client.Start(); err != nil {
@@ -174,4 +176,9 @@ func TestRustCLIRealServer(t *testing.T) {
 	if stopped["status"] != "closed" {
 		t.Fatal(stopped)
 	}
+	agentState := filepath.Join(home, "p2p-agent")
+	agentEnv := append(env, "P2P_CLI_STATE_DIR="+agentState, "XDG_CACHE_HOME="+filepath.Join(home, "cache-agent"))
+	testRustP2PRoundTrip(t, ctx, agentEnv, agentState, remoteState, func() map[string]any {
+		return call("p2p_transfer_start", map[string]any{"client_token": control, "client_id": id})
+	}, func() error { return client.Process.Signal(os.Interrupt) })
 }

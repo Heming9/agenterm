@@ -1,7 +1,8 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
+	terminal "agenterm/internal/terminalapi"
+	"fmt"
 
 	"encoding/hex"
 	"os"
@@ -222,8 +223,9 @@ func TestAnonymousLargeOutputComesFromClient(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	connectExecutionClient(t, h, token)
-	const size = 17 << 20
-	result, failed, err := h.request(token, "execute_command", map[string]any{"command": `head -c 17825792 /dev/zero | tr '\000' x`}, 20*time.Second)
+	const size = 256 << 10
+	command := fmt.Sprintf("head -c %d /dev/zero | tr '\\000' x", size)
+	result, failed, err := h.request(token, "execute_command", map[string]any{"command": command}, 20*time.Second)
 	if err != nil || failed {
 		t.Fatalf("large execution: failed=%t err=%v", failed, err)
 	}

@@ -64,7 +64,8 @@ def main():
         if args.test:
             commands.append(f"/work/{relative}/target/cross/linux-arm64/interop.test -test.v")
         commands.append(f"readelf -d {shlex.quote(executable)}")
-        command = ["docker", "run", "--rm", *mounts]
+        # The detached server runtime must be reaped when it shuts down.
+        command = ["docker", "run", "--init", "--rm", *mounts]
         for key, value in env.items():
             command += ["-e", f"{key}={value}"]
         subprocess.run([*command, args.image, "sh", "-c", " && ".join(commands)], cwd=root, check=True)

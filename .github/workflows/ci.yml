@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - 'tools/p2p-cli/**'
+      - 'tools/agenterm-cli/**'
+      - 'cmd/agenterm-server/**'
+      - 'internal/i18n/**'
+      - 'internal/version/**'
       - 'internal/p2p/**'
-      - 'internal/client/**'
+      - 'internal/terminalapi/**'
       - 'internal/protocol/**'
       - 'internal/service/**'
       - 'internal/components/**'
@@ -14,6 +18,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'scripts/build_components.py'
+      - 'scripts/build_client.py'
       - 'scripts/build_p2p_cli.py'
       - 'scripts/p2p_cache.py'
       - 'scripts/build_server.py'
@@ -27,8 +32,12 @@ on:
     branches: ['**']
     paths:
       - 'tools/p2p-cli/**'
+      - 'tools/agenterm-cli/**'
+      - 'cmd/agenterm-server/**'
+      - 'internal/i18n/**'
+      - 'internal/version/**'
       - 'internal/p2p/**'
-      - 'internal/client/**'
+      - 'internal/terminalapi/**'
       - 'internal/protocol/**'
       - 'internal/service/**'
       - 'internal/components/**'
@@ -37,6 +46,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'scripts/build_components.py'
+      - 'scripts/build_client.py'
       - 'scripts/build_p2p_cli.py'
       - 'scripts/p2p_cache.py'
       - 'scripts/build_server.py'

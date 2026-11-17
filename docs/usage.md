@@ -54,10 +54,9 @@ After a successful connection, the client saves the server address locally. Ente
 
 ## 💻 Client controls
 
-- 🖥️ **Terminal client:** On macOS, Windows, and Linux desktops, starting the CLI registers its link handler automatically. You can then choose **Open terminal client and connect** on the invitation page. On macOS the first link launch may request permission to control Terminal. Alternatively, paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to browse, drag to select and copy text, press `c` to clear the display, and `q` to disconnect and exit.
-- 🪟 **Desktop client:** On macOS and Windows, open the app once to register its link handler. On the invitation page, choose **Open desktop client and connect**, or paste a connection token or short-code address (for example, `https://example.com/agenterm/c/XXXXXX`), connect or disconnect, and view live commands and output. Change the interface language from **Language / 语言** in the app menu, then restart the app.
+The maintained client is the [Rust CLI](../tools/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use arrow keys or the mouse wheel to browse, drag to select and copy text, and press Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
 
-Before opening a client, the invitation page offers temporary connection, persistent connection, or denial. Direct protocol links can launch clients and connect without that page confirmation, so open connection links only from people you trust.
+The invitation page retains **Open terminal client and connect** for protocol-link support. The Rust CLI does not handle those links yet; use the connection command or paste the token while this support is being added. Connection commands ask you to authorize temporary or persistent access, or deny it.
 
 The terminal client accepts `-connection-mode=temporary` or `-connection-mode=persistent`; the default is `temporary`. One-click connections and invitations use the mode selected during authorization.
 
@@ -85,7 +84,7 @@ Agenterm provides terminal assistance, not a remote desktop. Windows supports si
 
 ### How do I transfer files?
 
-You can ask your agent to start a P2P file transfer. Both sides must be able to establish a direct connection, and transfers currently support individual files. See the [P2P component guide](../tools/p2p-cli/README.md) for details.
+Use `p2p_transfer_start` through MCP to start file transfer on a device connected with the Rust CLI. The two devices must be able to connect directly, and each transfer handles one file. Closing the client stops its P2P helper. See the [P2P component guide](../tools/p2p-cli/README.md).
 
 ### Permissions and privacy
 

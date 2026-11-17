@@ -202,7 +202,7 @@ def static_art():
         crop=crop.resize((round(crop.width*.76),round(crop.height*.76)),Image.Resampling.LANCZOS)
         im.paste(crop,(round((x-210*.76)*SCALE),round((350+(200-350)*.76+10)*SCALE)),crop)
     for x,title,sub in [(244,'AI Agent','MCP-compatible agent'),(634,'Server','Command & result relay'),
-                        (1002,'Client','CLI / GUI'),(1372,'shell','Local execution')]:
+                        (1002,'Client','Rust CLI'),(1372,'shell','Local execution')]:
         c.text(x,465,title,28,WHITE,bold=True,anchor='ma')
         c.text(x,505,sub,15,MUTED,anchor='ma')
         c.line([(x,544),(x,586)],DIM,1.3)

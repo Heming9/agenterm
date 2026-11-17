@@ -1,7 +1,7 @@
-// Package client owns local terminal execution and connection adapters.
-package client
+// Package terminalapi defines the wire contract for terminal requests and responses.
+package terminalapi
 
-import "context"
+import "encoding/json"
 
 const APIVersion = "1"
 
@@ -13,14 +13,6 @@ const (
 	MaxReadBytes               = 64 << 10
 	SessionCommandPreviewChars = 160
 )
-
-// API defines terminal operations independently of their transport.
-type API interface {
-	Execute(context.Context, ExecuteRequest) (Output, error)
-	Read(context.Context, ReadRequest) (ReadOutput, error)
-	List(context.Context) (ListResult, error)
-	Control(context.Context, ControlRequest) (ControlResult, error)
-}
 
 type ExecuteRequest struct {
 	SessionID string `json:"session_id,omitempty"`
@@ -99,4 +91,24 @@ type ControlResult struct {
 	Status   string `json:"status,omitempty"`
 	ExitCode *int   `json:"exit_code,omitempty"`
 	Error    string `json:"error,omitempty"`
+}
+
+// ExecOptions initialize a new terminal. Commands run until they exit or the
+// session is explicitly stopped; a tool's wait_ms never limits execution.
+type ExecOptions struct {
+	Cwd string            `json:"cwd,omitempty"`
+	Env map[string]string `json:"env,omitempty"`
+}
+
+// Setup always requests creation. An omitted ID follows the anonymous
+// terminal lifetime; an explicit ID creates a persistent terminal.
+type Setup struct {
+	SessionID string `json:"session_id,omitempty"`
+	ExecOptions
+}
+
+// APIRequest can be carried unchanged over a relay or a direct connection.
+type APIRequest struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
 }

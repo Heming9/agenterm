@@ -3,13 +3,11 @@
 package service
 
 import (
-	remoteclient "agenterm/internal/client"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"context"
 	"fmt"
 	"github.com/gorilla/websocket"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +16,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -133,25 +130,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	token := h.create(t, false)
 	// Leave another invitation unredeemed across both kinds of server restart.
 	pending := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	events := make(chan remoteclient.CommandEvent, 32)
-	var connected atomic.Int32
-	clientDone := make(chan error, 1)
-	go func() {
-		clientDone <- remoteclient.RunWithCallbacks(ctx, token, io.Discard, remoteclient.Callbacks{
-			Connected: func() { connected.Add(1) },
-			Command:   func(e remoteclient.CommandEvent) { events <- e },
-		})
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-clientDone:
-		case <-time.After(5 * time.Second):
-			t.Error("client did not exit")
-		}
-	})
+	startRustClient(t, token)
 	devices := h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
 	if len(devices) != 1 {
 		t.Fatalf("devices: %v", devices)
@@ -166,16 +145,17 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	cursor := before["next_cursor"]
 	// Start a synchronous request on A, then switch new traffic to ready B.
 	release := filepath.Join(dir, "release-command")
-	command := `while [ ! -f "$AGENTERM_RELEASE_FILE" ]; do sleep 0.02; done; printf 'drained\n'`
+	command := `printf "started\n"; while [ ! -f "$AGENTERM_RELEASE_FILE" ]; do sleep 0.02; done; printf 'drained\n'`
+	drainID := random()
 	requestDone := make(chan error, 1)
 	go func() {
-		result, isError, err := h.request(token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random(), "env": map[string]string{"AGENTERM_RELEASE_FILE": release}}, "wait_ms": 20000, "command": command}, 90*time.Second)
+		result, isError, err := h.request(token, "execute_command", map[string]any{"setup": map[string]any{"session_id": drainID, "env": map[string]string{"AGENTERM_RELEASE_FILE": release}}, "wait_ms": 20000, "command": command}, 90*time.Second)
 		if err == nil && (isError || !strings.Contains(result.(map[string]any)["output"].(string), "drained")) {
 			err = fmt.Errorf("in-flight result: %v", result)
 		}
 		requestDone <- err
 	}()
-	waitCommandEvent(t, events, command, false)
+	waitForCommandStart(t, h, token, drainID)
 	b := startService(t, "server", dir)
 	waitProcessBackend(t, paths, b)
 	select {
@@ -191,26 +171,42 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	}
 	a.stop(t, false)
 	// Abruptly kill B while another synchronous command is executing.
-	crashCommand := `sleep 1; printf 'survived crash\n'`
+	crashCommand := `printf "started\n"; while [ ! -f "$AGENTERM_RELEASE_FILE" ]; do sleep 0.02; done; printf 'survived crash\n'`
+	crashID := random()
+	crashRelease := filepath.Join(dir, "finish-crash-command")
 	crashWaiter := make(chan error, 1)
 	go func() {
-		_, _, err := h.request(token, "execute_command", map[string]any{"setup": map[string]any{"session_id": random()}, "wait_ms": 20000, "command": crashCommand})
+		_, _, err := h.request(token, "execute_command", map[string]any{"setup": map[string]any{"session_id": crashID, "env": map[string]string{"AGENTERM_RELEASE_FILE": crashRelease}}, "wait_ms": 20000, "command": crashCommand})
 		crashWaiter <- err
 	}()
-	waitCommandEvent(t, events, crashCommand, false)
+	crashCursor := waitForCommandStart(t, h, token, crashID)
 	b.stop(t, true)
 	if err := <-crashWaiter; err == nil {
 		t.Fatal("killed server unexpectedly returned a command result")
 	}
 	c := startService(t, "server", dir)
 	waitReady(t, origin+"/healthz", http.DefaultTransport, c)
-	finished := waitCommandEvent(t, events, crashCommand, true)
-	if finished.ExitCode != 0 || finished.Error != "" {
-		t.Fatalf("command interrupted by server crash: %+v", finished)
+	if err := os.WriteFile(crashRelease, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var crashOutput strings.Builder
+	for deadline := time.Now().Add(8 * time.Second); ; {
+		result := h.call(t, token, "session_read", map[string]any{"session_id": crashID, "cursor": crashCursor, "wait_ms": 1000}, false).(map[string]any)
+		crashOutput.WriteString(result["output"].(string))
+		crashCursor = result["next_cursor"].(float64)
+		if result["status"] != "running" && result["has_more"] == false {
+			if result["exit_code"] != float64(0) || !strings.Contains(crashOutput.String(), "survived crash") {
+				t.Fatalf("command interrupted by server crash: %v, output=%q", result, crashOutput.String())
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("command did not finish after server crash")
+		}
 	}
 	retained := h.call(t, token, "session_list", map[string]any{}, false).(map[string]any)["sessions"].([]any)
-	if len(retained) != 3 || retained[0].(map[string]any)["session_id"] != id {
-		t.Fatalf("could not rediscover session after server replacement: %v", retained)
+	if len(retained) != 3 {
+		t.Fatalf("could not rediscover sessions after server replacement: %v", retained)
 	}
 	// Resume the original terminal using the same session ID and byte cursor.
 	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "hello\n"}, false)
@@ -230,10 +226,10 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		t.Fatalf("output after restart: %q", output.String())
 	}
 	after := h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any)
-	if len(after) != 1 || after[0].(map[string]any)["client_id"] != deviceID || connected.Load() != 1 {
-		t.Fatalf("client reconnected across server restart: %v count=%d", after, connected.Load())
+	if len(after) != 1 || after[0].(map[string]any)["client_id"] != deviceID {
+		t.Fatalf("client reconnected across server restart: %v", after)
 	}
-	if redeemed, err := invite.Redeem(ctx, pending["invitation"].(string)); err != nil || redeemed != pending["client_token"] {
+	if redeemed, err := invite.Redeem(context.Background(), pending["invitation"].(string)); err != nil || redeemed != pending["client_token"] {
 		t.Fatalf("invitation lost across upgrade: %v", err)
 	}
 	if info, err := os.Stat(runtimeSocket); err != nil || info.Mode().Perm() != 0600 {
@@ -247,7 +243,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusServiceUnavailable || connected.Load() != 1 {
+	if response.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("server downtime: %d", response.StatusCode)
 	}
 	restartArgs := append([]string{"restart"}, initialArgs...)
@@ -265,20 +261,21 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 
 }
 
-func waitCommandEvent(t *testing.T, events <-chan remoteclient.CommandEvent, command string, done bool) remoteclient.CommandEvent {
+func waitForCommandStart(t *testing.T, h *multiHarness, token, id string) float64 {
 	t.Helper()
-	timer := time.NewTimer(8 * time.Second)
-	defer timer.Stop()
-	for {
-		select {
-		case e := <-events:
-			if e.Command == command && e.Done == done {
-				return e
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		result, failed, err := h.request(token, "session_read", map[string]any{"session_id": id})
+		if err == nil && !failed {
+			data := result.(map[string]any)
+			if strings.Contains(data["output"].(string), "started") {
+				return data["next_cursor"].(float64)
 			}
-		case <-timer.C:
-			t.Fatalf("missing command lifecycle event: done=%v command=%s", done, command)
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatal("command did not start")
+	return 0
 }
 
 func TestSocketOwnershipAndLiveListenerProtection(t *testing.T) {

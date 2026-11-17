@@ -49,7 +49,7 @@ fn output(id: &str, data: &str) -> ClientEvent {
 }
 
 #[test]
-fn screens_match_real_go_renderer() {
+fn screens_match_reference() {
     #[derive(Deserialize)]
     struct Reference {
         version: String,
@@ -64,7 +64,7 @@ fn screens_match_real_go_renderer() {
         rows: Vec<String>,
     }
     let reference: Reference =
-        serde_json::from_str(include_str!("../../tests/fixtures/go-tui.json")).unwrap();
+        serde_json::from_str(include_str!("../../tests/fixtures/tui.json")).unwrap();
     for expected in reference.screens {
         if (expected.language == "zh-CN") != ui::zh() {
             continue;

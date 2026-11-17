@@ -21,7 +21,7 @@ import (
 	"strings"
 )
 
-//go:generate python3 ../../scripts/build_components.py
+//go:generate python3 ../../scripts/build_components.py --client-dir ../../dist
 
 //go:embed assets/components.tar.xz
 var bundle []byte

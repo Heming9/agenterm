@@ -231,7 +231,7 @@ impl Log {
                 if self.decoders.remove(&id).is_some() {
                     self.completed += 1;
                 }
-                let _ = code; // Go TUI reports completion in its counter, not a log footer.
+                let _ = code; // Completion is reported in the counter.
             }
             _ => {}
         }

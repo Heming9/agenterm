@@ -1,10 +1,7 @@
 package service
 
 import (
-	remoteclient "agenterm/internal/client"
 	"agenterm/internal/protocol"
-	"context"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -44,15 +41,10 @@ func heartbeatPeer(t *testing.T, interval, timeout time.Duration) (*websocket.Co
 	return ws, ended
 }
 
-func TestHeartbeatAndReconnectWithRealClient(t *testing.T) {
+func TestHeartbeatAndReconnectWithRustClient(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, true)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	finished, latency := make(chan error, 1), make(chan time.Duration, 4)
-	go func() {
-		finished <- remoteclient.RunWithCallbacks(ctx, token, io.Discard, remoteclient.Callbacks{Latency: func(d time.Duration) { latency <- d }})
-	}()
+	startRustClient(t, token)
 	waitClient := func(previous string) clientInfo {
 		t.Helper()
 		deadline := time.Now().Add(4 * time.Second)
@@ -60,7 +52,17 @@ func TestHeartbeatAndReconnectWithRealClient(t *testing.T) {
 		for time.Now().Before(deadline) {
 			clients := h.s.listClients(decoded.Secret)
 			if len(clients) == 1 && clients[0].ID != previous {
-				return clients[0]
+				h.s.mu.Lock()
+				c := h.s.clients[clients[0].ID]
+				h.s.mu.Unlock()
+				if c != nil {
+					c.mu.Lock()
+					measured := c.latencyMS > 0
+					c.mu.Unlock()
+					if measured {
+						return clients[0]
+					}
+				}
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -68,14 +70,6 @@ func TestHeartbeatAndReconnectWithRealClient(t *testing.T) {
 		return clientInfo{}
 	}
 	first := waitClient("")
-	select {
-	case d := <-latency:
-		if d <= 0 {
-			t.Fatal("missing RTT")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("first RTT not measured immediately")
-	}
 	h.s.mu.Lock()
 	old := h.s.clients[first.ID]
 	h.s.mu.Unlock()
@@ -84,20 +78,6 @@ func TestHeartbeatAndReconnectWithRealClient(t *testing.T) {
 	out, failed, err := h.request(token, "execute_command", map[string]any{"client_id": second.ID, "command": "echo recovered"})
 	if err != nil || failed || !strings.Contains(out.(map[string]any)["output"].(string), "recovered") {
 		t.Fatalf("reconnected command: %+v %v", out, err)
-	}
-	select {
-	case <-latency:
-	case <-time.After(time.Second):
-		t.Fatal("RTT not refreshed after reconnect")
-	}
-	cancel()
-	select {
-	case err := <-finished:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancel did not stop client")
 	}
 }
 

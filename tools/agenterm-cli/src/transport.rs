@@ -1,4 +1,5 @@
 use crate::{
+    p2p::{self, Bootstrap},
     protocol::{self, Address, Result, Token, VERSION},
     terminal::Manager,
     ui,
@@ -168,6 +169,7 @@ struct IdleTracker {
     manager: Manager,
     started: Arc<AtomicBool>,
     done: Arc<AtomicBool>,
+    p2p_active: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -175,14 +177,19 @@ impl IdleTracker {
     fn new(manager: &Manager, stopped: &Arc<AtomicBool>, timeout: Option<Duration>) -> Self {
         let started = Arc::new(AtomicBool::new(false));
         let done = Arc::new(AtomicBool::new(false));
+        let p2p_active = Arc::new(AtomicBool::new(false));
         let worker = timeout.map(|timeout| {
             let manager = manager.clone();
             let stopped = stopped.clone();
             let started = started.clone();
             let done = done.clone();
+            let p2p_active = p2p_active.clone();
             std::thread::spawn(move || {
                 while !done.load(Ordering::SeqCst) && !stopped.load(Ordering::SeqCst) {
-                    if started.load(Ordering::SeqCst) && manager.idle_for() >= timeout {
+                    if started.load(Ordering::SeqCst)
+                        && !p2p_active.load(Ordering::SeqCst)
+                        && manager.idle_for() >= timeout
+                    {
                         manager.reporter().message(
                             "Disconnected after 5 minutes of inactivity.",
                             "连接已因 5 分钟无操作自动断开。",
@@ -198,6 +205,7 @@ impl IdleTracker {
             manager: manager.clone(),
             started,
             done,
+            p2p_active,
             worker,
         }
     }
@@ -209,6 +217,11 @@ impl IdleTracker {
             self.manager.touch();
             self.started.store(true, Ordering::SeqCst);
         }
+    }
+
+    fn p2p_activity(&self, active: bool) {
+        self.manager.touch();
+        self.p2p_active.store(active, Ordering::SeqCst);
     }
 }
 
@@ -323,7 +336,9 @@ fn once(
         "x-agenterm-session-controls",
         if cfg!(unix) { "interrupt,eof" } else { "eof" },
     )?;
-    // P2P is deliberately not advertised until bootstrap lifecycle is ported.
+    if p2p::SUPPORTED {
+        add("x-agenterm-p2p", "1")?;
+    }
     if !resume.is_empty() {
         add("x-agenterm-resume-credential", resume)?;
     }
@@ -391,11 +406,22 @@ fn once(
     manager.reporter().connected(invited);
     let (sender, receiver) = mpsc::sync_channel::<(String, Value)>(32);
     let mut pending: HashMap<String, Arc<AtomicBool>> = HashMap::new();
+    let mut bootstraps: HashMap<String, Bootstrap> = HashMap::new();
     let mut last_frame = Instant::now();
     idle.connected();
     let online = Instant::now();
     let result = (|| -> Attempt {
         while !stopped.load(Ordering::SeqCst) {
+            let completed: Vec<_> = bootstraps
+                .iter()
+                .filter(|(_, bootstrap)| bootstrap.is_finished())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in completed {
+                bootstraps.remove(&id).unwrap().join();
+                idle.p2p_activity(!bootstraps.is_empty());
+                ws.send(p2p_done(&id)).map_err(|e| e.to_string())?;
+            }
             while let Ok((id, value)) = receiver.try_recv() {
                 if let Some(cancel) = pending.remove(&id)
                     && !cancel.load(Ordering::SeqCst)
@@ -451,6 +477,36 @@ fn once(
                                         c.store(true, Ordering::SeqCst);
                                     }
                                 }
+                                "p2p_start" if p2p::SUPPORTED && !id.is_empty() => {
+                                    if bootstraps.contains_key(&id) {
+                                        continue;
+                                    }
+                                    let bootstrap = if bootstraps.len() < 8 {
+                                        serde_json::from_value(value["p2p"].clone()).ok().and_then(
+                                            |launch| {
+                                                Bootstrap::start(
+                                                    id.clone(),
+                                                    launch,
+                                                    manager.reporter().clone(),
+                                                )
+                                                .ok()
+                                            },
+                                        )
+                                    } else {
+                                        None
+                                    };
+                                    if let Some(bootstrap) = bootstrap {
+                                        bootstraps.insert(id, bootstrap);
+                                        idle.p2p_activity(true);
+                                    } else {
+                                        ws.send(p2p_done(&id)).map_err(|e| e.to_string())?;
+                                    }
+                                }
+                                "p2p_stop" => {
+                                    if let Some(bootstrap) = bootstraps.get(&id) {
+                                        bootstrap.cancel();
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -488,10 +544,23 @@ fn once(
         canceled.store(true, Ordering::SeqCst);
     }
     let _ = ws.close(None);
+    if !bootstraps.is_empty() {
+        for bootstrap in bootstraps.values() {
+            bootstrap.cancel();
+        }
+        for bootstrap in bootstraps.into_values() {
+            bootstrap.join();
+        }
+        idle.p2p_activity(false);
+    }
     result.map_err(|mut error: Failure| {
         error.online = online.elapsed();
         error
     })
+}
+
+fn p2p_done(id: &str) -> Message {
+    Message::Text(json!({"type": "p2p_done", "id": id}).to_string().into())
 }
 
 fn duration_text(duration: Duration) -> String {

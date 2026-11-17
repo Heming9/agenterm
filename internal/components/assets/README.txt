@@ -2,14 +2,18 @@ components.tar.xz is the single tracked archive embedded by every Server build.
 
 Contents (one shared XZ stream, not nested compressed downloads):
     manifest.json       Schema 2: sizes/SHA-256 of raw executables and P2P version
-    client-cli/         Six raw CLI executables (Windows names end in .exe)
+    client-cli/         Six raw Rust CLI executables (Windows names end in .exe)
     p2p-cli/            Six raw P2P executables with OS/architecture names
 
-Regenerate CLI binaries while retaining existing native P2P binaries:
+Build the Rust CLI on each native OS/architecture runner:
+    python3 scripts/build_client.py --output dist
+
+Collect all six executables in dist, then regenerate the embedded bundle
+while retaining existing native P2P binaries:
     go generate ./internal/components
 
-Update P2P from all six verified native build outputs and rebuild all six CLIs:
-    python3 scripts/build_components.py --p2p-assets build-macos-* build-windows-* build-linux-*
+Update P2P from all six verified native build outputs and pack all six Rust CLIs:
+    python3 scripts/build_components.py --client-dir dist --p2p-assets build-macos-* build-windows-* build-linux-*
 
 Packing rejects distributions missing any OS/architecture combination. The
 Python builder applies strong XZ compression to the solid bundle at build time.

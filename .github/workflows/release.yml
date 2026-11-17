@@ -10,7 +10,7 @@ on:
         description: 'Programs to rebuild (CLI also rebuilds Server)'
         type: choice
         default: all
-        options: [all, server, client, cli, gui]
+        options: [all, server, client, cli]
       base_tag:
         description: 'Reuse from this release; blank selects latest published ancestor'
         type: string
@@ -35,8 +35,6 @@ jobs:
       sha: ${{ steps.plan.outputs.sha }}
       cli: ${{ steps.plan.outputs.cli }}
       server: ${{ steps.plan.outputs.server }}
-      gui: ${{ steps.plan.outputs.gui }}
-      unified: ${{ steps.layout.outputs.unified }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,14 +47,6 @@ jobs:
           if [ -n "$SOURCE_REF" ]; then
             source_sha=$(git rev-parse --verify --end-of-options "${SOURCE_REF}^{commit}")
             git checkout --detach "$source_sha"
-          fi
-      - name: Detect component layout at the selected source
-        id: layout
-        run: |
-          if [ -f scripts/build_components.py ] && { [ -f internal/components/assets/components.tar.xz ] || [ -f internal/components/assets/components.zip ]; }; then
-            echo 'unified=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'unified=false' >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-go@v5
         with:
@@ -83,77 +73,64 @@ jobs:
     with:
       source_ref: ${{ needs.plan.outputs.sha }}
 
-  macos:
-    needs: [plan]
-    if: needs.plan.outputs.gui == 'true'
-    runs-on: macos-15
+  cli:
+    needs: plan
+    if: needs.plan.outputs.cli == 'true'
+    name: Rust CLI / ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.sha }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-python@v5
         with:
-          go-version: '1.26.10'
-      - run: go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
-      - name: Test GUI client
-        run: go test -gcflags=all=-l ./cmd/agenterm-client-gui
-      - name: Build client
+          python-version: '3.13'
+      - name: Install pinned Rust tools
+        shell: bash
         run: |
-          cd cmd/agenterm-client-gui
-          "$(go env GOPATH)/bin/fyne" package -os darwin --use-raw-icon --release
-          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' Agenterm.app/Contents/Info.plist)
-          cp "Agenterm.app/Contents/MacOS/$executable" ../../agenterm-client-gui-macos-arm64
-          chmod +x ../../agenterm-client-gui-macos-arm64
+          rustup toolchain install 1.99.1 --profile minimal --target '${{ matrix.target }}'
+          rustup default 1.99.1
+      - name: Install Linux TLS build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+      - name: Build native Rust CLI
+        run: python scripts/build_client.py --target '${{ matrix.target }}' --output dist
       - uses: actions/upload-artifact@v4
         with:
-          name: build-macos
-          path: agenterm-client-gui-macos-arm64
-          if-no-files-found: error
-
-  windows:
-    needs: [plan]
-    if: needs.plan.outputs.gui == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.plan.outputs.sha }}
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.10'
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          install: mingw-w64-x86_64-gcc
-      - name: Add C compiler to PATH
-        shell: pwsh
-        run: '"C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
-      - run: go install fyne.io/fyne/v2/cmd/fyne@v2.8.2
-      - name: Build client
-        shell: pwsh
-        run: |
-          Set-Location cmd/agenterm-client-gui
-          & "$(go env GOPATH)/bin/fyne.exe" package -os windows -icon assets/app-icon-windows.png --release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Move-Item Agenterm.exe ../../agenterm-client-gui-windows-amd64.exe
-      - uses: actions/upload-artifact@v4
-        with:
-          name: build-windows
-          path: agenterm-client-gui-windows-amd64.exe
+          name: cli-${{ matrix.target }}
+          path: dist/agenterm-client-cli-*
           if-no-files-found: error
 
   p2p:
     # Build in parallel with checks; publish still requires both to succeed.
     needs: [plan]
-    if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified == 'true'
+    if: needs.plan.outputs.server == 'true'
     uses: ./.github/workflows/p2p-cli.yml
     with:
       source_ref: ${{ needs.plan.outputs.sha }}
       skip_checks: true
 
   server:
-    needs: [plan, p2p]
-    if: always() && !cancelled() && needs.plan.result == 'success' && (needs.p2p.result == 'success' || needs.p2p.result == 'skipped')
+    needs: [plan, p2p, cli]
+    if: always() && !cancelled() && needs.plan.result == 'success' && (needs.p2p.result == 'success' || needs.p2p.result == 'skipped') && (needs.cli.result == 'success' || needs.cli.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -174,54 +151,27 @@ jobs:
             [ ! -f "$asset" ] || cp "$asset" dist/
           done
       - uses: actions/download-artifact@v4
-        if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified == 'true'
+        if: needs.plan.outputs.server == 'true'
         with:
           name: p2p-cli-distribution
           path: component-builds/p2p-assets
-      - name: Install legacy release compression tools
-        if: needs.plan.outputs.server == 'true' && needs.plan.outputs.unified != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xz-utils
-      - name: Build or reuse CLI, bundle it, then build servers
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.cli == 'true'
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+      - name: Bundle Rust CLI and build servers
         if: needs.plan.outputs.server == 'true'
         env:
           CGO_ENABLED: '0'
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
-          BUILD_CLI: ${{ needs.plan.outputs.cli }}
-          UNIFIED_COMPONENTS: ${{ needs.plan.outputs.unified }}
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._+-]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
-          mkdir -p dist
-          rm -f internal/installer/assets/agenterm-client-cli-* internal/installer/assets/SHA256SUMS
-          if [ "$BUILD_CLI" = true ]; then
-            for os in darwin linux windows; do
-              for arch in amd64 arm64; do
-                platform="$os"
-                extension=""
-                if [ "$os" = darwin ]; then platform=macos; fi
-                if [ "$os" = windows ]; then extension=.exe; fi
-                name="agenterm-client-cli-${platform}-${arch}${extension}"
-                GOOS="$os" GOARCH="$arch" go build -trimpath -gcflags=all=-l -ldflags '-s -w' -o "dist/$name" ./cmd/agenterm-client-cli
-              done
-            done
-          fi
-          if [ "$UNIFIED_COMPONENTS" = true ]; then
-            # One packer owns exact downloads and the archive embedded by every server.
-            python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
-          else
-            # Rebuild older source refs with their own packer and embedded layout.
-            go run ./cmd/agenterm-pack -input dist -output dist -bundle "$RUNNER_TEMP/clients.tar"
-            xz -9e -T1 -c "$RUNNER_TEMP/clients.tar" > internal/installer/assets/clients.tar.xz
-          fi
-          if [ "$UNIFIED_COMPONENTS" = true ]; then
-            # Validate generated HTTP downloads, which are not Release attachments.
-            AGENTERM_RELEASE_DIR="$RUNNER_TEMP/cli-downloads" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
-          else
-            AGENTERM_RELEASE_DIR="$PWD/dist" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
-          fi
+          python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
+          AGENTERM_RELEASE_DIR="$RUNNER_TEMP/cli-downloads" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
               platform="$os"
@@ -248,14 +198,11 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [plan, checks, macos, windows, server]
-    # GUI jobs may be intentionally skipped; failures must still block publication.
+    needs: [plan, checks, server]
     if: >-
       always() && !cancelled() &&
       needs.plan.result == 'success' && needs.server.result == 'success' &&
-      needs.checks.result == 'success' &&
-      (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
-      (needs.windows.result == 'success' || needs.windows.result == 'skipped')
+      needs.checks.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

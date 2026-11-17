@@ -1,4 +1,6 @@
 mod platform;
+#[cfg(windows)]
+pub(crate) use platform::Job;
 
 use crate::{protocol::Result, ui};
 use serde::Deserialize;

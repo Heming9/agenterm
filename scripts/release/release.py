@@ -9,21 +9,18 @@ import shutil
 import subprocess
 
 
-COMPONENTS = ("cli", "server", "gui")
+COMPONENTS = ("cli", "server")
 SCOPES = {
     "all": set(COMPONENTS),
     "server": {"server"},
-    "client": set(COMPONENTS),  # Shared client code affects CLI and GUI.
+    "client": {"cli", "server"},  # Server embeds the Rust CLI.
     "cli": {"cli", "server"},  # Server embeds CLI binaries.
-    "gui": {"gui"},
 }
 MANIFEST = "release-manifest.json"
 REUSED_DIGESTS = "reused-digests.json"
 
 
 def assets(component):
-    if component == "gui":
-        return ["agenterm-client-gui-macos-arm64", "agenterm-client-gui-windows-amd64.exe"]
     prefix = "agenterm-client-cli" if component == "cli" else "agenterm-server"
     return [f"{prefix}-{platform}-{arch}" + (".exe" if platform == "windows" else "")
             for platform in ("macos", "linux", "windows") for arch in ("amd64", "arm64")]
@@ -88,7 +85,7 @@ def base_components(directory, tag, hashes):
     for component in COMPONENTS:
         valid_tag(components[component]["source_tag"])
         valid_tag("v" + components[component]["version"])
-    return components
+    return {component: components[component] for component in COMPONENTS}
 
 
 def compatible(left, right):
@@ -100,7 +97,8 @@ def compatible(left, right):
 
 def select_builds(scope, tag, previous):
     selected = SCOPES[scope].copy()
-    if previous is None:
+    if previous is None or previous["cli"].get("implementation") != "rust":
+        # Never carry a legacy Go CLI into a Rust-only release or server bundle.
         return set(COMPONENTS)
     # Check actual binary versions, including assets reused over multiple releases.
     for component in set(COMPONENTS) - selected:
@@ -171,17 +169,14 @@ def prepare(scope, requested_base):
                     for component in set(COMPONENTS) - selected for name in assets(component)):
         print("Base release uses a different asset layout; rebuilding all programs")
         selected = set(COMPONENTS)
-    if "gui" in selected:
-        config = Path("cmd/agenterm-client-gui/FyneApp.toml").read_text()
-        gui_version = re.search(r'^Version = "([^"]+)"$', config, re.M)[1]
-        if "v" + gui_version != tag:
-            raise ValueError("GUI version must match internal/version.Current")
     manifest = {"schema": 1, "release_tag": tag, "commit": sha, "scope": scope,
                 "base_release": base["tag_name"] if base else None, "components": {}}
     reused = []
     for component in COMPONENTS:
         if component in selected:
             manifest["components"][component] = {"version": tag[1:], "source_tag": tag}
+            if component == "cli":
+                manifest["components"][component]["implementation"] = "rust"
         else:
             manifest["components"][component] = previous[component]
             reused.extend(assets(component))

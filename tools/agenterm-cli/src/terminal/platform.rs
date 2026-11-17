@@ -310,7 +310,7 @@ impl Drop for Job {
 }
 #[cfg(windows)]
 impl Job {
-    fn assign(child: &Child) -> Result<Self> {
+    pub(crate) fn assign(child: &Child) -> Result<Self> {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::{Foundation::CloseHandle, System::JobObjects::*};
         unsafe {

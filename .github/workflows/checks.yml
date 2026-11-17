@@ -11,8 +11,13 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  go:
+    name: Go checks / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,14 +28,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Test CLI, server, and installers
-        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./cmd/agenterm-server ./internal/...
+      - name: Test server and installers
+        run: go test -gcflags=all=-l ./cmd/... ./internal/...
       - name: Test build and release scripts
         run: |
           python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 -m unittest discover -s scripts/release -p 'test_*.py'
 
   windows:
+    name: Windows checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +47,43 @@ jobs:
           go-version: '1.26.10'
       - name: Test Windows installer and connection probes
         run: go test ./internal/service -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
-      - name: Test Windows CLI client and reconnection
-        run: go test -gcflags=all=-l ./cmd/agenterm-client-cli ./internal/client
       - name: Test MCP execution and session lifecycle on Windows
         run: go test ./internal/service -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
       - name: Test deterministic download archives on Windows
         run: go test ./internal/installer -run 'TestDownload|TestBundle'
+
+  rust-cli:
+    name: Rust CLI checks / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - name: Install pinned Rust tools
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+          rustup default 1.99.1
+      - name: Check Rust CLI
+        shell: bash
+        run: |
+          cargo fmt --manifest-path tools/agenterm-cli/Cargo.toml --check
+          cargo clippy --locked --manifest-path tools/agenterm-cli/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml
+          AGENTERM_LANG=en cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
+          AGENTERM_LANG=zh-CN cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
+      - name: Test Rust CLI with the Go server
+        shell: bash
+        run: |
+          python scripts/build_client.py --output dist
+          go build -o dist/agenterm-server.exe ./cmd/agenterm-server
+          export AGENTERM_RUST_CLI="$PWD/$(find dist -maxdepth 1 -name 'agenterm-client-cli-*' -print -quit)"
+          export AGENTERM_GO_SERVER="$PWD/dist/agenterm-server.exe"
+          go test -v ./tools/agenterm-cli/tests

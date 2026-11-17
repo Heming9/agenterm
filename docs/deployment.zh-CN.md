@@ -102,11 +102,12 @@ go build -o agenterm-server ./cmd/agenterm-server
 
 ## 发布流水线
 
-[发布工作流](../.github/workflows/release.yml) 先运行共用的 Linux、Windows [构建检查](../.github/workflows/checks.yml)，均通过后再启动 GUI 和原生 P2P 构建。Server 打包等待 P2P 分发完成，生成的客户端下载资源仍会在发布前校验。
+[发布工作流](../.github/workflows/release.yml) 并行运行[构建检查](../.github/workflows/checks.yml)、六个平台的 Rust CLI 构建和原生 P2P 构建。Server 打包等待 CLI、P2P 分发完成，所有检查通过且客户端下载资源校验成功后才能发布。仅维护 Rust CLI 和 Go Server；增量发布不会复用旧 Go CLI 或 GUI。
 
+Rust CLI 构建及组件包更新方法见 [Rust CLI 文档](../tools/agenterm-cli/README.md#release-builds)。Linux CLI 使用系统 OpenSSL，当前发布构建基线为 Ubuntu 24.04；目标机器须具备兼容的 glibc 和 OpenSSL 动态库。
 原生 P2P 缓存必须精确匹配组件源码、原生验证脚本、打包工作流、Rust 版本、runner 和目标平台的指纹。恢复时还检查组件版本、程序架构和 SHA-256；缓存缺失或无效时完整重建，Cargo 依赖与编译产物另外缓存。
 
-Rust 和原生端到端测试通过后即保存原生缓存，后续 Go 集成测试失败不会导致再次编译 Rust。即使命中原生缓存，也始终运行当前 Go 代码的 bootstrap 集成测试。独立 P2P 工作流使用同一套前置检查；发布流程只有先通过自己的共用检查，才跳过这次重复检查。没有缓存辅助脚本的旧源码仍走完整构建。首次运行仍是冷构建，缓存命中后的实际耗时需在 Actions 中测量。
+Rust 和原生端到端测试通过后即保存原生缓存，后续 Go 集成测试失败不会导致再次编译 Rust。即使命中原生缓存，也始终测试服务端信令和启动脚本。独立 P2P 工作流使用同一套前置检查；发布流程只有先通过自己的共用检查，才跳过这次重复检查。没有缓存辅助脚本的旧源码仍走完整构建。首次运行仍是冷构建，缓存命中后的实际耗时需在 Actions 中测量。
 
 ## 📖 服务端命令与参数
 

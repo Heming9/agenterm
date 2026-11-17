@@ -1,9 +1,8 @@
 # Rust CLI
 
-An independent Rust client for the existing Agenterm server, with a Ratatui /
-Crossterm interface matching the Go CLI. The Go client and release/install flows
-remain the default. Networking and shell management use threads, with no
-asynchronous runtime.
+The maintained Agenterm client, with a Ratatui / Crossterm interface. Release
+builds and the server's embedded client downloads use this Rust implementation.
+Networking and shell management use threads, with no asynchronous runtime.
 
 ## Build and run
 
@@ -19,7 +18,7 @@ tools/agenterm-cli/target/release/agenterm-cli
 
 The interactive prompt accepts a full device token, a short-code URL, or a bare
 six-character short code when a server is already in `~/.agenterm/servers.json`.
-Existing Go server history and per-server connection locks are shared.
+Existing server history and per-server connection locks are shared.
 
 ```sh
 tools/agenterm-cli/target/release/agenterm-cli -invite INVITATION
@@ -56,8 +55,8 @@ skip registration to avoid replacing an active handler.
 
 ## Interactive interface
 
-Invitations show the same authorization explanation and temporary/persistent/deny
-choices as the Go CLI, using arrow keys on a terminal and numbered input when
+Invitations show an authorization explanation and temporary/persistent/deny
+choices, using arrow keys on a terminal and numbered input when
 redirected. Temporary connections disconnect
 after five minutes of inactivity, excluding time spent running commands. The
 `-consent-confirmed` installer flag requires `-invite`. The interactive interface
@@ -65,14 +64,14 @@ is the default when both stdin and stdout are terminals; `-plain` or redirected
 input/output selects plain output. Ctrl+C disconnects and stops owned shells.
 
 `AGENTERM_LANG=zh-CN` selects Chinese (`LANG` / `LC_ALL` are also recognized).
-Authorization text and connection menus use the same translations as Go. The TUI
-has the same header, dividers, input form, connection mode and server history
+Authorization text and connection menus share translations with the server. The TUI
+has a header, dividers, input form, connection mode and server history
 selectors, status colors, command counter and latency footer. It adapts to window
 size and terminal background; `AGENTERM_THEME=light` / `dark` overrides background
 detection. `NO_COLOR` and `TERM=dumb` disable colors while retaining visible menu
 and text-selection highlights.
 
-Commands and output appear in a bounded 10 MiB log with Go's timestamps, spacing,
+Commands and output appear in a bounded 10 MiB log with timestamps, spacing,
 wrapping and initial multiline folding. Click a folded block to expand/collapse;
 use arrows, PageUp/PageDown, Home/End or the mouse wheel to scroll. Drag to select
 and copy, including across wrapped lines; dragging beyond the log scrolls the
@@ -97,10 +96,13 @@ natural terminal scrollback and command completion footers.
   accepted command. Concurrent network requests are bounded.
 - Unix PTYs; Windows PowerShell/pipes and a kill-on-close Job Object for process
   ownership. Protocol methods and terminal state are shared across platforms.
+- P2P file transfers through the server's `p2p_transfer_start` tool. The client
+  runs the verified native helper in the foreground and stops it when the
+  WebSocket connection ends.
 
 ## Networking and portability
 
-This prototype retains Rust HTTP/WebSocket framing (`httparse` / `tungstenite`)
+The client uses Rust HTTP/WebSocket framing (`httparse` / `tungstenite`)
 and uses **platform TLS** through `native-tls`: Security.framework on macOS,
 Schannel on Windows, dynamically linked OpenSSL on Linux. It does not use
 URLSession or WinHTTP. Certificate and hostname validation stay enabled.
@@ -119,9 +121,9 @@ only Windows system DLLs; it does not require a separate VC runtime DLL.
 the system trust store. `AGENTERM_POWERSHELL` can select a PowerShell executable
 on Windows. Unix supports sh/bash/zsh and otherwise uses `/bin/sh`.
 
-Not ported yet: P2P bootstrap (not advertised to the server), elevation/relaunch, proxy configuration,
+Not yet supported: elevation/relaunch, proxy configuration,
 fish integration, or Windows legacy-code-page output decoding. Session behavior
-has dedicated tests, but this is not yet a complete parity replacement for Go.
+has dedicated tests.
 Errors currently use English where there is no ported localized message.
 
 ## Verification
@@ -151,9 +153,6 @@ python3 tools/agenterm-cli/measure.py
 AGENTERM_RUST_CLI="$PWD/tools/agenterm-cli/target/release/agenterm-cli" \
 AGENTERM_TEST_NATIVE_LINK=1 \
   go test -v ./tools/agenterm-cli/tests -run '^TestRustNativeMacProtocolLaunch$'
-
-# Regenerate the screen references directly from the Go TUI after intentional UI changes.
-python3 tools/agenterm-cli/tests/generate_tui_reference.py
 ```
 
 The tests use local servers, a temporary home, and an explicitly trusted temporary
@@ -163,7 +162,7 @@ reuse of redeemed invitations, and protocol-link connection modes over WS/WSS.
 They do not modify the system clipboard or OS protocol registration; child
 processes set `AGENTERM_SKIP_LINK_REGISTRATION=1` to keep those tests isolated.
 One hundred reference screens cover English/Chinese, five terminal widths, and
-ten UI states, compared with the actual Go renderer. The full-server test owns a
+ten UI states, checked against committed screen snapshots. The full-server test owns a
 uniquely named instance and stops it on cleanup. No production server or system
 certificate-store changes are involved.
 
@@ -185,6 +184,26 @@ macOS and Linux unit/runtime tests; the new Windows regression was cross-compile
 but has not yet been rerun on a Windows machine. Synchronous DNS/TLS calls use
 OS/socket timeouts: cancellation stops further handshake work when they return,
 but cannot interrupt every underlying blocking call immediately.
+
+## Release builds
+
+Native runners build each of the six OS/architecture combinations with:
+
+```sh
+python3 scripts/build_client.py --output dist
+```
+
+The script preserves the public `agenterm-client-cli-<platform>-<arch>` filenames
+used by installers. Linux downloads require the OpenSSL and glibc versions of
+the build distribution (currently Ubuntu 24.04 in the release workflow). Windows
+builds statically link the CRT. Once all six native outputs are collected:
+
+```sh
+python3 scripts/build_components.py --client-dir dist
+```
+
+This rebuilds the tracked server bundle while retaining its native P2P binaries.
+Pass `--p2p-assets` to replace those as well.
 
 ## Local cross builds
 

@@ -1,7 +1,7 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
+	terminal "agenterm/internal/terminalapi"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

@@ -1,7 +1,7 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
+	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"bytes"
 	"encoding/json"

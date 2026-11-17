@@ -1,8 +1,8 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
 	"agenterm/internal/protocol"
+	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"context"
 	"fmt"

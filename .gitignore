@@ -10,12 +10,10 @@ Thumbs.db
 /agenterm-server
 /agenterm-server-*
 /agenterm-client
-/agenterm-gui
 /agenterm-client-*
 /agenterm-pack
 /p2p-cli
 /p2p-cli-*
-/cmd/agenterm-client-gui/Agenterm.app/
 *.exe
 *.test
 *.out

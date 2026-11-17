@@ -1,12 +1,14 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
 	"agenterm/internal/protocol"
+	terminal "agenterm/internal/terminalapi"
+	"bytes"
 	"context"
-
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"io"
 	"sync"
 	"unicode/utf8"
 )
@@ -36,9 +38,6 @@ func newFixtureAPI(label string) *fixtureAPI {
 	return &fixtureAPI{label: label, sessions: map[string]terminal.ReadOutput{}, commands: map[string]string{}}
 }
 func (a *fixtureAPI) Execute(ctx context.Context, r terminal.ExecuteRequest) (terminal.Output, error) {
-	if err := terminal.ValidateSessionRequest(r.SessionID, r.Setup); err != nil {
-		return terminal.Output{}, err
-	}
 	if r.Command == "parallel" {
 		a.arrived <- a.label
 		select {
@@ -123,9 +122,6 @@ func (a *fixtureAPI) List(context.Context) (terminal.ListResult, error) {
 	return out, nil
 }
 func (a *fixtureAPI) Control(ctx context.Context, r terminal.ControlRequest) (terminal.ControlResult, error) {
-	if err := r.Validate(); err != nil {
-		return terminal.ControlResult{}, err
-	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	out, ok := a.sessions[r.SessionID]
@@ -141,13 +137,13 @@ func (a *fixtureAPI) Control(ctx context.Context, r terminal.ControlRequest) (te
 	if out.Status == "closed" {
 		return terminal.ControlResult{}, fmt.Errorf("closed")
 	}
-	if r.Action == "input" {
+	if r.Action == "input" && r.Input != nil {
 		out.Output += a.label + ":" + *r.Input
 		a.sessions[r.SessionID] = out
 	}
 	return terminal.ControlResult{OK: true}, nil
 }
-func serveAPI(ws *testDeviceConn, api terminal.API) {
+func serveAPI(ws *testDeviceConn, api deviceAPI) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var mu sync.Mutex
 	waiters := map[string]context.CancelFunc{}
@@ -166,7 +162,7 @@ func serveAPI(ws *testDeviceConn, api terminal.API) {
 			mu.Unlock()
 			workers.Go(func() {
 				defer stop()
-				data, err := terminal.DispatchAPI(callCtx, api, m.Request)
+				data, err := dispatchFixtureAPI(callCtx, api, m.Request)
 				reply := protocol.Message{Type: "api_result", ID: m.ID, Data: data}
 				if err != nil {
 					reply.Error = err.Error()
@@ -198,7 +194,7 @@ func serveTestDevice(ws *testDeviceConn, label string, arrived chan<- string, re
 
 // testAPI customizes individual client operations without adding relay state.
 type testAPI struct {
-	terminal.API
+	deviceAPI
 	execute func(context.Context, terminal.ExecuteRequest) (terminal.Output, error)
 	read    func(context.Context, terminal.ReadRequest) (terminal.ReadOutput, error)
 	list    func(context.Context) (terminal.ListResult, error)
@@ -209,23 +205,79 @@ func (a testAPI) Execute(c context.Context, r terminal.ExecuteRequest) (terminal
 	if a.execute != nil {
 		return a.execute(c, r)
 	}
-	return a.API.Execute(c, r)
+	return a.deviceAPI.Execute(c, r)
 }
 func (a testAPI) Read(c context.Context, r terminal.ReadRequest) (terminal.ReadOutput, error) {
 	if a.read != nil {
 		return a.read(c, r)
 	}
-	return a.API.Read(c, r)
+	return a.deviceAPI.Read(c, r)
 }
 func (a testAPI) List(c context.Context) (terminal.ListResult, error) {
 	if a.list != nil {
 		return a.list(c)
 	}
-	return a.API.List(c)
+	return a.deviceAPI.List(c)
 }
 func (a testAPI) Control(c context.Context, r terminal.ControlRequest) (terminal.ControlResult, error) {
 	if a.control != nil {
 		return a.control(c, r)
 	}
-	return a.API.Control(c, r)
+	return a.deviceAPI.Control(c, r)
+}
+
+type deviceAPI interface {
+	Execute(context.Context, terminal.ExecuteRequest) (terminal.Output, error)
+	Read(context.Context, terminal.ReadRequest) (terminal.ReadOutput, error)
+	List(context.Context) (terminal.ListResult, error)
+	Control(context.Context, terminal.ControlRequest) (terminal.ControlResult, error)
+}
+
+// dispatchFixtureAPI routes wire requests to the in-memory test device.
+func dispatchFixtureAPI(ctx context.Context, api deviceAPI, data json.RawMessage) (json.RawMessage, error) {
+	var request terminal.APIRequest
+	if err := decodeFixtureRequest(data, &request); err != nil {
+		return nil, err
+	}
+	var result any
+	var err error
+	switch request.Method {
+	case "execute":
+		var a terminal.ExecuteRequest
+		if err = decodeFixtureRequest(request.Params, &a); err == nil {
+			result, err = api.Execute(ctx, a)
+		}
+	case "read":
+		var a terminal.ReadRequest
+		if err = decodeFixtureRequest(request.Params, &a); err == nil {
+			result, err = api.Read(ctx, a)
+		}
+	case "list":
+		var a struct{}
+		if err = decodeFixtureRequest(request.Params, &a); err == nil {
+			result, err = api.List(ctx)
+		}
+	case "control":
+		var a terminal.ControlRequest
+		if err = decodeFixtureRequest(request.Params, &a); err == nil {
+			result, err = api.Control(ctx, a)
+		}
+	default:
+		err = fmt.Errorf("unknown client API method %q", request.Method)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(result)
+}
+func decodeFixtureRequest(data []byte, out any) error {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if err := d.Decode(out); err != nil {
+		return err
+	}
+	if err := d.Decode(new(any)); err != io.EOF {
+		return fmt.Errorf("invalid trailing request data")
+	}
+	return nil
 }

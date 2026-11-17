@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Build Client CLI executables and merge native P2P binaries into components.tar.xz."""
+"""Pack Rust CLI executables and native P2P binaries into components.tar.xz."""
 import argparse
-import concurrent.futures
 import json
 import lzma
 import os
@@ -17,20 +16,6 @@ from build_p2p_cli import merge_assets
 
 def native_env():
     return {k: v for k, v in os.environ.items() if k not in ('GOOS', 'GOARCH', 'GOARM', 'GOAMD64', 'CGO_ENABLED')}
-
-
-def build_clients(root, destination):
-    def build(target):
-        goos, arch = target
-        platform = 'macos' if goos == 'darwin' else goos
-        name = f"agenterm-client-cli-{platform}-{arch}" + ('.exe' if goos == 'windows' else '')
-        print('Building ' + name, flush=True)
-        subprocess.run(['go', 'build', '-trimpath', '-gcflags=all=-l', '-ldflags', '-s -w',
-                        '-o', str(destination / name), './cmd/agenterm-client-cli'], cwd=root,
-                       env=dict(native_env(), GOOS=goos, GOARCH=arch, CGO_ENABLED='0'), check=True)
-    targets = [(platform, arch) for platform in ('darwin', 'linux', 'windows') for arch in ('amd64', 'arm64')]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        list(executor.map(build, targets))
 
 
 def reuse_p2p(bundle, directory):
@@ -52,7 +37,7 @@ def reuse_p2p(bundle, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='Defaults to the archive embedded by ordinary Go builds')
-    parser.add_argument('--client-dir', type=Path, help='Reuse six prebuilt raw Client CLI executables')
+    parser.add_argument('--client-dir', required=True, type=Path, help='Directory containing all six native Rust CLI executables (scripts/build_client.py)')
     parser.add_argument('--p2p-assets', nargs='+', type=Path, help='Native build outputs; omitted reuses the tracked bundle')
     parser.add_argument('--download-output', type=Path, help='Also keep the exact public CLI downloads here')
     args = parser.parse_args()
@@ -67,17 +52,15 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='agenterm-components-') as temporary:
             work = Path(temporary)
-            raw, peers, merged, downloads = (work / name for name in ('raw', 'peers', 'merged', 'downloads'))
-            for path in (raw, peers, merged, downloads):
+            peers, merged, downloads = (work / name for name in ('peers', 'merged', 'downloads'))
+            for path in (peers, merged, downloads):
                 path.mkdir()
             if args.p2p_assets:
                 merge_assets(args.p2p_assets, peers)
             else:
                 reuse_p2p(embedded, peers)
             merge_assets([peers], merged, require_all=True)
-            clients = args.client_dir.resolve() if args.client_dir else raw
-            if args.client_dir is None:
-                build_clients(root, clients)
+            clients = args.client_dir.resolve()
             descriptor, name = tempfile.mkstemp(prefix='.components-', suffix='.tar.xz', dir=output.parent)
             os.close(descriptor)
             pending = Path(name)

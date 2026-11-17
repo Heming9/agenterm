@@ -2,7 +2,7 @@
 use super::{finished, line, output, started, text};
 use crate::protocol::Token;
 use std::sync::{
-    Arc,
+    Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
     mpsc::{SyncSender, TrySendError},
 };
@@ -62,6 +62,46 @@ impl Reporter {
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
+        }
+    }
+
+    // Bootstrap output is advisory. A full UI queue or a stalled stdout
+    // consumer must not delay the completion acknowledgment or cleanup.
+    pub fn p2p(&self, event: Event) {
+        if let Some((sender, _)) = &self.sink {
+            let _ = sender.try_send(event);
+            return;
+        }
+        static PLAIN: OnceLock<Option<SyncSender<Event>>> = OnceLock::new();
+        let sender = PLAIN.get_or_init(|| {
+            let (sender, receiver) = std::sync::mpsc::sync_channel(32);
+            std::thread::Builder::new()
+                .spawn(move || {
+                    use std::io::Write;
+                    while let Ok(event) = receiver.recv() {
+                        let mut out = std::io::stdout().lock();
+                        let _ = match event {
+                            Event::Started { command, .. } => writeln!(
+                                out,
+                                "\n[Agenterm] {} {command}",
+                                text("Running:", "正在执行：")
+                            ),
+                            Event::Output { data, .. } => out.write_all(data.as_bytes()),
+                            Event::Finished { code, .. } => writeln!(
+                                out,
+                                "\n[Agenterm] {} {code}",
+                                text("P2P exit code:", "P2P 退出码：")
+                            ),
+                            _ => continue,
+                        };
+                        let _ = out.flush();
+                    }
+                })
+                .ok()?;
+            Some(sender)
+        });
+        if let Some(sender) = sender {
+            let _ = sender.try_send(event);
         }
     }
 

@@ -46,8 +46,18 @@ jobs:
           assert run['status'] == 'completed', 'Source run is not complete'
           jobs = api(f'actions/runs/{run_id}/jobs?per_page=100')['jobs']
           results = {job['name']: job['conclusion'] for job in jobs}
-          for name in ('plan', 'server', 'macos', 'windows', 'windows-tests'):
-              assert results.get(name) == 'success', f'{name} did not pass'
+          required = ['plan', 'server', 'Windows checks']
+          required += [f'Go checks / {runner}' for runner in ('ubuntu-latest', 'macos-15')]
+          required += [f'Rust CLI checks / {runner}' for runner in ('ubuntu-latest', 'macos-15', 'windows-latest')]
+          required += [f'Rust CLI / {target}' for target in (
+              'x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu',
+              'x86_64-apple-darwin', 'aarch64-apple-darwin',
+              'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')]
+          for name in required:
+              matching = [result for job, result in results.items() if job == name or job.endswith(' / ' + name)]
+              assert matching and all(result == 'success' for result in matching), f'{name} did not pass'
+          # A failed publish job can be repaired by this workflow, failed builds cannot.
+          assert all(result in ('success', 'skipped') for name, result in results.items() if name != 'publish'), 'A build or check failed'
           PY
       - uses: actions/download-artifact@v4
         with:

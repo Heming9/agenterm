@@ -25,8 +25,6 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(os.chdir, self.original)
         Path("internal/version").mkdir(parents=True)
         Path("internal/version/version.go").write_text('const Current = "0.2.27"\n')
-        Path("cmd/agenterm-client-gui").mkdir(parents=True)
-        Path("cmd/agenterm-client-gui/FyneApp.toml").write_text('Version = "0.2.27"\n')
         self.env = patch.dict(os.environ, {"GH_REPO": "test/repo", "GITHUB_OUTPUT": "outputs",
                                          "GITHUB_REF_TYPE": "branch", "GITHUB_STEP_SUMMARY": "summary"})
         self.env.start()
@@ -38,7 +36,7 @@ class ReleaseTests(unittest.TestCase):
                 (self.base / name).write_text("original bytes: " + name)
         (self.base / release.MANIFEST).write_text(json.dumps({
             "schema": 1, "release_tag": "v0.2.26", "components": {
-                c: {"version": "0.2.26", "source_tag": "v0.2.26"}
+                c: {"version": "0.2.26", "source_tag": "v0.2.26", **({"implementation": "rust"} if c == "cli" else {})}
                 for c in release.COMPONENTS
             },
         }))
@@ -86,10 +84,10 @@ class ReleaseTests(unittest.TestCase):
         return json.loads(Path("release-plan/release-manifest.json").read_text())
 
     def test_published_inventory_contains_only_raw_programs(self):
-        self.assertEqual(release.assets("gui"), ["agenterm-client-gui-macos-arm64", "agenterm-client-gui-windows-amd64.exe"])
+        self.assertEqual(release.COMPONENTS, ("cli", "server"))
         names = [name for component in release.COMPONENTS for name in release.assets(component)]
-        self.assertEqual(len(names), 14)
-        self.assertEqual(len(set(names)), 14)
+        self.assertEqual(len(names), 12)
+        self.assertEqual(len(set(names)), 12)
         self.assertFalse(any(name.endswith((".zip", ".tar.gz", ".tar.xz")) for name in names))
 
     def test_staging_excludes_generated_archives_and_checksums(self):
@@ -119,43 +117,50 @@ class ReleaseTests(unittest.TestCase):
         manifest = self.prepare("server")
         self.assertEqual(manifest["components"]["server"]["version"], "0.2.27")
         self.assertEqual(manifest["components"]["cli"]["version"], "0.2.26")
-        self.assertEqual(manifest["components"]["gui"]["version"], "0.2.26")
-        self.assertIn("cli=false\nserver=true\ngui=false", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), {*release.assets("cli"), *release.assets("gui")})
+        self.assertIn("cli=false\nserver=true", Path("outputs").read_text())
+        self.assertEqual(set(self.downloads), set(release.assets("cli")))
 
     def test_cli_also_builds_server(self):
         self.prepare("cli")
-        self.assertIn("cli=true\nserver=true\ngui=false", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), {*release.assets("gui")})
-
-    def test_gui_only_reuses_server_and_cli(self):
-        self.prepare("gui")
-        self.assertIn("cli=false\nserver=false\ngui=true", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), {*release.assets("cli"), *release.assets("server")})
+        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
+        self.assertEqual(set(self.downloads), set())
 
     def test_client_rebuilds_everything_without_downloads(self):
         self.prepare("client")
-        self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
+        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
         self.assertEqual(self.downloads, [])
 
     def test_no_base_falls_back_to_full_build(self):
         self.releases = []
         self.prepare("server")
-        self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
+        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
 
     def test_old_asset_layout_falls_back_before_downloading_programs(self):
-        for scope in ("server", "cli", "gui"):
+        for scope in ("server", "cli"):
             with self.subTest(scope=scope):
                 self.metadata["assets"] = [a for a in self.metadata["assets"]
                                            if a["name"] == release.MANIFEST or a["name"].startswith("agenterm-server-")]
                 self.prepare(scope)
-                self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
+                self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
                 self.assertEqual(self.downloads, [])
                 shutil.rmtree("release-plan")
 
+    def test_legacy_go_cli_forces_rust_rebuild(self):
+        path = self.base / release.MANIFEST
+        manifest = json.loads(path.read_text())
+        del manifest["components"]["cli"]["implementation"]
+        manifest["components"]["gui"] = {"version": "0.2.26", "source_tag": "v0.2.26"}
+        path.write_text(json.dumps(manifest))
+        self.refresh_digests()
+        result = self.prepare("server")
+        self.assertEqual(set(result["components"]), {"cli", "server"})
+        self.assertEqual(result["components"]["cli"]["implementation"], "rust")
+        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
+        self.assertEqual(self.downloads, [])
+
     def test_incompatible_base_falls_back_before_downloading_programs(self):
         self.prepare("server", compatibility=False)
-        self.assertIn("cli=true\nserver=true\ngui=true", Path("outputs").read_text())
+        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
         self.assertEqual(self.downloads, [])
 
     def test_explicit_missing_or_unrelated_base_fails(self):
@@ -184,23 +189,17 @@ class ReleaseTests(unittest.TestCase):
             self.prepare("server")
 
     def test_missing_reused_asset_fails(self):
-        (self.base / release.assets("gui")[0]).unlink()
+        (self.base / release.assets("cli")[0]).unlink()
         with self.assertRaises(FileNotFoundError):
             self.prepare("server")
 
-    def test_gui_version_must_match_when_built(self):
-        Path("cmd/agenterm-client-gui/FyneApp.toml").write_text('Version = "0.2.26"\n')
-        with self.assertRaisesRegex(ValueError, "GUI version"):
-            self.prepare("all")
-
     def test_transitive_reuse_preserves_original_versions(self):
-        components = {c: {"version": "0.2.24", "source_tag": "v0.2.24"} for c in release.COMPONENTS}
+        components = {c: {"version": "0.2.24", "source_tag": "v0.2.24", **({"implementation": "rust"} if c == "cli" else {})} for c in release.COMPONENTS}
         (self.base / release.MANIFEST).write_text(json.dumps({
             "schema": 1, "release_tag": "v0.2.26", "components": components}))
         self.refresh_digests()
         manifest = self.prepare("server")
         self.assertEqual(manifest["components"]["cli"], components["cli"])
-        self.assertEqual(manifest["components"]["gui"], components["gui"])
 
     def test_manifest_must_match_github_digest(self):
         (self.base / release.MANIFEST).write_text("{}")
@@ -226,8 +225,8 @@ class ReleaseTests(unittest.TestCase):
     def test_legacy_checksum_file_is_not_downloaded(self):
         (self.base / "SHA256SUMS").write_text("obsolete checksum file")
         self.refresh_digests()
-        self.prepare("cli")
-        self.assertEqual(set(self.downloads), {*release.assets("gui")})
+        self.prepare("server")
+        self.assertEqual(set(self.downloads), set(release.assets("cli")))
 
     def test_full_build_needs_no_reused_files(self):
         self.prepare("all")
@@ -238,7 +237,7 @@ class ReleaseTests(unittest.TestCase):
             for name in release.assets(component):
                 (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
-        self.assertEqual(len(list(directory.iterdir())), 15)
+        self.assertEqual(len(list(directory.iterdir())), 13)
 
     def test_obsolete_release_attachments_are_rejected(self):
         self.prepare("all")
@@ -249,7 +248,8 @@ class ReleaseTests(unittest.TestCase):
                 (directory / name).write_text("new bytes: " + name)
         for name in ["install.sh", "install.ps1", "SHA256SUMS", "components.tar.xz", "components.zip",
                      "agenterm-client-cli-linux-amd64.tar.xz", "agenterm-client-cli-macos-arm64.tar.gz",
-                     "agenterm-client-cli-windows-amd64.zip", "agenterm-client-gui-macos-arm64.zip",
+                     "agenterm-client-cli-windows-amd64.zip", "agenterm-client-gui-macos-arm64",
+                     "agenterm-client-gui-windows-amd64.exe", "agenterm-client-gui-macos-arm64.zip",
                      "agenterm-client-gui-windows-amd64.zip"]:
             with self.subTest(attachment=name):
                 (directory / name).write_text("obsolete")
@@ -265,12 +265,12 @@ class ReleaseTests(unittest.TestCase):
             (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
         hashes = json.loads((Path("release-plan") / release.REUSED_DIGESTS).read_text())
-        self.assertEqual(len(list(directory.iterdir())), 15)  # Fourteen raw executables and the version manifest.
-        self.assertEqual(set(hashes), {*release.assets("cli"), *release.assets("gui")})
+        self.assertEqual(len(list(directory.iterdir())), 13)  # Twelve raw executables and the version manifest.
+        self.assertEqual(set(hashes), set(release.assets("cli")))
         release.verify(directory, list(hashes), hashes)
         for name in ["install.sh", "install.ps1", "SHA256SUMS", release.REUSED_DIGESTS]:
             self.assertFalse((directory / name).exists())
-        (directory / release.assets("gui")[0]).write_text("changed after reuse")
+        (directory / release.assets("cli")[0]).write_text("changed after reuse")
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             release.finalize(directory, Path("release-plan"))
 

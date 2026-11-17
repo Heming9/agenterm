@@ -1,9 +1,9 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
+	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"context"
 	"net/http"

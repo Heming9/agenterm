@@ -1,8 +1,8 @@
 package service
 
 import (
-	terminal "agenterm/internal/client"
 	"agenterm/internal/i18n"
+	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"

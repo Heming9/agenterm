@@ -1,7 +1,6 @@
 package service
 
 import (
-	remoteclient "agenterm/internal/client"
 	"agenterm/internal/invite"
 	"bytes"
 	"context"
@@ -103,31 +102,9 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	if err != nil || redeemed != rawToken {
 		t.Fatalf("redeem: token matches=%v, err=%v", redeemed == rawToken, err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	connected := make(chan struct{}, 1)
-	done := make(chan error, 1)
-	go func() {
-		done <- remoteclient.RunWithCallbacks(ctx, h.ts.URL+"/agenterm/c/"+issued["short_code"].(string), io.Discard, remoteclient.Callbacks{Connected: func() {
-			select {
-			case connected <- struct{}{}:
-			default:
-			}
-		}})
-	}()
-	defer func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("client did not exit")
-		}
-	}()
-	select {
-	case <-connected:
-	case <-time.After(5 * time.Second):
-		t.Fatal("device did not connect")
-	}
+	codePath := "/agenterm/c/" + issued["short_code"].(string)
+	stop := startRustClient(t, h.ts.URL+codePath)
+	waitForRustClient(t, h, rawToken)
 	checkLink := func(method, path string, want int) {
 		t.Helper()
 		req, _ := http.NewRequest(method, h.ts.URL+path, nil)
@@ -142,7 +119,6 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 			t.Fatalf("%s %s: got %d, want %d", method, path, res.StatusCode, want)
 		}
 	}
-	codePath := "/agenterm/c/" + issued["short_code"].(string)
 	checkLink(http.MethodGet, codePath, http.StatusUnauthorized)
 	checkLink(http.MethodPost, codePath, http.StatusUnauthorized)
 	decodedToken, _ := protocol.Decode(rawToken)
@@ -175,12 +151,7 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	}
 	// A normal disconnect must not change the control key; reconnect with the
 	// redeemed device token and exercise the same credential again.
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first client did not disconnect")
-	}
+	stop()
 	secret, _ := protocol.Decode(rawToken)
 	deadline := time.Now().Add(5 * time.Second)
 	for len(h.s.listClients(secret.Secret)) != 0 {
@@ -190,22 +161,7 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	checkLink(http.MethodGet, codePath, http.StatusOK)
-	ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
-	done = make(chan error, 1)
-	go func() {
-		done <- remoteclient.RunWithCallbacks(ctx, redeemed, io.Discard, remoteclient.Callbacks{Connected: func() {
-			select {
-			case connected <- struct{}{}:
-			default:
-			}
-		}})
-	}()
-	select {
-	case <-connected:
-	case <-time.After(5 * time.Second):
-		t.Fatal("device did not reconnect")
-	}
+	connectExecutionClient(t, h, redeemed)
 	if status, failed := call(control, "list_client", map[string]any{}); status != http.StatusOK || failed {
 		t.Fatalf("control credential rejected after reconnect: %d", status)
 	}

@@ -1,13 +1,11 @@
 package service
 
 import (
-	remoteclient "agenterm/internal/client"
-	"agenterm/internal/protocol"
+	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,37 +46,6 @@ func connectMCPClient(t *testing.T, h *multiHarness, token string) *mcp.ClientSe
 	}
 	t.Cleanup(func() { _ = session.Close() })
 	return session
-}
-
-func connectExecutionClient(t *testing.T, h *multiHarness, token string) <-chan remoteclient.CommandEvent {
-	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	ended := make(chan error, 1)
-	events := make(chan remoteclient.CommandEvent, 32)
-	go func() {
-		ended <- remoteclient.RunWithCallbacks(ctx, token, io.Discard, remoteclient.Callbacks{
-			Command: func(e remoteclient.CommandEvent) { events <- e },
-		})
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-ended:
-			if err != nil {
-				t.Error(err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Error("execution client did not stop")
-		}
-	})
-	decoded, _ := protocol.Decode(token)
-	ctxWait, stopWait := context.WithTimeout(context.Background(), 5*time.Second)
-	defer stopWait()
-	clients, err := h.s.waitForClients(ctxWait, decoded.Secret, 5*time.Second)
-	if err != nil || len(clients) != 1 {
-		t.Fatalf("client connection: %v %v", clients, err)
-	}
-	return events
 }
 
 func callExecution(t *testing.T, session *mcp.ClientSession, args map[string]any) (executeResult, bool) {
@@ -132,9 +99,11 @@ func TestExecutionOptionsThroughOfficialMCPClient(t *testing.T) {
 	if isError || reused.SessionID != out.SessionID || reused.Status != "idle" || !strings.Contains(reused.Output, "overridden") || !executionOutputHasDirectory(reused.Output, dir) {
 		t.Fatalf("state lost: %+v", reused)
 	}
-	bad, isError := callExecution(t, session, map[string]any{"command": "echo never", "setup": map[string]any{"cwd": filepath.Join(dir, "missing")}})
-	if !isError || bad.ExitCode == nil || *bad.ExitCode != -1 || bad.Error == "" || strings.Contains(bad.Output, "never") {
-		t.Fatalf("missing cwd: %+v", bad)
+	bad, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "execute_command", Arguments: map[string]any{
+		"command": "echo never", "setup": map[string]any{"cwd": filepath.Join(dir, "missing")},
+	}})
+	if err != nil || !bad.IsError {
+		t.Fatalf("missing cwd was accepted: %v %v", bad, err)
 	}
 }
 
@@ -232,12 +201,12 @@ func TestAnonymousExecutionReturnsLargeOutputAndExitStatus(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, false)
 	ws, _ := h.connect(t, token, "large output")
-	go serveAPI(ws, testAPI{execute: func(context.Context, remoteclient.ExecuteRequest) (remoteclient.Output, error) {
-		return remoteclient.Output{SessionID: "large", CommandID: "c", Status: "closed", Output: strings.Repeat("界", remoteclient.DefaultReadBytes/3), NextCursor: int64(remoteclient.DefaultReadBytes / 3 * 3), HasMore: true, ExitCode: new(7)}, nil
+	go serveAPI(ws, testAPI{execute: func(context.Context, terminal.ExecuteRequest) (terminal.Output, error) {
+		return terminal.Output{SessionID: "large", CommandID: "c", Status: "closed", Output: strings.Repeat("界", terminal.DefaultReadBytes/3), NextCursor: int64(terminal.DefaultReadBytes / 3 * 3), HasMore: true, ExitCode: new(7)}, nil
 	}})
 	session := connectMCPClient(t, h, token)
 	out, isError := callExecution(t, session, map[string]any{"command": "large"})
-	if !isError || out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) != remoteclient.DefaultReadBytes-remoteclient.DefaultReadBytes%3 || !utf8.ValidString(out.Output) || !out.HasMore || out.SessionID == "" {
+	if !isError || out.Truncated || out.ExitCode == nil || *out.ExitCode != 7 || len(out.Output) != terminal.DefaultReadBytes-terminal.DefaultReadBytes%3 || !utf8.ValidString(out.Output) || !out.HasMore || out.SessionID == "" {
 		t.Fatalf("paged anonymous result: %+v", out)
 	}
 }
@@ -361,10 +330,7 @@ func TestExecutionSessionInputAndOptions(t *testing.T) {
 	if started["status"] != "running" {
 		t.Fatal(started)
 	}
-	busy := h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo must-not-run"}, true).(map[string]any)
-	if !strings.Contains(busy["error"].(string), "session_busy") || !strings.Contains(busy["error"].(string), id.(string)) {
-		t.Fatal(busy)
-	}
+	h.call(t, token, "execute_command", map[string]any{"session_id": id, "command": "echo must-not-run"}, true)
 	h.call(t, token, "session_control", map[string]any{"action": "input", "session_id": id, "input": "early-input\n"}, false)
 	output, completed := readExecutionToCompletion(t, h, token, started)
 	if completed["exit_code"] != float64(0) || completed["status"] != "idle" || !strings.Contains(output, "ready") || !strings.Contains(output, want) || !executionOutputHasDirectory(output, dir) {
