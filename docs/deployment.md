@@ -18,7 +18,7 @@ chmod +x agenterm-server
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-On first startup, save the generated management key and configure the MCP URL as described in the [user guide](usage.md#connect-your-agent). This HTTP example works for terminal access. Cross-device P2P requires access to the server over HTTPS for signaling.
+On first startup, the terminal displays the MCP URL and management key. Save the key securely and connect the MCP URL to your agent as described in the [user guide](usage.md#connect-your-agent).
 
 ## 🐳 Option 2: Docker Compose
 
@@ -76,7 +76,7 @@ sudo systemctl enable --now agenterm-server
 sudo systemctl status agenterm-server
 ```
 
-The service listens on `127.0.0.1:8080` by default. Make sure the address provided by your deployment environment supports HTTP and WebSocket connections and is reachable by both the agent and target computer. Use the logged `mcp_endpoint` and the key from the credential file to connect your agent.
+The service listens on `127.0.0.1:8080` by default. Make sure the address provided by your deployment environment supports HTTP and WebSocket connections and is reachable by both the agent and target computer. Use the configured address and key to connect your agent.
 
 ## ✅ Verify and manage
 
@@ -91,11 +91,7 @@ docker compose logs -f server
 sudo journalctl -u agenterm-server -f
 ```
 
-`/healthz` checks that the frontend can reach the runtime. `/livez` checks the runtime itself. Both are root paths.
-
-Compose sends frontend and runtime JSON logs to Docker's rotating local log driver. The systemd unit sends them to journald. When run directly, the frontend writes to stderr and the runtime writes to `runtime.log` in its instance directory by default. Set `AGENTERM_LOG_FORMAT` and `AGENTERM_LOG_LEVEL` to configure format and verbosity. Use `AGENTERM_LOG_FILE` and `AGENTERM_RUNTIME_LOG_FILE` to select log files.
-
-Follow the [user guide](usage.md#-start-a-remote-assistance-session) to authorize a connection from another computer and verify that the agent can run a terminal task.
+After connecting your agent, create an invitation, run its connection command on another computer, and authorize access. Confirm that the agent can perform a terminal task. Share management keys and invitation commands only with people you trust.
 
 ## 🔨 Build the server from source
 
@@ -111,9 +107,12 @@ After building, deploy using the direct or systemd instructions above.
 
 ## Release pipeline
 
-The current workflow builds amd64 and arm64 Rust CLIs for macOS, Linux and Windows, and servers for macOS and Linux. Shared checks and the required CLI and P2P builds start in parallel. Publication requires passing checks, a packaged server and verified downloads. [Release workflow](../.github/workflows/release.yml) · [Component distribution and native caching](../internal/components/assets/README.txt) · [Rust CLI builds](../tools/agenterm-cli/README.md#release-builds)
+The [release workflow](../.github/workflows/release.yml) runs [build checks](../.github/workflows/checks.yml), six native Rust CLI builds, and native P2P builds in parallel. Server packaging waits for CLI and P2P distributions; publication requires all checks and generated client download validation to pass. The release includes CLI binaries for macOS, Linux and Windows and Server binaries for macOS and Linux, each for amd64 and arm64. Selective releases never reuse legacy Go CLI or GUI assets.
 
-[RepoCloud](https://repocloud.io/details/AgenTerm/) is a third-party hosting option.
+See [Rust CLI release builds](../tools/agenterm-cli/README.md#release-builds) to rebuild the client bundle. Linux CLI downloads use system OpenSSL and are built on Ubuntu 24.04; target machines need compatible glibc and OpenSSL shared libraries.
+Native P2P caches require an exact fingerprint of the component source, native validation scripts, packaging workflow, Rust version, runner and target. Restored artifacts are checked for component version, executable architecture and SHA-256 before use. Missing or invalid caches trigger a full native build; Cargo dependencies and compilation outputs have a separate cache.
+
+The native cache is saved after Rust and native end-to-end checks pass, so later Go integration failures do not force another Rust build. Server signaling and bootstrap script tests always run, including on native cache hits. The standalone P2P workflow uses the same early checks; a release skips that duplicate gate only after its own shared checks pass. Older source refs without the native cache helper retain the full build path. The first run remains a cold build; warm-cache runtime must be measured in Actions.
 
 ## 📖 Server commands and options
 
@@ -131,20 +130,24 @@ agenterm-server -help
 
 `stop` and `status` accept only `-instance`. The other options apply to `start` and `restart`; changing the startup settings of a running runtime requires `restart`.
 
-If an upgrade reports an incompatible runtime API, follow the diagnostic. Run `agenterm-server stop -instance <name>` with a binary compatible with the old runtime and as the same OS user, then start the new binary. If you no longer have the old binary, use the diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and clears in-memory credentials and sessions. Create new connections after the upgrade.
+**Upgrading runtime API 12 to 13:** The old runtime is incompatible with the new short-code and authentication behavior. Stop it with its existing API 12 server executable before starting the API 13 server. If it is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and clears in-memory credentials and sessions; recreate connections after upgrading.
+
+**Upgrading runtime API 13 to 14:** The online single-device credential and reconnect rules require the new runtime. Stop the API 13 runtime with its existing server executable before starting API 14. This disconnects clients and clears in-memory credentials and sessions; recreate connections afterward.
+
+**Upgrading runtime API 7 to 8:** Keep the existing API 7 server executable until the old runtime has been stopped. Run `/path/to/api7/agenterm-server stop -instance <name>` using the same user and instance, then start the API 8 server with the intended configuration. API 8 `start`, `stop`, and `restart` cannot manage an API 7 runtime; if the previous executable is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and discards in-memory credentials and sessions; create new connections after the upgrade. Never downgrade authentication or send control credentials to an older runtime to bypass this check.
 
 | Option | Description |
 | --- | --- |
 | `-instance` | Name for an independent server instance; default `default`. |
 | `-listen` | Listening address; default `127.0.0.1:8080`. |
 | `-public-url` | External address, default `http://127.0.0.1:8080`. This only sets the address; it does not enable HTTPS. Transport encryption is the responsibility of the deployment environment. |
-| `-url-prefix` | Path prefix for application routes such as MCP, connections and downloads. The default is `/agenterm`. Use `/` for root routing. Health checks use fixed root paths. |
+| `-url-prefix` | URL path prefix for all endpoints; default `/agenterm`. Use `/` for root routes. |
 | `-passwd` | Supply the MCP management key directly. The key is visible in the launching process's command line. |
 | `-passwd-file` | Read the MCP management key from a single-line file. Choose one of `-passwd` and `-passwd-file`. With authentication enabled, omitting both generates a key on first startup. |
 | `-no-password` | Allow access to the MCP management interface without a password. Mutually exclusive with both key options. |
-| `-max-clients-per-ip` | Client connection limit per invitation creator's IP. WebSocket handshakes reserve slots. The default `0` means unlimited. |
-| `-client-ip-header` | Defaults to empty and uses the directly connected peer IP. If set, the trusted proxy must overwrite the header with one IP and restrict direct access to the backend. |
+| `-max-clients-per-ip` | Maximum connected clients per invitation creator's IP; default `0`, meaning unlimited. |
+| `-client-ip-header` | Trusted request header containing a single client IP; empty by default, using the directly connected peer IP. |
 | `-enable-short-code` | Enable issuing and redeeming short codes; short codes are disabled by default. |
 | `-stdio` | Also serve management MCP over standard input/output, trusting the process owner. |
 
-Short-code lookup failures share a per-IP counter across the browser and client endpoints. MCP administrator key authentication uses an independent counter with the same policy; connection tokens and other authentication interfaces are not rate-limited. After three consecutive failures, requests are rejected for 2 seconds; each subsequent failure adds 2 seconds to the wait, up to 10 minutes. Requests during the wait do not increase the counter. Successful short-code redemption resets the short-code counter; viewing an invitation page does not. Successful administrator authentication resets only the administrator counter. Concurrent requests for each kind of credential share its limiter.
+Short-code lookup failures share a per-IP counter across the browser and client endpoints. MCP administrator key authentication uses an independent counter with the same policy; connection tokens and other authentication interfaces are not rate-limited. After three consecutive failures, requests are rejected for 2 seconds; each subsequent failure adds 2 seconds to the wait, up to 10 minutes. Requests during the wait do not increase the counter. Successful short-code redemption resets the short-code counter; viewing a invitation page does not. Successful administrator authentication resets only the administrator counter. Concurrent requests for each kind of credential share its limiter.

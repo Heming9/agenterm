@@ -4,9 +4,9 @@ Rust 实现的独立 P2P 文件传输组件。`start` 建立并维护一条后�
 
 ## 通过 Agenterm 初始化
 
-使用支持 P2P 的服务端和 Rust CLI。Agent 与目标设备需能直连，跨设备信令使用 HTTPS。
+Server 和 Client 都需要支持此功能的源码版本。P2P 和 Client CLI 的下载资源统一内嵌到 Server 的 `components.tar.xz`；现有线上部署不会因本地源码变化自动获得新组件。
 
-1. Agent 调用 `p2p_transfer_start`。多设备令牌需要指定 `client_id`。管理访问还需要传入 `control_token`，详见 [MCP 访问方式](../../docs/mcp-tools.zh-CN.md#访问方式)。
+1. Agent 调用 `p2p_transfer_start`，按现有认证规则提供目标设备的 `client_id`，管理调用还需 `control_token`。
 2. Rust CLI 执行服务端生成的脚本，下载、校验并以前台受控进程运行远端 `p2p-cli`。连接断开时，客户端会停止该进程。
 3. 远端注册协商后，MCP 返回 `shell_script` 和 `powershell_script`，状态为 `waiting_for_agent`。此时不等待直连成功。
 4. Agent 按自己的执行平台运行对应脚本，自动获取本机组件并启动后台连接。脚本输出 JSON，包含组件的 `executable` 绝对路径。
@@ -28,21 +28,12 @@ p2p-cli stop
 ```
 
 - 一位操作系统用户同时维护一条连接。相同连接重复 start 返回已有状态；不同连接需要先 stop。
-- `status --verbose`（或 `-v`）提供完整诊断信息。失败原因在进程退出后仍可查询。
-- `cp` 只支持本机与对端之间的单个普通文件。使用 MCP 或 `status` 返回的端点 ID。建议使用绝对路径，含空格时对整个操作数加引号。Windows 可用 `client-ID:C:\Users\name\file.txt`；相对路径以对应后台进程的工作目录为准。
+- `status` 默认显示本机状态（`state`）、双方 ID 和主机名、对方状态（`peer.state`）、实际路径（`path`），以及当前复制进度和速率（`copy.bytes`、`copy.total`、`copy.bytes_per_second`；空闲为 `null`）。`path` 包含 ICE 当前选中的 UDP 本地和远端地址（`local`、`remote`）；`kind` 为 `same_subnet`（本机私有或链路本地接口的同一子网）、`loopback` 或 `direct`（其他直连）。同子网判断依据本机接口掩码，并非对物理网络的保证；VPN 等网络也可能显示为同子网。尚未取得路径或连接未建立时为 `null`，路径变更后约 250 毫秒内更新。`status --verbose` 或 `status -v` 额外显示连接标识、系统、架构、工作目录、最近通信时间、程序路径和完整复制信息，其中 `copy.average_bytes_per_second` 为本次任务平均速率。速率单位均为字节/秒（B/s）；实时速率按约 3 秒滑动窗口计算，每 100 毫秒采样，停滞后会降到零；开始不足 3 秒时使用已有采样。发送端按对方已确认的字节数计算，接收端按已写入的字节数计算；平均速率包含本次任务从请求到查询时的耗时，完成回执和 `cp` 进度输出也包含速率。失败原因在两种模式下都显示，进程退出后仍可查询；本机状态只保留顶层 `state`，不重复输出 `connection.local`。
+- `cp` 只支持单个普通文件，源和目标必须是本机与已连接的对端。客户端 ID 来自 MCP 返回值或 status。Agent ID 为 `agent-<token 字符串最后 6 位>`，直接截取、不解析公开标识字段，同一 token 下保持一致；远端为 `client-<client_id>`，每条 P2P 连接仍有独立的 `connection_id` 和私有凭据，显示 ID 不用于鉴权。路径按第一个冒号分隔，Windows `client-ID:C:\Users\name\file.txt` 的盘符保持完整；含空格的整个操作数需要引号。相对路径以对应后台进程的工作目录为准，建议使用绝对路径。
 - 默认拒绝覆盖。`--overwrite` 会先写入并校验临时文件，然后原子替换，原文件保留到提交成功。目录和目标符号链接拒绝写入。
 - 同一连接一次复制一个文件，可以连续、双向执行多次 cp。完成结果包含字节数、SHA-256 和 `receiver_committed`。
 - `stop` 取消当前复制，清理未提交临时文件，并通知对端关闭连接。返回的 `peer_confirmed` 表示是否收到对端确认；对端无法到达时不声称确认成功。已经提交的文件保留。
 - 初始化脚本结束不影响 Agent 端后台连接；Client 退出或断开时，先请求其受控组件停止，再回收进程树。异常强杀或掉电仍可能留下临时文件；对端通过保活检测断连。
-
-### 状态字段
-
-| 字段 | 含义 |
-| --- | --- |
-| `state`、`peer.state` | 本机和对端的连接状态。 |
-| `path` | ICE 选中的 UDP 地址及路径类型，未建立连接或未取得路径时为 `null`。`same_subnet` 按本机接口掩码判定，VPN 也可能命中。其他类型为 `loopback`、`direct`。 |
-| `copy` | 当前复制的已处理字节数、总字节数和实时速率（B/s）。空闲时为 `null`。 |
-| `--verbose` 额外字段 | 连接标识、程序路径、工作目录、最近通信时间、系统和架构，以及本次复制的平均速率等详细信息。 |
 
 ## 协商参数与协议
 
@@ -56,11 +47,11 @@ p2p-cli stop
 }
 ```
 
-组件向 `/v1/{session}/register` 注册，从响应获取端点 ID、协商角色和 STUN 配置。显示 ID 用于指定复制端点，配对凭据用于鉴权。两端凭据不同；只有指定的一端能写 offer，另一端能写 answer。SDP 写入幂等、不可覆盖，每条上限 128 KiB。协商角色与文件方向独立。
+组件向 `/v1/{session}/register` 注册，从响应获取自己的客户端 ID、协商角色与 STUN 配置。两端凭据不同；只有指定的一端能写 offer，另一端能写 answer。SDP 写入幂等、不可覆盖，每条上限 128 KiB。协商角色与文件方向独立。
 
 只接受 HTTPS，测试时仅对回环地址允许 HTTP，不跟随重定向。ICE 对本机地址的优先级高于 STUN 公网映射地址；同一局域网的地址能够互通时优先使用本机地址，最终选择仍取决于连通性和 ICE 协商。连接建立后文件复制和保活直接走 DataChannel；Server 不参与文件数据传输。当前支持 IPv4，候选收集最多等待约五秒；IPv6、目录复制、断点续传和网络切换后自动重连尚未实现。
 
-可选配置包括 `timeout_seconds`（建连及每次复制的期限，独立运行默认 600 秒，Agenterm 生成的配置为 300 秒，允许范围为 1–3600 秒）、`max_bytes`（默认 10 GiB）、`cancel_file` 和 `bind_ip`。测试夹具可显式设置 `register: false` 并提供 `client_id`、`offerer` 和 `stun`，直接测试 SDP 邮箱；正常 Agenterm 初始化不需要这些测试参数。
+可选配置包括 `timeout_seconds`（建连及每次复制的期限，默认 600，范围 1–3600 秒）、`max_bytes`（默认 10 GiB）、`cancel_file` 和 `bind_ip`。测试夹具可显式设置 `register: false` 并提供 `client_id`、`offerer` 和 `stun`，直接测试 SDP 邮箱；正常 Agenterm 初始化不需要这些测试参数。
 
 本地命令使用仅限回环的、带随机凭据的命令通道，凭据保存在用户私有状态目录。默认目录为 `~/.p2p-cli`；测试可用 `--state-dir DIR` 或 `P2P_CLI_STATE_DIR` 隔离不同实例。`start --foreground` 用于 Client 管理子进程。初始化及停止脚本使用连接标识限定清理目标，不会误停之后创建的新连接。
 
@@ -86,18 +77,24 @@ macOS 和 Windows 的首选 XZ 下载包限制为 2 MiB，原生构建时检查�
 python3 scripts/build_p2p_cli.py --merge build-macos-* build-windows-* build-linux-* --require-all --output dist/p2p-assets
 ```
 
-收齐原生 P2P 产物后，按[组件分发说明](../../internal/components/assets/README.txt)与 CLI 一起打包并构建服务端。
+将 P2P 原生构建产物与 Client CLI 一起生成统一包并内嵌到 Server：
+
+```sh
+python3 scripts/build_components.py --client-dir dist --p2p-assets dist/p2p-assets
+python3 scripts/build_server.py --output dist/agenterm-server
+```
+
+唯一内嵌资源为 `internal/components/assets/components.tar.xz`，内部包含 `client-cli/`、`p2p-cli/` 的原始程序和全包校验清单，在同一个 XZ 流中整体压缩。生成统一包时要求 P2P 六种组合齐全，缺少任意一种直接失败。Server 启动时只把原始程序和源文件校验清单原子解压到实例运行目录的 `components/<包哈希>/`，不需要额外部署组件目录；组件下载路由继续使用公开路径前缀。收到下载请求后，Server 才按目标平台和格式打包，合并同一包的并发构建并缓存结果。客户端实际探测解压能力：macOS/Linux 优先 `tar.xz`、其次 `tar.gz`；Windows 优先 `tar.xz`、其次 ZIP；缺少解压能力时直接下载源程序。每种方式最终都核对同一个源程序 SHA-256，无需额外安装解压工具。Server 内置 Go XZ 编解码器。缺少目标平台归档或校验不通过时，MCP 明确返回错误。修改 Rust CLI 后，先在各原生平台用 `python3 scripts/build_client.py --output dist` 构建，收齐六个程序再运行 `go generate ./internal/components`，它会复用统一包中既有的 P2P 原始程序。
 
 `P2P_CLI_STUN` 在 Runtime 启动时配置 STUN 主机与端口，默认 `stun.l.google.com:19302`，本机测试设为 `none`。它由协商协议返回给组件，组件使用者无需另行配置；更改已有 Runtime 的环境配置需要按既有规则重启 Runtime。
 
-[P2P 工作流](../../.github/workflows/p2p-cli.yml) 在六种原生平台上验证组件和服务端协议，并合并分发产物。
+`.github/workflows/p2p-cli.yml` 为 Linux、macOS、Windows 的 amd64、arm64 分别指定原生 runner，六个任务验证原生组件和服务端协议，再合并完整分发产物。此工作流只构建和上传工作流产物，不自动发布或部署服务。
 
 ## 验证
 
 ```sh
 cargo test --manifest-path tools/p2p-cli/Cargo.toml --locked
-cargo clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets --locked -- -D warnings
-cargo build --release --locked --manifest-path tools/p2p-cli/Cargo.toml
+cargo clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets -- -D warnings
 python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli
 # 单独运行 45 秒延迟启动回归
 python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli --delayed-only
@@ -113,6 +110,8 @@ go test ./internal/p2p ./internal/service -run 'TestP2P|TestManifest' -count=1
 `go test ./tools/agenterm-cli/tests -run 'P2PBootstrapLifecycle|RustCLIRealServer' -count=1`
 可验证协议回执、停止和重连清理。在 macOS 和 Linux 上也会通过真实 MCP 启动组件并双向传输文件。
 
-Windows 上将端到端测试中的程序路径改为相应的 `.exe`。直连能否建立取决于 NAT 与防火墙。
+Windows 的直接命令测试使用相应 `.exe` 路径。单元测试覆盖 SDP 兼容、拒绝中转、STUN、Windows 路径、校验失败、目标写入竞争和覆盖提交；持久连接测试覆盖连续双向复制、空文件、块边界、32 MiB 与 256 MiB 文件、大小限制、拒绝目录、未经授权的本地命令，以及 stop、取消文件和复制调用方退出时的清理。大文件测试在 macOS/Linux 采样后台进程 RSS，延迟启动回归让另一端等待 45 秒后再加入连接。所有端到端用例均通过 `start/status/cp/stop` 执行。
 
-历史跨网验证见[预发布记录](../../deploy/staging/README.md)。
+此前原型已在 macOS 与 Windows 的不同网络之间双向传过 64 MiB 并核对落盘哈希，成功测试由 macOS 发起连接；Windows 发起的跨网 ICE 失败原因仍未定位。这些历史测量不能替代新版本的完整跨网络验证，也不能保证所有 NAT/防火墙环境都能直连。
+
+2026-11-03 已通过 `0.5.0-rc.1` 线上预发布验证新流程：公网 MCP 启动远端 Windows 组件，返回脚本启动 macOS 组件；两端跨网络建立持久连接，双向复制 1 MiB + 3 字节文件、核对落盘 SHA-256，并确认 stop 收到对端确认。此验证由 macOS 发起协商，不代表 Windows 发起及其他 NAT 环境也已验证。

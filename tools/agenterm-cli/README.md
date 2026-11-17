@@ -83,13 +83,24 @@ form Ctrl+C clears the token first, then quits. Clipboard writes use platform
 commands locally and OSC 52 over SSH (including tmux/screen). Plain mode retains
 natural terminal scrollback and command completion footers.
 
-## Terminal sessions and transfers
+## Implemented
 
-The client owns shell processes and retained results. See the [terminal client API](../../docs/client-api.md)
-for the WebSocket contract and the [MCP tool reference](../../docs/mcp-tools.md) for session controls and limits.
-Unix uses PTYs. Windows uses PowerShell with pipes and a kill-on-close Job Object.
-For file transfers the CLI runs a verified [P2P helper](../p2p-cli/README.md) in the foreground
-and stops it when the WebSocket connection ends.
+- Current token formats: packed hostname, IPv4/IPv6, custom prefixes and ports,
+  public device identifiers; invitation and short-code redemption.
+- Authenticated WS/WSS with version/API negotiation, heartbeat responses, resume
+  credentials, and bounded reconnect backoff. Ordinary transport loss preserves
+  shells and cached output; permanent rejection and explicit exit stop them.
+- `execute`, `read`, `list`, and `control`: persistent environment/cwd, anonymous
+  command retention after wait expiry, interactive input, Unix interrupt/EOF,
+  output pagination, pinned command IDs, and exit codes.
+- Ten live shells, 1 MiB of retained UTF-8 output per shell, ten closed records
+  retained for up to thirty minutes. Canceling an API waiter does not kill the
+  accepted command. Concurrent network requests are bounded.
+- Unix PTYs; Windows PowerShell/pipes and a kill-on-close Job Object for process
+  ownership. Protocol methods and terminal state are shared across platforms.
+- P2P file transfers through the server's `p2p_transfer_start` tool. The client
+  runs the verified native helper in the foreground and stops it when the
+  WebSocket connection ends.
 
 ## Networking and portability
 
@@ -103,16 +114,19 @@ headers and `pkg-config` (e.g. `libssl-dev pkg-config` on Debian/Ubuntu); the ta
 machine needs the matching OpenSSL shared libraries. This is not a fully static,
 dependency-free Linux executable. Build Linux binaries on the intended baseline
 distribution. A Linux/macOS/Windows artifact is built separately for each CPU.
-Synchronous DNS and TLS handshakes rely on OS and socket timeouts. Cancellation
-takes effect after a blocking call returns.
+
+The historical plain-client Linux builds require glibc 2.34 or newer, OpenSSL 3, and
+`libgcc_s.so.1`. The Windows x64 build statically links the MSVC CRT and imports
+only Windows system DLLs; it does not require a separate VC runtime DLL.
 
 `AGENTERM_CA_FILE=/path/to/ca.pem` adds an explicit private CA without changing
 the system trust store. `AGENTERM_POWERSHELL` can select a PowerShell executable
 on Windows. Unix supports sh/bash/zsh and otherwise uses `/bin/sh`.
 
 Not yet supported: elevation/relaunch, proxy configuration,
-fish integration, or Windows legacy-code-page output decoding. Errors use English
-when a localized message is unavailable.
+fish integration, or Windows legacy-code-page output decoding. Session behavior
+has dedicated tests.
+Errors currently use English where there is no ported localized message.
 
 ## Verification
 
@@ -143,23 +157,61 @@ AGENTERM_TEST_NATIVE_LINK=1 \
   go test -v ./tools/agenterm-cli/tests -run '^TestRustNativeMacProtocolLaunch$'
 ```
 
-The standard tests use local servers, temporary homes, a test CA and isolated protocol
-registration. The opt-in macOS native link test registers a handler and opens Terminal.
-The [CI matrix](../../.github/workflows/checks.yml) defines the current native test coverage.
-[verification.json](verification.json) records prototype measurements for the original artifacts.
+The tests use local servers, a temporary home, and an explicitly trusted temporary
+certificate. On macOS/Linux, PTY integration tests exercise actual authorization,
+connection, latency, log folding, mouse selection / OSC 52, reconnect, disconnect,
+reuse of redeemed invitations, and protocol-link connection modes over WS/WSS.
+They do not modify the system clipboard or OS protocol registration; child
+processes set `AGENTERM_SKIP_LINK_REGISTRATION=1` to keep those tests isolated.
+One hundred reference screens cover English/Chinese, five terminal widths, and
+ten UI states, checked against committed screen snapshots. The full-server test owns a
+uniquely named instance and stops it on cleanup. No production server or system
+certificate-store changes are involved.
+
+The initial prototype passed the integration suite on macOS ARM64 and, under
+Rosetta, macOS x86-64. It also passed unit and HTTP/WebSocket/TLS tests on Windows
+10 x64, and unit/fixture/full runtime-MCP tests in local Linux Docker (x64 through
+QEMU, ARM64 directly). `verification.json` records those historical artifacts;
+their sizes and hashes do not describe subsequent source revisions.
+
+The Ratatui rewrite passed native unit, PTY, protocol and full-runtime/MCP tests
+on macOS ARM64, plus unit tests on macOS x86-64 through Rosetta. Its Windows x64
+release and test executables were cross-compiled; Windows runtime tests have not
+been rerun for this rewrite. Linux runtime tests for the TUI remain unverified
+because the local Docker daemon was unavailable.
+
+The reviewed source adds regression coverage for idle expiry across reconnects
+and Windows descendant cleanup after shell exit. The revised source passed
+macOS and Linux unit/runtime tests; the new Windows regression was cross-compiled
+but has not yet been rerun on a Windows machine. Synchronous DNS/TLS calls use
+OS/socket timeouts: cancellation stops further handshake work when they return,
+but cannot interrupt every underlying blocking call immediately.
 
 ## Release builds
 
-The [release workflow](../../.github/workflows/release.yml) uses native runners for all six
-OS and architecture combinations. Linux releases build on Ubuntu 24.04 and require
-compatible glibc and OpenSSL shared libraries. Windows releases link the CRT statically.
-See the [component distribution guide](../../internal/components/assets/README.txt) for
-build commands, filenames and the embedded server bundle.
+Native runners build each of the six OS/architecture combinations with:
+
+```sh
+python3 scripts/build_client.py --output dist
+```
+
+The script preserves the public `agenterm-client-cli-<platform>-<arch>` filenames
+used by installers. Linux downloads require the OpenSSL and glibc versions of
+the build distribution (currently Ubuntu 24.04 in the release workflow). Windows
+builds statically link the CRT. Once all six native outputs are collected:
+
+```sh
+python3 scripts/build_components.py --client-dir dist
+```
+
+This rebuilds the tracked server bundle while retaining its native P2P binaries.
+Pass `--p2p-assets` to replace those as well.
 
 ## Local cross builds
 
-On an ARM64 Mac, build the Windows x64 client using Rust's LLD linker and the
-x64 MSVC CRT and Windows SDK `.lib` files. Keep the SDK in an ignored build directory.
+On this ARM64 Mac, Windows can be linked entirely locally with Rust's bundled
+LLD linker and existing x64 MSVC CRT/Windows SDK `.lib` files. The SDK files
+belong in an ignored build directory, not source control:
 
 ```sh
 rustup target add x86_64-pc-windows-msvc

@@ -6,8 +6,6 @@
 
 ## What the demo shows
 
-Recorded with an earlier client. For current authorization options, see the [user guide](../usage.md#-client-controls).
-
 The silent 16-second README preview uses excerpts from this recording: invitation, authorization, connection, and execution. / 首页的 16 秒无声预览截取自本视频，展示邀请、授权、连接和执行。
 
 The 1:42 video follows an MCP agent through Agenterm's hosted service: connect MCP, generate an invitation, run the one-command installer in the target terminal, authorize the connection, then scan, confirm, clean up, and verify disposable files. Kimi Code is one example of a compatible agent. The video includes Chinese narration, Chinese/English captions, background music, and reading pauses.
@@ -15,8 +13,6 @@ The 1:42 video follows an MCP agent through Agenterm's hosted service: connect M
 Both terminals ran in separate local demo directories on one computer; MCP and WebSocket traffic actually passed through `https://agenterm.net`. The cleanup removed three prepared files totaling 192 MiB (96 MiB cache, 32 MiB logs, and 64 MiB temporary data), while preserving `Keep/notes.txt`. The client was disconnected after recording.
 
 ## 演示说明
-
-视频使用早期客户端录制。当前授权方式见[使用指南](../usage.zh-CN.md#-客户端操作)。
 
 视频保留左右双终端，按“连接 MCP → 生成邀请 → 执行一键命令并授权 → 连接成功 → 请求清理 → 执行与验证”的顺序展示。Agenterm 为产品主角，Kimi Code 是兼容 MCP Agent 的接入示例。
 

@@ -18,7 +18,7 @@ chmod +x agenterm-server
 ./agenterm-server -listen 0.0.0.0:8080 -public-url http://SERVER_IP:8080
 ```
 
-首次启动会显示 MCP 地址和自动生成的管理密钥。请保存密钥，按[使用指南](usage.zh-CN.md#接入-agent)接入 Agent。这个 HTTP 示例可用于远程终端。跨设备 P2P 信令要求通过 HTTPS 地址访问服务端。
+首次启动时，终端会显示 MCP 地址和管理密钥。请妥善保存密钥，并按[使用指南](usage.zh-CN.md#接入-agent)将 MCP 地址接入 Agent。
 
 ## 🐳 方式二：Docker Compose
 
@@ -76,7 +76,7 @@ sudo systemctl enable --now agenterm-server
 sudo systemctl status agenterm-server
 ```
 
-服务默认监听 `127.0.0.1:8080`。请确保部署环境提供的访问地址支持 HTTP 和 WebSocket，且 Agent 和目标电脑均可访问。使用日志中的 `mcp_endpoint` 和凭据文件中的管理密钥接入 Agent。
+服务默认监听 `127.0.0.1:8080`。请确保部署环境提供的访问地址支持 HTTP 和 WebSocket，且 Agent 和目标电脑均可访问。使用设置的地址和密钥接入 Agent。
 
 ## ✅ 验证与管理
 
@@ -91,11 +91,7 @@ docker compose logs -f server
 sudo journalctl -u agenterm-server -f
 ```
 
-`/healthz` 检查前端能否访问 runtime。`/livez` 检查 runtime 自身是否存活。两个路径都位于根目录。
-
-Compose 将前端与 runtime 的 JSON 日志交给 Docker 本地日志驱动轮转。systemd 将两者的 JSON 日志交给 journald。直接运行时，前端默认写到标准错误，runtime 默认写入实例目录的 `runtime.log`。可用 `AGENTERM_LOG_FORMAT`、`AGENTERM_LOG_LEVEL` 设置格式和级别，`AGENTERM_LOG_FILE`、`AGENTERM_RUNTIME_LOG_FILE` 指定文件。
-
-接入 Agent 后，在另一台电脑按[使用指南](usage.zh-CN.md#-开始远程协助)完成授权并验证能执行终端任务。
+接入 Agent 后，创建邀请，在另一台电脑运行邀请命令并授权，确认可以执行终端任务。管理密钥和邀请命令请只分享给信任的人。
 
 ## 🔨 从源码构建服务端
 
@@ -111,9 +107,12 @@ go build -o agenterm-server ./cmd/agenterm-server
 
 ## 发布流水线
 
-当前源码的发布流程构建 macOS、Linux、Windows 的 amd64 和 arm64 Rust CLI，以及 macOS、Linux 的 amd64 和 arm64 服务端。共用检查、所需的 CLI 与 P2P 构建并行启动。发布需要检查通过、服务端打包完成并通过下载验证。[发布工作流](../.github/workflows/release.yml) · [组件分发与原生缓存](../internal/components/assets/README.txt) · [Rust CLI 构建](../tools/agenterm-cli/README.md#release-builds)
+[发布工作流](../.github/workflows/release.yml) 并行运行[构建检查](../.github/workflows/checks.yml)、六个平台的 Rust CLI 构建和原生 P2P 构建。Server 打包等待 CLI、P2P 分发完成，所有检查通过且客户端下载资源校验成功后才能发布。CLI 发布 macOS、Linux、Windows 的 amd64 和 arm64 程序，Server 发布 macOS 和 Linux 的 amd64 和 arm64 程序；增量发布不会复用旧 Go CLI 或 GUI。
 
-第三方托管入口见 [RepoCloud](https://repocloud.io/details/AgenTerm/)。
+Rust CLI 构建及组件包更新方法见 [Rust CLI 文档](../tools/agenterm-cli/README.md#release-builds)。Linux CLI 使用系统 OpenSSL，当前发布构建基线为 Ubuntu 24.04；目标机器须具备兼容的 glibc 和 OpenSSL 动态库。
+原生 P2P 缓存必须精确匹配组件源码、原生验证脚本、打包工作流、Rust 版本、runner 和目标平台的指纹。恢复时还检查组件版本、程序架构和 SHA-256；缓存缺失或无效时完整重建，Cargo 依赖与编译产物另外缓存。
+
+Rust 和原生端到端测试通过后即保存原生缓存，后续 Go 集成测试失败不会导致再次编译 Rust。即使命中原生缓存，也始终测试服务端信令和启动脚本。独立 P2P 工作流使用同一套前置检查；发布流程只有先通过自己的共用检查，才跳过这次重复检查。没有缓存辅助脚本的旧源码仍走完整构建。首次运行仍是冷构建，缓存命中后的实际耗时需在 Actions 中测量。
 
 ## 📖 服务端命令与参数
 
@@ -131,19 +130,23 @@ agenterm-server -help
 
 `stop` 和 `status` 只接受 `-instance`。其他参数用于 `start` 或 `restart`；修改运行中 runtime 的启动参数需要使用 `restart`。
 
-升级遇到 runtime API 不兼容时，按诊断提示，用兼容旧 runtime 的服务端程序，以相同用户执行 `agenterm-server stop -instance <实例名>`，再启动新程序。旧程序不可用时，按诊断提示识别并停止旧 runtime。停止 runtime 会断开设备并清除内存中的凭据和会话，升级后需重新创建连接。
+**从 runtime API 12 升级到 13：** 旧 runtime 与新的短码及认证规则不兼容。启动 API 13 服务端前，请用原有的 API 12 服务端程序停止旧 runtime；若旧程序不可用，按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
+
+**从 runtime API 13 升级到 14：** 单设备在线凭证及重连规则需要新 runtime。启动 API 14 前，请用原有的服务端程序停止 API 13 runtime。这会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
+
+**从 runtime API 7 升级到 8：** 先保留现有 API 7 服务端程序，以相同用户执行 `/path/to/api7/agenterm-server stop -instance <实例名>`，待旧 runtime 停止后，再使用 API 8 程序和预期配置启动。API 8 的 `start`、`stop` 和 `restart` 均无法管理 API 7 runtime；如果没有旧程序，请按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。不要为绕过兼容检查而降级认证或向旧 runtime 发送控制凭证。
 
 | 参数 | 说明 |
 | --- | --- |
 | `-instance` | 实例名称，用于区分独立服务；默认 `default`。 |
 | `-listen` | 服务监听地址；默认 `127.0.0.1:8080`。 |
 | `-public-url` | 对外访问地址，默认 `http://127.0.0.1:8080`；只设置地址，不会启用 HTTPS，传输加密由部署环境负责。 |
-| `-url-prefix` | MCP、连接与下载等应用路由的路径前缀，默认 `/agenterm`，使用 `/` 表示根路径。健康检查使用固定根路径。 |
+| `-url-prefix` | 所有接口的 URL 路径前缀；默认 `/agenterm`，使用 `/` 表示根路径。 |
 | `-passwd` | 直接指定 MCP 管理密钥。密钥会出现在启动进程的命令行中。 |
 | `-passwd-file` | 从文件读取单行 MCP 管理密钥。与 `-passwd` 二选一。启用认证且两项都省略时，首次启动自动生成密钥。 |
 | `-no-password` | 允许无需密码访问 MCP 管理接口。与 `-passwd`、`-passwd-file` 互斥。 |
-| `-max-clients-per-ip` | 每个邀请创建者 IP 的客户端连接上限。WebSocket 握手期间预留名额。默认 `0` 表示不限制。 |
-| `-client-ip-header` | 默认留空，使用直连对端 IP。设置后，反向代理须覆盖该头并只写入一个 IP，同时限制客户端直连后端。 |
+| `-max-clients-per-ip` | 每个邀请创建者 IP 的最大在线客户端数；默认 `0`，表示不限制。 |
+| `-client-ip-header` | 用于读取客户端 IP 的可信请求头，头内须为单个 IP；默认留空，使用直连对端 IP。 |
 | `-enable-short-code` | 启用短码生成和兑换；默认禁用短码。 |
 | `-stdio` | 同时通过标准输入输出提供 MCP 管理接口，信任启动进程的用户。 |
 
