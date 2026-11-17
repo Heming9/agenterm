@@ -88,12 +88,18 @@ impl Config {
 }
 
 pub(crate) fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    let builder = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(4)))
         .max_redirects(0)
-        .http_status_as_error(false)
-        .build()
-        .into()
+        .http_status_as_error(false);
+    #[cfg(any(target_os = "macos", windows))]
+    let builder = builder.tls_config(
+        ureq::tls::TlsConfig::builder()
+            .provider(ureq::tls::TlsProvider::NativeTls)
+            .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+            .build(),
+    );
+    builder.build().into()
 }
 
 pub fn register(config: &mut Config) -> Result<(), Box<dyn std::error::Error>> {
