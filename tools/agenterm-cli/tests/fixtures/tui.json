@@ -1,5 +1,5 @@
 {
-  "version": "0.10.17",
+  "version": "0.20.0",
   "screens": [
     {
       "language": "en",
@@ -7,7 +7,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                     Disconnected",
+        " Agenterm v0.20.0                                                                      Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e Paste connection token, short code, or short-code address",
@@ -31,7 +31,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                     Disconnected",
+        " Agenterm v0.20.0                                                                      Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e example.com/c/ABC123",
@@ -55,7 +55,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                     Disconnected",
+        " Agenterm v0.20.0                                                                      Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e ABC123",
@@ -79,7 +79,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                     Disconnected",
+        " Agenterm v0.20.0                                                                      Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e Paste connection token, short code, or short-code address",
@@ -103,7 +103,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                       ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connecting",
+        " Agenterm v0.20.0                        ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connecting",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -127,7 +127,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17            ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0             ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -151,7 +151,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17            ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0             ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▸ 你好 world [2 lines]",
@@ -175,7 +175,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17            ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0             ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▾ 你好 world",
@@ -199,7 +199,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                ws://127.0.0.1:18743/agenterm/client/abc123  ·  Reconnecting · 3s",
+        " Agenterm v0.20.0                 ws://127.0.0.1:18743/agenterm/client/abc123  ·  Reconnecting · 3s",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -223,7 +223,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17            ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0             ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "[4/4] Connected",
         "",
@@ -247,7 +247,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                 Disconnected",
+        " Agenterm v0.20.0                                                  Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e Paste connection token, short code, or short-code address",
@@ -271,7 +271,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                 Disconnected",
+        " Agenterm v0.20.0                                                  Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e example.com/c/ABC123",
@@ -295,7 +295,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                 Disconnected",
+        " Agenterm v0.20.0                                                  Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e ABC123",
@@ -319,7 +319,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                 Disconnected",
+        " Agenterm v0.20.0                                                  Disconnected",
         " ──────────────────────────────────────────────────────────────────────────────",
         " Token or code:",
         " \u003e Paste connection token, short code, or short-code address",
@@ -343,7 +343,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17   ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connecting",
+        " Agenterm v0.20.0    ws://127.0.0.1:18743/agenterm/client/abc123  ·  Connecting",
         " ──────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -367,7 +367,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agent…/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agente…/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -391,7 +391,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agent…/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agente…/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▸ 你好 world [2 lines]",
@@ -415,7 +415,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agent…/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agente…/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▾ 你好 world",
@@ -439,7 +439,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agenterm/…/abc123  ·  Reconnecting · 3s",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agenterm/c…/abc123  ·  Reconnecting · 3s",
         " ──────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -463,7 +463,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agent…/abc123  ·  Connected (temporary)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agente…/abc123  ·  Connected (temporary)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "[4/4] Connected",
         "",
@@ -487,7 +487,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17         Disconnected",
+        " Agenterm v0.20.0          Disconnected",
         " ──────────────────────────────────────",
         " Token or code:",
         " \u003e Paste connection token, short code,",
@@ -511,7 +511,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17         Disconnected",
+        " Agenterm v0.20.0          Disconnected",
         " ──────────────────────────────────────",
         " Token or code:",
         " \u003e example.com/c/ABC123",
@@ -535,7 +535,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17         Disconnected",
+        " Agenterm v0.20.0          Disconnected",
         " ──────────────────────────────────────",
         " Token or code:",
         " \u003e ABC123",
@@ -559,7 +559,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17         Disconnected",
+        " Agenterm v0.20.0          Disconnected",
         " ──────────────────────────────────────",
         " Token or code:",
         " \u003e Paste connection token, short code,",
@@ -583,7 +583,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 abc1…  ·  Connecting",
+        " Agenterm v0.20.0 abc123  ·  Connecting",
         " ──────────────────────────────────────",
         "",
         "",
@@ -607,7 +607,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 Connected (temporary)",
+        " Agenterm v0.20.0 Connected (temporary)",
         " ──────────────────────────────────────",
         "",
         "",
@@ -631,7 +631,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 Connected (temporary)",
+        " Agenterm v0.20.0 Connected (temporary)",
         " ──────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▸ 你好 world [2 lines]",
@@ -655,7 +655,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 Connected (temporary)",
+        " Agenterm v0.20.0 Connected (temporary)",
         " ──────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▾ 你好 world",
@@ -679,7 +679,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17    Reconnecting · 3s",
+        " Agenterm v0.20.0     Reconnecting · 3s",
         " ──────────────────────────────────────",
         "",
         "",
@@ -703,7 +703,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 Connected (temporary)",
+        " Agenterm v0.20.0 Connected (temporary)",
         " ──────────────────────────────────────",
         "[4/4] Connected",
         "",
@@ -1207,7 +1207,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                           已断开",
+        " Agenterm v0.20.0                                                                            已断开",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e 请粘贴连接令牌、短码或短码地址",
@@ -1231,7 +1231,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                           已断开",
+        " Agenterm v0.20.0                                                                            已断开",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e example.com/c/ABC123",
@@ -1255,7 +1255,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                           已断开",
+        " Agenterm v0.20.0                                                                            已断开",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e ABC123",
@@ -1279,7 +1279,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                                           已断开",
+        " Agenterm v0.20.0                                                                            已断开",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e 请粘贴连接令牌、短码或短码地址",
@@ -1303,7 +1303,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                         ws://127.0.0.1:18743/agenterm/client/abc123  ·  正在连接",
+        " Agenterm v0.20.0                          ws://127.0.0.1:18743/agenterm/client/abc123  ·  正在连接",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -1327,7 +1327,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                    ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0                     ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -1351,7 +1351,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                    ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0                     ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▸ 你好 world [2 行]",
@@ -1375,7 +1375,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                    ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0                     ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▾ 你好 world",
@@ -1399,7 +1399,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                     ws://127.0.0.1:18743/agenterm/client/abc123  ·  重连中 · 3秒",
+        " Agenterm v0.20.0                      ws://127.0.0.1:18743/agenterm/client/abc123  ·  重连中 · 3秒",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -1423,7 +1423,7 @@
       "width": 100,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                    ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0                     ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────────────────────────",
         "[4/4] 连接成功",
         "",
@@ -1447,7 +1447,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                       已断开",
+        " Agenterm v0.20.0                                                        已断开",
         " ──────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e 请粘贴连接令牌、短码或短码地址",
@@ -1471,7 +1471,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                       已断开",
+        " Agenterm v0.20.0                                                        已断开",
         " ──────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e example.com/c/ABC123",
@@ -1495,7 +1495,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                       已断开",
+        " Agenterm v0.20.0                                                        已断开",
         " ──────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e ABC123",
@@ -1519,7 +1519,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17                                                       已断开",
+        " Agenterm v0.20.0                                                        已断开",
         " ──────────────────────────────────────────────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e 请粘贴连接令牌、短码或短码地址",
@@ -1543,7 +1543,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17     ws://127.0.0.1:18743/agenterm/client/abc123  ·  正在连接",
+        " Agenterm v0.20.0      ws://127.0.0.1:18743/agenterm/client/abc123  ·  正在连接",
         " ──────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -1567,7 +1567,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agenterm/clie…/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -1591,7 +1591,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agenterm/clie…/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▸ 你好 world [2 行]",
@@ -1615,7 +1615,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agenterm/clie…/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▾ 你好 world",
@@ -1639,7 +1639,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agenterm/client/abc123  ·  重连中 · 3秒",
+        " Agenterm v0.20.0  ws://127.0.0.1:18743/agenterm/client/abc123  ·  重连中 · 3秒",
         " ──────────────────────────────────────────────────────────────────────────────",
         "",
         "",
@@ -1663,7 +1663,7 @@
       "width": 80,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ws://127.0.0.1:18743/agenterm/clie…/abc123  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ws://127.0.0.1:18743/agenterm/client/abc123  ·  已连接 (临时)",
         " ──────────────────────────────────────────────────────────────────────────────",
         "[4/4] 连接成功",
         "",
@@ -1687,7 +1687,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17               已断开",
+        " Agenterm v0.20.0                已断开",
         " ──────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e 请粘贴连接令牌、短码或短码地址",
@@ -1711,7 +1711,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17               已断开",
+        " Agenterm v0.20.0                已断开",
         " ──────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e example.com/c/ABC123",
@@ -1735,7 +1735,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17               已断开",
+        " Agenterm v0.20.0                已断开",
         " ──────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e ABC123",
@@ -1759,7 +1759,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17               已断开",
+        " Agenterm v0.20.0                已断开",
         " ──────────────────────────────────────",
         " 连接 Token / 短码：",
         " \u003e 请粘贴连接令牌、短码或短码地址",
@@ -1783,7 +1783,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17  abc123  ·  正在连接",
+        " Agenterm v0.20.0 …/abc123  ·  正在连接",
         " ──────────────────────────────────────",
         "",
         "",
@@ -1807,7 +1807,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 a…  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ab…  ·  已连接 (临时)",
         " ──────────────────────────────────────",
         "",
         "",
@@ -1831,7 +1831,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 a…  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ab…  ·  已连接 (临时)",
         " ──────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▸ 你好 world [2 行]",
@@ -1855,7 +1855,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 a…  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ab…  ·  已连接 (临时)",
         " ──────────────────────────────────────",
         "12:34:56 $ printf '你好 world\\n'",
         "▾ 你好 world",
@@ -1879,7 +1879,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 ab…  ·  重连中 · 3秒",
+        " Agenterm v0.20.0 abc…  ·  重连中 · 3秒",
         " ──────────────────────────────────────",
         "",
         "",
@@ -1903,7 +1903,7 @@
       "width": 40,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 a…  ·  已连接 (临时)",
+        " Agenterm v0.20.0 ab…  ·  已连接 (临时)",
         " ──────────────────────────────────────",
         "[4/4] 连接成功",
         "",
@@ -1927,7 +1927,7 @@
       "width": 25,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 已断开",
+        " Agenterm v0.20.0 已断开",
         " ───────────────────────",
         " 连接 Token / 短码：",
         " \u003e",
@@ -1951,7 +1951,7 @@
       "width": 25,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 已断开",
+        " Agenterm v0.20.0 已断开",
         " ───────────────────────",
         " 连接 Token / 短码：",
         " \u003e xample.com/c/ABC123",
@@ -1975,7 +1975,7 @@
       "width": 25,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 已断开",
+        " Agenterm v0.20.0 已断开",
         " ───────────────────────",
         " 连接 Token / 短码：",
         " \u003e ABC123",
@@ -1999,7 +1999,7 @@
       "width": 25,
       "height": 16,
       "rows": [
-        " Agenterm v0.10.17 已断开",
+        " Agenterm v0.20.0 已断开",
         " ───────────────────────",
         " 连接 Token / 短码：",
         " \u003e",
