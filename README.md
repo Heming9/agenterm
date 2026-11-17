@@ -30,8 +30,13 @@
 </p>
 
 1. **Connect your agent:** Add the MCP service `https://agenterm.net/mcp` to an agent that supports Streamable HTTP. [See configuration examples](docs/usage.md#connect-your-agent).
-2. **Invite and authorize:** Ask the agent to create an invitation and privately share the connection command. The other person runs it and authorizes access.
+2. **Invite and authorize:** Ask the agent to create an invitation and privately share the invitation page's short link containing a six-character code, for example `agenterm.net/c/xef2k1`. The other person opens it on the computer that needs assistance; the page guides them through authorizing remote access.
 3. **Start assisting:** Once the device connects, tell the agent what to do. The other person can see commands and output and disconnect at any time.
+
+<p align="center">
+  <img src="docs/design/invitepage.png" alt="Agenterm invitation page with connection options and commands" width="800">
+</p>
+<p align="center">Share the short invitation link so the recipient can follow the page to authorize remote access.</p>
 
 Connections grant terminal access with the target computer's current user permissions. Only authorize people you trust.
 

@@ -30,8 +30,13 @@
 </p>
 
 1. **接入 Agent：** 在支持 Streamable HTTP 的 Agent 中添加 MCP 服务 `https://agenterm.net/mcp`。[查看配置示例](docs/usage.zh-CN.md#接入-agent)
-2. **邀请并授权：** 让 Agent 创建邀请，将连接命令私下发给对方。对方运行命令并确认授权。
+2. **邀请并授权：** 让 Agent 创建邀请，将包含六位短码的邀请页短链接（例如 `agenterm.net/c/xef2k1`）私下发给对方。对方在需要协助的电脑上打开链接，页面会引导对方完成远程授权。
 3. **开始协助：** 设备上线后，告诉 Agent 要完成的任务。对方可查看命令和输出，并随时断开。
+
+<p align="center">
+  <img src="docs/design/invitepage_cn.png" alt="Agenterm 邀请页面，展示连接选项和命令" width="800">
+</p>
+<p align="center">将邀请页短链接发给对方，页面会引导对方完成远程授权。</p>
 
 连接授予目标电脑当前用户的终端权限，请只向信任的人授权。
 
