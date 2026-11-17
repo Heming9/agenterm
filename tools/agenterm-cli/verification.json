@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "scope": "Historical initial-prototype measurements and runtime tests before the lifecycle review fixes; not current-source artifact verification.",
+  "date": "2026-11-18",
+  "wire_version": "0.10.17",
+  "rust_version": "1.99.1",
+  "packed_executable": false,
+  "artifacts": [
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "file": "target/cross/windows-amd64/agenterm-cli.exe",
+      "bytes": 686080,
+      "KiB": 670.0,
+      "xz_bytes": 291648,
+      "sha256": "125d7305b59e914ca435f074aafda74980a2b7dd45c9fc5d8081ba877eb670bc",
+      "build_location": "local macOS host",
+      "runtime_validation": "Windows 10 x64 native",
+      "unit_tests": {
+        "passed": 8,
+        "failed": 0
+      },
+      "protocol_fixtures": [
+        "WS",
+        "WSS with explicit private CA",
+        "invitation denial",
+        "heartbeat",
+        "persistent shell state",
+        "interactive input",
+        "reconnection",
+        "stop"
+      ],
+      "msvc_crt_static": true,
+      "system_dlls": [
+        "bcryptprimitives.dll",
+        "KERNEL32.dll",
+        "secur32.dll",
+        "crypt32.dll",
+        "ntdll.dll",
+        "api-ms-win-core-synch-l1-2-0.dll",
+        "WS2_32.dll"
+      ],
+      "os_version": "10.0.19045",
+      "installed_test_toolchain": "removed after testing"
+    },
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "file": "target/cross/linux-amd64/agenterm-cli",
+      "bytes": 808064,
+      "KiB": 789.12,
+      "xz_bytes": 322892,
+      "sha256": "87cca512a14d44c82e367337a47093c7d63a7b70fffc928a060694d8cf162f13",
+      "build_location": "local Docker",
+      "runtime_validation": "QEMU x86-64 in local ARM64 Docker",
+      "unit_tests": {
+        "passed": 8,
+        "failed": 0
+      },
+      "protocol_fixtures": [
+        "WS",
+        "WSS with explicit private CA",
+        "invitation denial",
+        "heartbeat",
+        "persistent shell state",
+        "interactive input",
+        "reconnection",
+        "stop"
+      ],
+      "real_server_MCP": "passed",
+      "runtime_dependencies": [
+        "libssl.so.3",
+        "libcrypto.so.3",
+        "libgcc_s.so.1",
+        "libc.so.6"
+      ],
+      "glibc_minimum": "2.34",
+      "build_distribution": "Debian 12",
+      "openssl_build_version": "3.0.22"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "file": "target/cross/linux-arm64/agenterm-cli",
+      "bytes": 791528,
+      "KiB": 772.98,
+      "xz_bytes": 284000,
+      "sha256": "1a86fbc31df43cd368c7a588020a503ee2eef422d56439f5558a9c5ea54750c1",
+      "build_location": "local Docker",
+      "runtime_validation": "ARM64 Linux in local Docker",
+      "unit_tests": {
+        "passed": 8,
+        "failed": 0
+      },
+      "protocol_fixtures": [
+        "WS",
+        "WSS with explicit private CA",
+        "invitation denial",
+        "heartbeat",
+        "persistent shell state",
+        "interactive input",
+        "reconnection",
+        "stop"
+      ],
+      "real_server_MCP": "passed",
+      "runtime_dependencies": [
+        "libssl.so.3",
+        "libcrypto.so.3",
+        "libgcc_s.so.1",
+        "libc.so.6"
+      ],
+      "glibc_minimum": "2.34",
+      "build_distribution": "Debian 12",
+      "openssl_build_version": "3.0.22"
+    }
+  ]
+}
