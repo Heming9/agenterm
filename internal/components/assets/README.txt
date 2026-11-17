@@ -5,15 +5,19 @@ Contents (one shared XZ stream, not nested compressed downloads):
     client-cli/         Six raw Rust CLI executables (Windows names end in .exe)
     p2p-cli/            Six raw P2P executables with OS/architecture names
 
-Build the Rust CLI on each native OS/architecture runner:
+From the repository root, build the Rust CLI on each native OS/architecture runner:
     python3 scripts/build_client.py --output dist
 
-Collect all six executables in dist, then regenerate the embedded bundle
+Collect the six agenterm-client-cli-<platform>-<arch> executables in dist, then
+regenerate the embedded bundle
 while retaining existing native P2P binaries:
     go generate ./internal/components
 
 Update P2P from all six verified native build outputs and pack all six Rust CLIs:
-    python3 scripts/build_components.py --client-dir dist --p2p-assets build-macos-* build-windows-* build-linux-*
+    python3 scripts/build_components.py --client-dir dist --p2p-assets dist/p2p-assets
+    python3 scripts/build_server.py --output dist/agenterm-server
+
+See tools/p2p-cli/README.md for building and merging the native P2P assets.
 
 Packing rejects distributions missing any OS/architecture combination. The
 Python builder applies strong XZ compression to the solid bundle at build time.
@@ -40,5 +44,18 @@ needs to be installed. Cache validation always uses the executable's source hash
 A release with existing CLI binaries can use --client-dir and --download-output.
 The Go packer and HTTP download path share the deterministic per-file encoders.
 GitHub Release publishes only original executables and version metadata.
-HTTP distribution generates archives only on demand. scripts/build_server.py prepares raw sources for local build/deploy
-helpers without generating all download formats.
+HTTP distribution generates archives on demand. scripts/build_server.py prepares
+raw sources for local build and deployment helpers.
+
+Native P2P caching for CI
+
+The native artifact cache fingerprints the component source, validation and
+packaging inputs, Rust version, runner and target. Restore verifies the version,
+binary architecture and SHA-256. Invalid or missing artifacts trigger a native
+build. Cargo dependencies and target outputs use a separate cache.
+
+The P2P workflow saves a verified native artifact after Rust and native
+end-to-end checks. Go signaling and bootstrap checks still run on cache hits.
+The release workflow runs the shared checks in parallel with the builds and
+waits for the checks and packaged server before publication. See
+.github/workflows/p2p-cli.yml and .github/workflows/release.yml.
