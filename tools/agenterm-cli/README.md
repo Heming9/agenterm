@@ -1,14 +1,16 @@
-# Rust CLI prototype
+# Rust CLI
 
-An independent, plain-terminal client for the existing Agenterm server. The Go
-client and release/install flows remain the default. It uses no TUI framework
-or asynchronous runtime.
+An independent Rust client for the existing Agenterm server, with a Ratatui /
+Crossterm interface matching the Go CLI. The Go client and release/install flows
+remain the default. Networking and shell management use threads, with no
+asynchronous runtime.
 
 ## Build and run
 
 Requires a current stable Rust toolchain (tested with Rust 1.99.1). `build.rs`
-reads the wire version from `internal/version/version.go`, so build inside this
-repository. Dependencies are pinned in `Cargo.lock`.
+reads the wire version from `internal/version/version.go` and compiles the UI's
+translations from `internal/i18n/messages.json`, so build inside this repository.
+Dependencies are pinned in `Cargo.lock`.
 
 ```sh
 cargo build --release --locked --manifest-path tools/agenterm-cli/Cargo.toml
@@ -26,15 +28,30 @@ tools/agenterm-cli/target/release/agenterm-cli -token https://SERVER/agenterm/c/
 ```
 
 Invitations show the same authorization explanation and temporary/persistent/deny
-choices as the Go plain CLI, using numbered input. Temporary connections disconnect
+choices as the Go CLI, using arrow keys on a terminal and numbered input when
+redirected. Temporary connections disconnect
 after five minutes of inactivity, excluding time spent running commands. The
-`-consent-confirmed` installer flag requires `-invite`. All output is plain; the
-compatible `-plain` flag is accepted. Ctrl+C disconnects and stops owned shells.
+`-consent-confirmed` installer flag requires `-invite`. The interactive interface
+is the default when both stdin and stdout are terminals; `-plain` or redirected
+input/output selects plain output. Ctrl+C disconnects and stops owned shells.
 
 `AGENTERM_LANG=zh-CN` selects Chinese (`LANG` / `LC_ALL` are also recognized).
-The authorization wording, connection steps, command headers, and completion
-footers follow the Go client. Terminal output scrolls naturally; subdued ANSI
-colors are used only on a terminal, respecting `NO_COLOR` and `TERM=dumb`.
+Authorization text and connection menus use the same translations as Go. The TUI
+has the same header, dividers, input form, connection mode and server history
+selectors, status colors, command counter and latency footer. It adapts to window
+size and terminal background; `AGENTERM_THEME=light` / `dark` overrides background
+detection. `NO_COLOR` and `TERM=dumb` disable colors while retaining visible menu
+and text-selection highlights.
+
+Commands and output appear in a bounded 10 MiB log with Go's timestamps, spacing,
+wrapping and initial multiline folding. Click a folded block to expand/collapse;
+use arrows, PageUp/PageDown, Home/End or the mouse wheel to scroll. Drag to select
+and copy, including across wrapped lines; dragging beyond the log scrolls the
+selection. Esc clears the selection, Ctrl+C retries copying while a selection is
+active, otherwise it disconnects and returns to the connection form. On that
+form Ctrl+C clears the token first, then quits. Clipboard writes use platform
+commands locally and OSC 52 over SSH (including tmux/screen). Plain mode retains
+natural terminal scrollback and command completion footers.
 
 ## Implemented
 
@@ -65,7 +82,7 @@ machine needs the matching OpenSSL shared libraries. This is not a fully static,
 dependency-free Linux executable. Build Linux binaries on the intended baseline
 distribution. A Linux/macOS/Windows artifact is built separately for each CPU.
 
-The measured Linux builds require glibc 2.34 or newer, OpenSSL 3, and
+The historical plain-client Linux builds require glibc 2.34 or newer, OpenSSL 3, and
 `libgcc_s.so.1`. The Windows x64 build statically links the MSVC CRT and imports
 only Windows system DLLs; it does not require a separate VC runtime DLL.
 
@@ -74,7 +91,7 @@ the system trust store. `AGENTERM_POWERSHELL` can select a PowerShell executable
 on Windows. Unix supports sh/bash/zsh and otherwise uses `/bin/sh`.
 
 Not ported yet: P2P bootstrap (not advertised to the server), deep-link
-registration/launch, elevation/relaunch, rich TUI controls, proxy configuration,
+registration/launch, elevation/relaunch, proxy configuration,
 fish integration, or Windows legacy-code-page output decoding. Session behavior
 has dedicated tests, but this is not yet a complete parity replacement for Go.
 Errors currently use English where there is no ported localized message.
@@ -85,6 +102,8 @@ Errors currently use English where there is no ported localized message.
 cargo fmt --check --manifest-path tools/agenterm-cli/Cargo.toml
 cargo clippy --locked --manifest-path tools/agenterm-cli/Cargo.toml --all-targets -- -D warnings
 cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml
+AGENTERM_LANG=en cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
+AGENTERM_LANG=zh-CN cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
 cargo build --release --locked --manifest-path tools/agenterm-cli/Cargo.toml
 
 # Real Go token encoder + HTTP/WebSocket/TLS server fixtures.
@@ -99,17 +118,31 @@ AGENTERM_GO_SERVER="$PWD/tools/agenterm-cli/target/agenterm-server" \
   go test -v ./tools/agenterm-cli/tests
 
 python3 tools/agenterm-cli/measure.py
+
+# Regenerate the screen references directly from the Go TUI after intentional UI changes.
+python3 tools/agenterm-cli/tests/generate_tui_reference.py
 ```
 
 The tests use local servers, a temporary home, and an explicitly trusted temporary
-certificate. The full-server test owns a uniquely named instance and stops it on
-cleanup. No production server or system certificate-store changes are involved.
+certificate. On macOS/Linux, PTY integration tests exercise actual authorization,
+connection, latency, log folding, mouse selection / OSC 52, reconnect, disconnect,
+and reuse of redeemed invitations. They do not modify the system clipboard.
+One hundred reference screens cover English/Chinese, five terminal widths, and
+ten UI states, compared with the actual Go renderer. The full-server test owns a
+uniquely named instance and stops it on cleanup. No production server or system
+certificate-store changes are involved.
 
 The initial prototype passed the integration suite on macOS ARM64 and, under
 Rosetta, macOS x86-64. It also passed unit and HTTP/WebSocket/TLS tests on Windows
 10 x64, and unit/fixture/full runtime-MCP tests in local Linux Docker (x64 through
 QEMU, ARM64 directly). `verification.json` records those historical artifacts;
 their sizes and hashes do not describe subsequent source revisions.
+
+The Ratatui rewrite passed native unit, PTY, protocol and full-runtime/MCP tests
+on macOS ARM64, plus unit tests on macOS x86-64 through Rosetta. Its Windows x64
+release and test executables were cross-compiled; Windows runtime tests have not
+been rerun for this rewrite. Linux runtime tests for the TUI remain unverified
+because the local Docker daemon was unavailable.
 
 The reviewed source adds regression coverage for idle expiry across reconnects
 and Windows descendant cleanup after shell exit. The revised source passed

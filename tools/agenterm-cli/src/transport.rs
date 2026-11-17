@@ -150,6 +150,7 @@ struct Failure {
     message: String,
     permanent: bool,
     retry_after: u64,
+    online: Duration,
 }
 impl From<String> for Failure {
     fn from(message: String) -> Self {
@@ -157,6 +158,7 @@ impl From<String> for Failure {
             message,
             permanent: false,
             retry_after: 0,
+            online: Duration::ZERO,
         }
     }
 }
@@ -181,7 +183,7 @@ impl IdleTracker {
             std::thread::spawn(move || {
                 while !done.load(Ordering::SeqCst) && !stopped.load(Ordering::SeqCst) {
                     if started.load(Ordering::SeqCst) && manager.idle_for() >= timeout {
-                        ui::line(
+                        manager.reporter().message(
                             "Disconnected after 5 minutes of inactivity.",
                             "连接已因 5 分钟无操作自动断开。",
                         );
@@ -235,7 +237,7 @@ pub fn run(
     let mut delay = 1;
     let mut attempt = 0;
     while !stopped.load(Ordering::SeqCst) {
-        let started = Instant::now();
+        manager.reporter().connecting();
         match once(t, manager, stopped, &idle, invited, &mut resume) {
             Ok(()) => return Ok(()),
             Err(e) if stopped.load(Ordering::SeqCst) => {
@@ -244,25 +246,18 @@ pub fn run(
             }
             Err(e) if e.permanent => return Err(e.message),
             Err(e) => {
-                if started.elapsed().as_secs() >= 60 {
+                if e.online.as_secs() >= 60 {
                     delay = 1;
                     attempt = 0;
                 }
                 attempt += 1;
                 let wait = delay.max(e.retry_after).min(300);
-                println!(
-                    "\n[Agenterm] {}",
+                manager.reporter().retry(
                     if ui::zh() {
-                        format!(
-                            "连接断开或失败：{}。第 {attempt} 次重试将在 {wait}s 后开始。",
-                            e.message
-                        )
+                        format!("连接断开或失败（已连接 {}）：{}。第 {attempt} 次重试将在 {wait}s 后开始。", duration_text(e.online), e.message)
                     } else {
-                        format!(
-                            "Connection lost or failed: {}. Retry #{attempt} in {wait}s.",
-                            e.message
-                        )
-                    }
+                        format!("Connection lost or failed (online {}): {}. Retry #{attempt} in {wait}s.", duration_text(e.online), e.message)
+                    }, wait,
                 );
                 let deadline = Instant::now() + Duration::from_secs(wait);
                 while Instant::now() < deadline && !stopped.load(Ordering::SeqCst) {
@@ -346,6 +341,7 @@ fn once(
                 return Failure {
                     message: format!("server rejected connection (HTTP {status})"),
                     permanent: !(status == 408 || status == 429 || status >= 500),
+                    online: Duration::ZERO,
                     retry_after: r
                         .headers()
                         .get("retry-after")
@@ -371,12 +367,14 @@ fn once(
         message,
         permanent: true,
         retry_after: 0,
+        online: Duration::ZERO,
     })?;
     if header("x-agenterm-client-api") != "1" {
         return Err(Failure {
             message: "server requires a different client API".into(),
             permanent: true,
             retry_after: 0,
+            online: Duration::ZERO,
         });
     }
     *resume = header("x-agenterm-resume-credential").into();
@@ -390,21 +388,12 @@ fn once(
     }
     .map_err(|e| e.to_string())?;
     let _ = crate::storage::remember(&t.address);
-    if invited {
-        ui::line(
-            "[4/4] Connected. Close the client to disconnect.",
-            "[4/4] 连接成功。关闭客户端即可断开连接。",
-        );
-    } else {
-        ui::line(
-            "[Agenterm] Connected. Commands from the server will appear here.",
-            "[Agenterm] 已连接。服务器的命令将显示在这里。",
-        );
-    }
+    manager.reporter().connected(invited);
     let (sender, receiver) = mpsc::sync_channel::<(String, Value)>(32);
     let mut pending: HashMap<String, Arc<AtomicBool>> = HashMap::new();
     let mut last_frame = Instant::now();
     idle.connected();
+    let online = Instant::now();
     let result = (|| -> Attempt {
         while !stopped.load(Ordering::SeqCst) {
             while let Ok((id, value)) = receiver.try_recv() {
@@ -449,6 +438,14 @@ fn once(
                                         let _ = sender.send((id, reply));
                                     });
                                 }
+                                "latency" => {
+                                    if let Some(ms) = value
+                                        .get("latency_ms")
+                                        .map_or(Some(0), serde_json::Value::as_u64)
+                                    {
+                                        manager.reporter().send(ui::Event::Latency(ms));
+                                    }
+                                }
                                 "api_cancel" => {
                                     if let Some(c) = pending.get(&id) {
                                         c.store(true, Ordering::SeqCst);
@@ -467,6 +464,7 @@ fn once(
                                 message: format!("server closed connection ({code})"),
                                 permanent: [1002, 1003, 1008].contains(&code),
                                 retry_after: 0,
+                                online: Duration::ZERO,
                             });
                         }
                         _ => {
@@ -490,7 +488,26 @@ fn once(
         canceled.store(true, Ordering::SeqCst);
     }
     let _ = ws.close(None);
-    result
+    result.map_err(|mut error: Failure| {
+        error.online = online.elapsed();
+        error
+    })
+}
+
+fn duration_text(duration: Duration) -> String {
+    let seconds = duration.as_secs() + u64::from(duration.subsec_millis() >= 500);
+    if seconds >= 3600 {
+        format!(
+            "{}h{}m{}s",
+            seconds / 3600,
+            seconds % 3600 / 60,
+            seconds % 60
+        )
+    } else if seconds >= 60 {
+        format!("{}m{}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 #[cfg(test)]

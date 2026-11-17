@@ -100,6 +100,7 @@ impl Address {
 
 #[derive(Clone, Debug)]
 pub struct Token {
+    pub encoded: String,
     pub address: Address,
     pub secret: String,
     pub identifier: String,
@@ -197,6 +198,7 @@ impl Token {
         };
         let address = Address::parse(&format!("{scheme}://{host}{port}{prefix}/client"))?;
         Ok(Self {
+            encoded: raw.trim().into(),
             address,
             secret,
             identifier,

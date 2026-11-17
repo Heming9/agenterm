@@ -39,6 +39,7 @@ struct ManagerInner {
     stopped: Arc<AtomicBool>,
     closed: AtomicBool,
     activity: Arc<Mutex<Instant>>,
+    reporter: ui::Reporter,
 }
 struct Terminal {
     id: String,
@@ -50,6 +51,7 @@ struct Terminal {
     marker: Vec<u8>,
     activity: Arc<Mutex<Instant>>,
     exited: AtomicBool,
+    reporter: ui::Reporter,
     #[cfg(unix)]
     pty: std::fs::File,
     #[cfg(windows)]
@@ -153,11 +155,19 @@ fn wait_ms(n: u64) -> Result<Duration> {
 }
 
 impl Manager {
+    #[cfg(test)]
     pub fn new(stopped: Arc<AtomicBool>) -> Self {
+        Self::with_reporter(stopped, ui::Reporter::default())
+    }
+    pub fn reporter(&self) -> &ui::Reporter {
+        &self.inner.reporter
+    }
+    pub fn with_reporter(stopped: Arc<AtomicBool>, reporter: ui::Reporter) -> Self {
         Self {
             inner: Arc::new(ManagerInner {
                 sessions: Mutex::new(BTreeMap::new()),
                 stopped,
+                reporter,
                 closed: AtomicBool::new(false),
                 activity: Arc::new(Mutex::new(Instant::now())),
             }),
@@ -287,6 +297,7 @@ impl Manager {
                 retained,
                 deadline,
                 self.inner.activity.clone(),
+                self.inner.reporter.clone(),
             )?;
             sessions.insert(id.clone(), t.clone());
             t
@@ -311,14 +322,17 @@ impl Manager {
         state.code = None;
         let command_id = state.command_id.clone();
         let cursor = state.offset + state.output.len() as u64;
+        self.inner.reporter.started(&command_id, &a.command);
         drop(state);
         drop(sessions);
         self.touch();
-        ui::started(&a.command);
         let worker = t.clone();
         std::thread::spawn(move || {
             if let Err(e) = worker.submit(&a.command) {
-                ui::output(format!("[Agenterm] {e}\n").as_bytes());
+                worker.reporter.output(
+                    &worker.state.lock().unwrap().command_id,
+                    format!("[Agenterm] {e}\n").as_bytes(),
+                );
                 worker.stop();
             }
         });
@@ -504,6 +518,7 @@ impl Terminal {
         retained: bool,
         deadline: Instant,
         activity: Arc<Mutex<Instant>>,
+        reporter: ui::Reporter,
     ) -> Result<Arc<Self>> {
         let directory = std::env::temp_dir().join(format!(
             "agenterm-rust-{}-{}",
@@ -544,6 +559,7 @@ impl Terminal {
             directory,
             marker,
             activity,
+            reporter,
             exited: AtomicBool::new(false),
             #[cfg(unix)]
             pty: spawned.pty,
@@ -662,8 +678,8 @@ impl Terminal {
             state.offset += n as u64;
         }
         self.changed.notify_all();
+        self.reporter.output(&state.command_id, bytes);
         drop(state);
-        ui::output(bytes);
     }
     fn prompt(&self, code: i32) {
         let mut state = self.state.lock().unwrap();
@@ -683,8 +699,8 @@ impl Terminal {
         let close = !state.retained;
         *self.activity.lock().unwrap() = Instant::now();
         self.changed.notify_all();
+        self.reporter.finished(&state.command_id, code);
         drop(state);
-        ui::finished(code);
         if close {
             self.stop();
         }
@@ -746,10 +762,10 @@ impl Terminal {
         state.ended = Some(Instant::now());
         *self.activity.lock().unwrap() = Instant::now();
         self.changed.notify_all();
-        drop(state);
         if interrupted {
-            ui::finished(self.state.lock().unwrap().shell_code);
+            self.reporter.finished(&state.command_id, state.shell_code);
         }
+        drop(state);
         let _ = fs::remove_dir_all(&self.directory);
     }
     fn parse_output(&self, pending: &mut Vec<u8>) {

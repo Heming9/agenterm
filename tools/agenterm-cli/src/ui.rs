@@ -2,6 +2,10 @@ use crate::protocol::{Result, VERSION};
 use std::io::{self, IsTerminal, Write};
 use std::sync::OnceLock;
 
+mod reporter;
+pub use reporter::{Event, Reporter, timestamp as reporter_timestamp};
+include!(concat!(env!("OUT_DIR"), "/ui_messages.rs"));
+
 pub fn zh() -> bool {
     static ZH: OnceLock<bool> = OnceLock::new();
     *ZH.get_or_init(|| {
@@ -29,22 +33,19 @@ pub fn input(prompt: &str) -> Result<String> {
     Ok(s.trim().into())
 }
 pub fn consent(server: &str) -> Result<Option<bool>> {
-    println!(
-        "{}\n\n{}{}\n{}\n",
-        text("⚠️ Remote control authorization", "⚠️ 远程控制授权"),
-        text("Server: ", "服务器："),
-        server,
-        text(
-            "The server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.",
-            "连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。"
-        )
+    print!(
+        "{}",
+        tr("remote.control.authorization.prompt").replace("%s", server)
     );
-    line("Choose authorization:", "选择授权方式：");
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        return crate::tui::consent();
+    }
+    println!("\n{}", tr("installer.consent.menu"));
     println!(
-        "  1. {}\n  2. {}\n  3. {}",
-        text("Allow authorization (temporary)", "允许授权（临时连接）"),
-        text("Allow authorization (persistent)", "允许授权（持久连接）"),
-        text("Deny authorization", "拒绝授权")
+        "1. {}    2. {}    3. {}",
+        tr("installer.consent.temporary"),
+        tr("installer.consent.persistent"),
+        tr("installer.consent.no")
     );
     Ok(
         match input(text("Enter 1, 2 or 3: ", "请输入 1、2 或 3："))?.as_str() {
@@ -92,12 +93,15 @@ pub fn output(data: &[u8]) {
     let _ = out.flush();
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Options {
     pub token: String,
     pub invite: String,
     pub temporary: bool,
     pub consent: bool,
+    pub plain: bool,
+    pub token_provided: bool,
+    pub mode_provided: bool,
 }
 impl Options {
     pub fn parse() -> Result<Option<Self>> {
@@ -117,7 +121,7 @@ impl Options {
             match flag {
                 "h" | "help" => {
                     println!(
-                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n\n  -token VALUE              Connection token, short code, or short-code URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (default in this prototype)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
+                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n\n  -token VALUE              Connection token, short code, or short-code URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
                     );
                     return Ok(None);
                 }
@@ -126,9 +130,7 @@ impl Options {
                     return Ok(None);
                 }
                 "plain" => {
-                    if inline.as_deref().is_some_and(|v| v != "true") {
-                        return Err("only plain output is supported".into());
-                    }
+                    o.plain = boolean(inline.as_deref())?;
                 }
                 "consent-confirmed" => {
                     o.consent = match inline.as_deref() {
@@ -142,9 +144,13 @@ impl Options {
                         .or_else(|| args.next())
                         .ok_or_else(|| format!("-{flag} requires a value"))?;
                     match flag {
-                        "token" => o.token = v.trim().into(),
+                        "token" => {
+                            o.token_provided = true;
+                            o.token = v.trim().into();
+                        }
                         "invite" => o.invite = v.trim().into(),
                         _ => {
+                            o.mode_provided = true;
                             o.temporary = match v.as_str() {
                                 "temporary" => true,
                                 "persistent" => false,
@@ -167,5 +173,13 @@ impl Options {
             return Err("-consent-confirmed requires -invite".into());
         }
         Ok(Some(o))
+    }
+}
+
+fn boolean(value: Option<&str>) -> Result<bool> {
+    match value {
+        None | Some("true") => Ok(true),
+        Some("false") => Ok(false),
+        _ => Err("invalid boolean".into()),
     }
 }
