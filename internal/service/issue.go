@@ -30,8 +30,8 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		if owner == "" {
 			return nil, i18n.NewError("client.ip.invalid")
 		}
-		online := s.onlineForIP(owner)
-		if online >= s.maxClientsPerIP {
+		online, occupied := s.slotsForIP(owner)
+		if occupied >= s.maxClientsPerIP {
 			return nil, i18n.NewError("client.ip.limit.reached")
 		}
 		s.trimPending(owner, s.maxClientsPerIP-online-1)

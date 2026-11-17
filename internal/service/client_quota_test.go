@@ -140,9 +140,9 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		s.mu.Lock()
-		n := s.onlineForIP("192.0.2.1")
+		_, occupied := s.slotsForIP("192.0.2.1")
 		s.mu.Unlock()
-		if n == 0 {
+		if occupied == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -160,6 +160,9 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	if clients, err := s.waitForClients(t.Context(), token.Secret, time.Second); err != nil || len(clients) != 1 {
+		t.Fatalf("reconnecting client did not register: %v", err)
+	}
 	s.mu.Lock()
 	_, ok := s.tokens[newInvite["client_token"].(string)]
 	s.mu.Unlock()

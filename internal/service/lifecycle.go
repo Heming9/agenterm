@@ -168,6 +168,7 @@ func runRuntime(ctx context.Context, s *runtimeState, public net.Listener, contr
 	defer func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		s.stopping = true
 		for _, c := range s.clients {
 			_ = c.conn.Close()
 		}

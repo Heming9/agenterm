@@ -71,6 +71,8 @@ type runtimeState struct {
 	clientIPHeader  string                      // empty uses the directly connected peer IP
 	tokens          map[string]string           // full token -> client credential
 	clients         map[string]*client          // six-character client ID -> connection
+	connecting      map[string]int              // client credential -> handshakes in progress
+	stopping        bool                        // guarded by mu
 	clientWaiters   map[string]*clientWaitState // client credential -> active connection waits
 	multiDevice     map[string]bool             // client credential -> multi-device mode
 	mu              sync.Mutex
@@ -107,7 +109,7 @@ func (s *runtimeState) redeemInvitation(w http.ResponseWriter, r *http.Request) 
 		s.mu.Unlock()
 		return
 	}
-	if clientSecret := s.tokens[entry.token]; !s.multiDevice[clientSecret] && s.hasClientLocked(clientSecret) {
+	if clientSecret := s.tokens[entry.token]; !s.multiDevice[clientSecret] && (s.connecting[clientSecret] > 0 || s.hasClientLocked(clientSecret)) {
 		s.mu.Unlock()
 		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
 		return
@@ -209,6 +211,50 @@ func (s *runtimeState) validClientRoute(secret, path string) bool {
 	return false
 }
 
+func (s *runtimeState) reserveConnection(secret, resume string) (*client, string, *controlError) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopping {
+		return nil, "", &controlError{Status: http.StatusServiceUnavailable, Message: http.StatusText(http.StatusServiceUnavailable)}
+	}
+	// A token may have been reclaimed since the initial authentication check.
+	if !s.validSecretLocked(secret) {
+		return nil, "", &controlError{Status: http.StatusUnauthorized, Message: serverText("unauthorized")}
+	}
+	var previous *client
+	if s.multiDevice[secret] {
+		resume = ""
+	} else {
+		if s.connecting[secret] > 0 {
+			return nil, "", &controlError{Status: http.StatusUnauthorized, Message: serverText("unauthorized")}
+		}
+		for _, existing := range s.clients {
+			if existing.secret == secret {
+				previous = existing
+				break
+			}
+		}
+		if previous != nil {
+			hash := sha256.Sum256([]byte(resume))
+			if previous.closing || resume == "" || subtle.ConstantTimeCompare(hash[:], previous.resumeHash[:]) != 1 {
+				return nil, "", &controlError{Status: http.StatusUnauthorized, Message: serverText("unauthorized")}
+			}
+		} else {
+			resume = randomBytes(32)
+		}
+	}
+	if owner := s.clientOwners[secret]; previous == nil && owner != nil && s.maxClientsPerIP > 0 {
+		if _, occupied := s.slotsForIP(owner.ip); occupied >= s.maxClientsPerIP {
+			return nil, "", &controlError{Status: http.StatusTooManyRequests, Message: serverText("client.ip.limit.reached")}
+		}
+	}
+	if s.connecting == nil {
+		s.connecting = make(map[string]int)
+	}
+	s.connecting[secret]++
+	return previous, resume, nil
+}
+
 func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("probe") == "1" {
 		s.probeConnection(w, r)
@@ -222,53 +268,49 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	if !acceptClientVersion(w, r) {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// A token may have been reclaimed since the initial authentication check.
-	if !s.validSecretLocked(secret) {
-		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
+	previous, resume, rejection := s.reserveConnection(secret, r.Header.Get(protocol.ResumeCredentialHeader))
+	if rejection != nil {
+		http.Error(w, rejection.Message, rejection.Status)
 		return
 	}
-	var previous *client
-	resume := r.Header.Get(protocol.ResumeCredentialHeader)
-	if !s.multiDevice[secret] {
-		for _, existing := range s.clients {
-			if existing.secret == secret {
-				previous = existing
-				break
-			}
-		}
-		if previous != nil {
-			hash := sha256.Sum256([]byte(resume))
-			if previous.closing || resume == "" || subtle.ConstantTimeCompare(hash[:], previous.resumeHash[:]) != 1 {
-				http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
-				return
-			}
-		} else {
-			resume = randomBytes(32)
-		}
-	}
-	if owner := s.clientOwners[secret]; previous == nil && owner != nil && s.maxClientsPerIP > 0 && s.onlineForIP(owner.ip) >= s.maxClientsPerIP {
-		http.Error(w, i18n.Text(i18n.Terminal(), "client.ip.limit.reached"), http.StatusTooManyRequests)
-		return
-	}
-	if resume != "" && !s.multiDevice[secret] {
+	if resume != "" {
 		w.Header().Set(protocol.ResumeCredentialHeader, resume)
 	}
 	w.Header().Set(protocol.HeartbeatHeader, "1")
 	w.Header().Set(protocol.ClientAPIHeader, terminal.APIVersion)
-	conn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, w.Header())
+	upgrader := websocket.Upgrader{
+		HandshakeTimeout: protocol.WriteTimeout,
+		CheckOrigin:      func(r *http.Request) bool { return r.Header.Get("Origin") == "" },
+	}
+	conn, err := upgrader.Upgrade(w, r, w.Header())
+	s.mu.Lock()
+	s.connecting[secret]--
+	if s.connecting[secret] == 0 {
+		delete(s.connecting, secret)
+	}
 	if err != nil {
+		s.mu.Unlock()
 		return
 	}
-	if previous != nil {
+	// The handshake can overlap revocation, expiry, or an explicit close of the old device.
+	if s.stopping {
+		s.mu.Unlock()
+		_ = conn.Close()
+		return
+	}
+	if !s.validSecretLocked(secret) || (previous != nil && previous.closing) {
+		s.mu.Unlock()
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "registration cancelled"), time.Now().Add(time.Second))
+		_ = conn.Close()
+		return
+	}
+	if previous != nil && s.clients[previous.info.ID] == previous {
 		previous.closing = true
 		previous.mu.Lock()
 		previous.closed = true
 		previous.mu.Unlock()
 		s.closeP2PClientLocked(previous, "client reconnected")
 		delete(s.clients, previous.info.ID)
-		_ = previous.conn.Close()
 	}
 	id := s.newClientIDLocked()
 	c := &client{conn: conn, secret: secret, resumeHash: sha256.Sum256([]byte(resume)), done: make(chan struct{}), pending: make(map[string]chan protocol.Message), info: clientInfo{
@@ -291,11 +333,16 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 		owner.used = true
 		owner.expires = time.Time{}
 		if s.maxClientsPerIP > 0 {
-			s.trimPending(owner.ip, s.maxClientsPerIP-s.onlineForIP(owner.ip))
+			online, _ := s.slotsForIP(owner.ip)
+			s.trimPending(owner.ip, s.maxClientsPerIP-online)
 		}
 	}
 	s.notifyClientWaitersLocked(secret)
 	c.log = logging.FromContext(r.Context()).With("client_id", id)
+	s.mu.Unlock()
+	if previous != nil {
+		_ = previous.conn.Close()
+	}
 	c.logger().Info("client connected", "platform", c.info.Environment.Platform, "client_version", c.info.Environment.ClientVersion)
 	go func() {
 		var disconnectErr error

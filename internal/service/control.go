@@ -322,7 +322,7 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		// An online single-device credential cannot be used to start another
 		// client or disclose its token. Keep it for reconnect after disconnect.
 		candidate := s.tokens[entry.Token]
-		if !s.multiDevice[candidate] && s.hasClientLocked(candidate) {
+		if !s.multiDevice[candidate] && (s.connecting[candidate] > 0 || s.hasClientLocked(candidate)) {
 			s.mu.Unlock()
 			return installerInvitation{}, &controlError{Status: http.StatusUnauthorized, Message: i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used")}
 		}
