@@ -173,7 +173,7 @@ type liveTUI struct {
 	token       string
 }
 
-func newLiveTUI(t *testing.T, invite bool, linkMode string) *liveTUI {
+func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal bool) *liveTUI {
 	t.Helper()
 	binary := os.Getenv("AGENTERM_RUST_CLI")
 	if binary == "" {
@@ -225,7 +225,14 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string) *liveTUI {
 		}
 		args = []string{"agenterm-cli://connect?" + query.Encode()}
 	}
-	f.command = exec.Command(binary, args...)
+	if controllingTerminal {
+		// Match the one-click installer: authorization is already complete,
+		// and the client reads terminal input from /dev/tty after curl | sh.
+		args = []string{"-invite", f.token, "-consent-confirmed", "-connection-mode=temporary"}
+		f.command = exec.Command("sh", append([]string{"-c", `exec "$@" </dev/tty`, "sh", binary}, args...)...)
+	} else {
+		f.command = exec.Command(binary, args...)
+	}
 	home := t.TempDir()
 	f.command.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "USERPROFILE="+home, "AGENTERM_LANG=en", "NO_COLOR=1", "TERM=xterm-256color", "SHELL=/bin/sh", "SSH_CONNECTION=local-test")
 	f.terminal, err = pty.StartWithSize(f.command, &pty.Winsize{Cols: 80, Rows: 16})
@@ -283,7 +290,7 @@ func (f *liveTUI) execute(t *testing.T, command string) {
 }
 
 func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
-	f := newLiveTUI(t, false, "")
+	f := newLiveTUI(t, false, "", false)
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (persistent)")
 	if err := f.peer.WriteJSON(protocol.Message{Type: "latency", LatencyMS: 42}); err != nil {
@@ -322,7 +329,7 @@ func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 }
 
 func TestRustTUIInvitationAndReusableCredential(t *testing.T) {
-	f := newLiveTUI(t, true, "")
+	f := newLiveTUI(t, true, "", false)
 	// Consent is rendered in the normal terminal before the alternate screen.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -397,10 +404,21 @@ func TestRustPlainPromptInterrupt(t *testing.T) {
 	}
 }
 
+func TestRustTUIControllingTerminalStdin(t *testing.T) {
+	f := newLiveTUI(t, true, "", true)
+	f.nextPeer(t)
+	f.capture.wait(t, "Connected (temporary)")
+	if f.redemptions.Load() != 1 {
+		t.Fatal("invitation was not redeemed exactly once")
+	}
+	f.write(t, "\x03")
+	f.capture.wait(t, "Token or code:")
+}
+
 func TestRustTUIProtocolLinkModes(t *testing.T) {
 	for _, mode := range []string{"default", "temporary", "persistent"} {
 		t.Run(mode, func(t *testing.T) {
-			f := newLiveTUI(t, false, mode)
+			f := newLiveTUI(t, false, mode, false)
 			f.nextPeer(t)
 			expected := mode
 			if mode == "default" {
