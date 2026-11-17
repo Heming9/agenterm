@@ -82,7 +82,7 @@ func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
 func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	rawToken := issued["client_token"].(string)
+	rawToken := issued["device_token"].(string)
 	control := issued["control_token"].(string)
 	invitation := issued["invitation"].(string)
 	_, err := protocol.Decode(invitation)

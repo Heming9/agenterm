@@ -27,18 +27,22 @@ chmod +x agenterm-server
 ```sh
 git clone https://github.com/Heming9/agenterm.git
 cd agenterm
-cp .env.example .env
-openssl rand -hex 24
+install -m 600 .env.example .env
+install -d -m 700 .secrets
+(umask 077 && openssl rand -hex 24 > .secrets/management-key)
+chmod 444 .secrets/management-key
 ```
 
-编辑 `.env`，将生成的随机值填入 `AGENTERM_MANAGEMENT_KEY`，将 `AGENTERM_PUBLIC_URL` 设置为双方可访问的服务地址。默认只监听本机，适合通过本机反向代理访问；需要在可信局域网直接访问时，将 `AGENTERM_BIND_ADDRESS` 设置为 `0.0.0.0`。
+Compose 只将密钥文件挂载到容器的 `/run/secrets/management_key`。宿主目录的 0700 权限限制其他用户访问，文件的 0444 权限允许容器内的服务用户读取。升级时，将原 `.env` 里的 `AGENTERM_MANAGEMENT_KEY` 值单独写入该文件的一行，保留相同权限，再移除旧的环境变量。需要指定其他文件位置时，在 `.env` 中设置 `AGENTERM_MANAGEMENT_KEY_FILE`。
+
+将 `.env` 中的 `AGENTERM_PUBLIC_URL` 设置为双方可访问的服务地址。默认只监听本机，适合通过本机反向代理访问；需要在可信局域网直接访问时，将 `AGENTERM_BIND_ADDRESS` 设置为 `0.0.0.0`。
 
 ```sh
 docker compose up -d --build
 docker compose logs -f server
 ```
 
-使用日志中显示的 MCP 地址和 `.env` 中的管理密钥接入 Agent。重启或重建容器会断开现有连接并清空内存中的会话。
+使用日志中显示的 MCP 地址和凭据文件中的管理密钥接入 Agent。重启或重建容器会断开现有连接并清空内存中的会话。
 
 ## ⚙️ 方式三：systemd
 
@@ -51,17 +55,18 @@ sudo install -m 755 agenterm-server /opt/agenterm/agenterm-server
 sudo install -m 644 deploy/systemd/agenterm-server.service /etc/systemd/system/
 ```
 
-生成管理密钥：
+首次安装时创建凭据文件：
 
 ```sh
-openssl rand -hex 24
+sudo sh -c 'umask 077 && openssl rand -hex 24 > /etc/agenterm-management-key'
 ```
 
-创建 `/etc/agenterm.env`，填入公网 HTTPS 地址和生成的密钥：
+升级现有部署时，将 `/etc/agenterm.env` 的 `AGENTERM_MANAGEMENT_KEY` 原值单独写入 `/etc/agenterm-management-key` 的一行，将文件属主设为 root、权限设为 0600，再删除环境文件中的密钥项。沿用原值即可复用已有 runtime。若旧 runtime 通过 `-passwd` 启动，原有密钥会保留在该进程的参数中直到进程退出；可在活动会话结束后安排一次 runtime 重启。unit 通过 systemd 的 `LoadCredential` 向服务用户提供凭据文件。
+
+在 `/etc/agenterm.env` 中填写公网 HTTPS 地址：
 
 ```text
 AGENTERM_PUBLIC_URL=https://YOUR_HOST
-AGENTERM_MANAGEMENT_KEY=YOUR_FIXED_KEY
 ```
 
 ```sh
@@ -102,7 +107,7 @@ go build -o agenterm-server ./cmd/agenterm-server
 
 ## 发布流水线
 
-[发布工作流](../.github/workflows/release.yml) 并行运行[构建检查](../.github/workflows/checks.yml)、六个平台的 Rust CLI 构建和原生 P2P 构建。Server 打包等待 CLI、P2P 分发完成，所有检查通过且客户端下载资源校验成功后才能发布。仅维护 Rust CLI 和 Go Server；增量发布不会复用旧 Go CLI 或 GUI。
+[发布工作流](../.github/workflows/release.yml) 并行运行[构建检查](../.github/workflows/checks.yml)、六个平台的 Rust CLI 构建和原生 P2P 构建。Server 打包等待 CLI、P2P 分发完成，所有检查通过且客户端下载资源校验成功后才能发布。CLI 发布 macOS、Linux、Windows 的 amd64 和 arm64 程序，Server 发布 macOS 和 Linux 的 amd64 和 arm64 程序；增量发布不会复用旧 Go CLI 或 GUI。
 
 Rust CLI 构建及组件包更新方法见 [Rust CLI 文档](../tools/agenterm-cli/README.md#release-builds)。Linux CLI 使用系统 OpenSSL，当前发布构建基线为 Ubuntu 24.04；目标机器须具备兼容的 glibc 和 OpenSSL 动态库。
 原生 P2P 缓存必须精确匹配组件源码、原生验证脚本、打包工作流、Rust 版本、runner 和目标平台的指纹。恢复时还检查组件版本、程序架构和 SHA-256；缓存缺失或无效时完整重建，Cargo 依赖与编译产物另外缓存。
@@ -137,8 +142,9 @@ agenterm-server -help
 | `-listen` | 服务监听地址；默认 `127.0.0.1:8080`。 |
 | `-public-url` | 对外访问地址，默认 `http://127.0.0.1:8080`；只设置地址，不会启用 HTTPS，传输加密由部署环境负责。 |
 | `-url-prefix` | 所有接口的 URL 路径前缀；默认 `/agenterm`，使用 `/` 表示根路径。 |
-| `-passwd` | MCP 管理密钥；省略时自动生成，不能与 `-no-password` 同时使用。 |
-| `-no-password` | 允许无需密码访问 MCP 管理接口。 |
+| `-passwd` | 直接指定 MCP 管理密钥。密钥会出现在启动进程的命令行中。 |
+| `-passwd-file` | 从文件读取单行 MCP 管理密钥。与 `-passwd` 二选一。启用认证且两项都省略时，首次启动自动生成密钥。 |
+| `-no-password` | 允许无需密码访问 MCP 管理接口。与 `-passwd`、`-passwd-file` 互斥。 |
 | `-max-clients-per-ip` | 每个邀请创建者 IP 的最大在线客户端数；默认 `0`，表示不限制。 |
 | `-client-ip-header` | 用于读取客户端 IP 的可信请求头，头内须为单个 IP；默认留空，使用直连对端 IP。 |
 | `-enable-short-code` | 启用短码生成和兑换；默认禁用短码。 |

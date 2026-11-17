@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,6 +37,11 @@ type runtimeSettings struct {
 	EnableShortCode bool
 }
 
+type runtimeBootstrap struct {
+	ControlSocket string
+	Options       runtimeLaunchOptions
+}
+
 type runtimeLaunchOptions struct {
 	Settings runtimeSettings
 	Password string
@@ -46,7 +53,6 @@ func addRuntimeLaunchFlags(flags *flag.FlagSet) *runtimeLaunchOptions {
 	flags.StringVar(&o.Settings.Listen, "listen", "127.0.0.1:8080", "Public TCP address used when starting runtime")
 	flags.StringVar(&o.Settings.PublicURL, "public-url", "http://127.0.0.1:8080", serverText("public.server.url.optional.agenterm.suffix"))
 	flags.StringVar(&o.Settings.Prefix, "url-prefix", protocol.PathPrefix, serverText("server.url.prefix"))
-	flags.StringVar(&o.Password, "passwd", "", serverText("mcp.management.key.generated.when.omitted"))
 	flags.BoolVar(&o.Settings.NoPassword, "no-password", false, serverText("allow.mcp.management.access.without.a.password"))
 	flags.IntVar(&o.Settings.MaxClientsPerIP, "max-clients-per-ip", 0, serverText("max.clients.per.ip"))
 	flags.StringVar(&o.Settings.ClientIPHeader, "client-ip-header", "", serverText("client.ip.header"))
@@ -114,6 +120,9 @@ func (s *runtimeState) checkRuntimeSettings(_ context.Context, requested runtime
 		if !matches {
 			if name == "server-socket" {
 				return false, errors.New("instance uses different internal IPC paths; use the restart command to recreate it")
+			}
+			if name == "passwd" {
+				return false, &controlError{Status: http.StatusConflict, Message: "running runtime has a different management key; use the restart command to change it (existing connections and memory state will be lost)"}
 			}
 			return false, &controlError{Status: http.StatusConflict, Message: fmt.Sprintf("running runtime has a different -%s setting; use the restart command to change it (existing connections and memory state will be lost)", name)}
 		}
@@ -183,21 +192,14 @@ func ensureRuntime(ctx context.Context, socket string, options *runtimeLaunchOpt
 	if err != nil {
 		return runtimeConfig{}, err
 	}
-	args := []string{}
-	o := options.Settings
-	args = append(args, "-runtime-socket", socket, "-server-socket", o.ServerSocket,
-		"-listen", o.Listen, "-public-url", o.PublicURL, "-url-prefix", o.Prefix,
-		"-max-clients-per-ip", strconv.Itoa(o.MaxClientsPerIP), "-client-ip-header", o.ClientIPHeader)
-	if options.Fields["passwd"] {
-		args = append(args, "-passwd", options.Password)
+	startupConfig, err := json.Marshal(runtimeBootstrap{ControlSocket: socket, Options: *options})
+	if err != nil {
+		return runtimeConfig{}, err
 	}
-	if o.EnableShortCode {
-		args = append(args, "-enable-short-code")
-	}
-	if o.NoPassword {
-		args = append(args, "-no-password")
-	}
-	cmd := exec.Command(command, args...)
+	// os/exec creates a private stdin pipe for this reader. The worker
+	// consumes it once; the management key never enters its argument list.
+	cmd := exec.Command(command)
+	cmd.Stdin = bytes.NewReader(startupConfig)
 	if err := detachRuntime(cmd); err != nil {
 		return runtimeConfig{}, err
 	}
@@ -219,7 +221,7 @@ func ensureRuntime(ctx context.Context, socket string, options *runtimeLaunchOpt
 	if closeRuntimeLog {
 		defer runtimeLog.Close()
 	}
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = null, null, runtimeLog
+	cmd.Stdout, cmd.Stderr = null, runtimeLog
 	cmd.ExtraFiles = []*os.File{writer}
 	instance := filepath.Base(filepath.Dir(socket))
 	if instance == "agenterm-"+strconv.Itoa(os.Getuid()) {

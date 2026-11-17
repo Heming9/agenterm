@@ -6,7 +6,7 @@ Rust 实现的独立 P2P 文件传输组件。`start` 建立并维护一条后�
 
 Server 和 Client 都需要支持此功能的源码版本。P2P 和 Client CLI 的下载资源统一内嵌到 Server 的 `components.tar.xz`；现有线上部署不会因本地源码变化自动获得新组件。
 
-1. Agent 调用 `p2p_transfer_start`，按现有认证规则提供目标设备的 `client_id`，管理调用还需 `client_token`。
+1. Agent 调用 `p2p_transfer_start`，按现有认证规则提供目标设备的 `client_id`，管理调用还需 `control_token`。
 2. Rust CLI 执行服务端生成的脚本，下载、校验并以前台受控进程运行远端 `p2p-cli`。连接断开时，客户端会停止该进程。
 3. 远端注册协商后，MCP 返回 `shell_script` 和 `powershell_script`，状态为 `waiting_for_agent`。此时不等待直连成功。
 4. Agent 按自己的执行平台运行对应脚本，自动获取本机组件并启动后台连接。脚本输出 JSON，包含组件的 `executable` 绝对路径。

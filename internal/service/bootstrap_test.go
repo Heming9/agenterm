@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -55,7 +56,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	address := reserved.Addr().String()
 	reserved.Close()
 	origin := "http://" + address
-	args := []string{"-instance", defaultInstance, "-listen", address, "-public-url", origin, "-passwd", "admin-test", "-max-clients-per-ip", "2"}
+	args := []string{"-instance", defaultInstance, "-listen", address, "-public-url", origin, "-passwd-file", managementKeyFile(t, "admin-test"), "-max-clients-per-ip", "2"}
 	executable := filepath.Join(dir, "agenterm-server")
 	build := exec.Command("go", "build", "-o", executable, "./cmd/agenterm-server")
 	build.Dir = "../.."
@@ -102,12 +103,18 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	if err != nil || config.PID == first.cmd.Process.Pid || config.ShortCodeEnabled == nil || *config.ShortCodeEnabled {
 		t.Fatalf("independent runtime: %+v %v", config, err)
 	}
+	for _, pid := range []int{first.cmd.Process.Pid, config.PID} {
+		argv, err := exec.Command("ps", "-ww", "-p", strconv.Itoa(pid), "-o", "args=").Output()
+		if err != nil || strings.Contains(string(argv), "admin-test") {
+			t.Fatalf("management key should be absent from process %d arguments: %v", pid, err)
+		}
+	}
 	h := &multiHarness{ts: &httptest.Server{URL: origin}}
 	created := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
 	if _, ok := created["short_code"]; ok {
 		t.Fatal("default server issued a short code")
 	}
-	token := created["client_token"].(string)
+	token := created["device_token"].(string)
 	startRustClient(t, token)
 	devices := h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
 	if len(devices) != 1 {
@@ -166,7 +173,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	if output, err := exec.Command(executable, changed...).CombinedOutput(); err == nil || !strings.Contains(string(output), "different -max-clients-per-ip") {
 		t.Fatalf("changed runtime flags were silently ignored: %v\n%s", err, output)
 	}
-	if output, err := exec.Command(executable, append(args, "-passwd", "different-secret")...).CombinedOutput(); err == nil || !strings.Contains(string(output), "different -passwd") || strings.Contains(string(output), "different-secret") {
+	if output, err := exec.Command(executable, append(args, "-passwd-file", managementKeyFile(t, "different-secret"))...).CombinedOutput(); err == nil || !strings.Contains(string(output), "different management key") || strings.Contains(string(output), "different-secret") {
 		t.Fatalf("credential mismatch: %v\n%s", err, output)
 	}
 	if output, err := exec.Command(executable, append(args, "-enable-short-code")...).CombinedOutput(); err == nil || !strings.Contains(string(output), "short-code setting") {
@@ -211,6 +218,10 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	staged.http.CloseIdleConnections()
 	if err != nil || stagedConfig.PID == config.PID || stagedConfig.ShortCodeEnabled == nil || !*stagedConfig.ShortCodeEnabled {
 		t.Fatalf("instances shared a runtime: %+v %v", stagedConfig, err)
+	}
+	argv, err := exec.Command("ps", "-ww", "-p", strconv.Itoa(stagedConfig.PID), "-o", "args=").Output()
+	if err != nil || strings.Contains(string(argv), "staging-key") {
+		t.Fatal("runtime arguments must omit the inline management key")
 	}
 	stagingHarness := &multiHarness{ts: &httptest.Server{URL: "http://" + isolatedAddress}}
 	stagingCreated := stagingHarness.call(t, "staging-key", "create_client", map[string]any{}, false).(map[string]any)
@@ -334,7 +345,7 @@ func TestManagedRuntimeStdioStartupAndEOF(t *testing.T) {
 	}
 	var credential struct {
 		Invitation  string `json:"invitation"`
-		ClientToken string `json:"client_token"`
+		DeviceToken string `json:"device_token"`
 	}
 	data, err := json.Marshal(created.StructuredContent)
 	if err != nil {
@@ -353,7 +364,7 @@ func TestManagedRuntimeStdioStartupAndEOF(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("stdio EOF did not exit server")
 	}
-	if token, err := invite.Redeem(ctx, credential.Invitation); err != nil || token != credential.ClientToken {
+	if token, err := invite.Redeem(ctx, credential.Invitation); err != nil || token != credential.DeviceToken {
 		t.Fatalf("runtime did not survive stdio EOF: %v", err)
 	}
 	startup, err := os.ReadFile(logs.Name())

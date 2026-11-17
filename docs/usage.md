@@ -50,7 +50,7 @@ For self-hosting, replace the URL with the MCP address shown after deployment an
 
 To connect several computers, ask the agent for a multi-device invitation and identify the target before each operation. Multi-device tokens do not have short codes. Short codes for single-device connections are disabled by default and must be enabled by the server administrator.
 
-After a successful connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, enter the full short-code address.
+After a successful connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, paste the short-code address as issued. The CLI uses HTTP for addresses without a scheme. For HTTPS, keep the `https://` prefix.
 
 ## 💻 Client controls
 

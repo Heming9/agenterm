@@ -18,12 +18,14 @@ SCOPES = {
 }
 MANIFEST = "release-manifest.json"
 REUSED_DIGESTS = "reused-digests.json"
+MANIFEST_SCHEMA = 2
+PLATFORMS = {"cli": ("macos", "linux", "windows"), "server": ("macos", "linux")}
 
 
 def assets(component):
     prefix = "agenterm-client-cli" if component == "cli" else "agenterm-server"
     return [f"{prefix}-{platform}-{arch}" + (".exe" if platform == "windows" else "")
-            for platform in ("macos", "linux", "windows") for arch in ("amd64", "arm64")]
+            for platform in PLATFORMS[component] for arch in ("amd64", "arm64")]
 
 
 def stage(directory, output, components):
@@ -79,7 +81,7 @@ def base_components(directory, tag, hashes):
         return {c: {"version": tag[1:], "source_tag": tag} for c in COMPONENTS}
     verify(directory, [MANIFEST], hashes)
     manifest = json.loads((directory / MANIFEST).read_text())
-    if manifest["schema"] != 1 or manifest["release_tag"] != tag:
+    if manifest["schema"] not in (1, MANIFEST_SCHEMA) or manifest["release_tag"] != tag:
         raise ValueError("Unsupported or mismatched release manifest")
     components = manifest["components"]
     for component in COMPONENTS:
@@ -169,7 +171,7 @@ def prepare(scope, requested_base):
                     for component in set(COMPONENTS) - selected for name in assets(component)):
         print("Base release uses a different asset layout; rebuilding all programs")
         selected = set(COMPONENTS)
-    manifest = {"schema": 1, "release_tag": tag, "commit": sha, "scope": scope,
+    manifest = {"schema": MANIFEST_SCHEMA, "release_tag": tag, "commit": sha, "scope": scope,
                 "base_release": base["tag_name"] if base else None, "components": {}}
     reused = []
     for component in COMPONENTS:
@@ -214,6 +216,11 @@ def finalize(directory, plan):
     expected = {MANIFEST}
     for component in COMPONENTS:
         expected.update(assets(component))
+    # A draft repair must verify the exact inventory from the original run.
+    if manifest["schema"] == 1:
+        expected.update({"agenterm-server-windows-amd64.exe", "agenterm-server-windows-arm64.exe"})
+    elif manifest["schema"] != MANIFEST_SCHEMA:
+        raise ValueError("Unsupported release manifest schema")
     actual = {path.name for path in directory.iterdir()}
     if actual != expected:
         raise ValueError(f"Release assets differ: missing={expected - actual}, extra={actual - expected}")

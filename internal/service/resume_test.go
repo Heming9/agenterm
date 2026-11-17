@@ -16,7 +16,7 @@ import (
 func TestSingleDeviceResumeTakeover(t *testing.T) {
 	h := newMultiHarness(t, 1)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	token := issued["client_token"].(string)
+	token := issued["device_token"].(string)
 	decoded, err := protocol.Decode(token)
 	if err != nil {
 		t.Fatal(err)

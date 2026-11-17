@@ -68,12 +68,15 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 				t.Fatal("text and display_text differ")
 			}
 			issued := <-legacy.issued
-			for _, key := range []string{"client_token", "invitation", "expires_at", "multi_device"} {
+			for _, key := range []string{"control_token", "invitation", "expires_at", "multi_device"} {
 				if structured[key] != issued[key] {
 					t.Fatalf("frontend changed runtime field %s", key)
 				}
 			}
-			shell, powershell := installCommands(structured["client_token"].(string))
+			if _, ok := structured["client_token"]; ok || structured["device_token"] != issued["client_token"] {
+				t.Fatal("frontend must publish the runtime device credential only as device_token")
+			}
+			shell, powershell := installCommands(structured["device_token"].(string))
 			if structured["macos_linux_command"] != shell || structured["windows_powershell_command"] != powershell {
 				t.Fatal("frontend did not replace legacy commands")
 			}

@@ -4,7 +4,7 @@
 
 `agenterm-staging.service` 使用与正式环境相同的 supervisor；后续更新通过 `systemctl reload agenterm-staging` 保留其 Runtime。修改 Runtime 代码时，须明确按预发布的独立生命周期更新，不能把仅 frontend reload 当作 Runtime 升级。首次搭建记录在对应 release 的 `staging-result.json`。
 
-管理密钥保存于服务器 `/etc/agenterm-staging.env`（root 0600）；不要提交到仓库或粘贴到日志。客户端必须从预发布返回的安装脚本下载，以保证版本和 P2P capability 匹配。预发布连接、Token 和邀请与正式环境隔离。
+管理密钥单独保存在 `/etc/agenterm-staging-management-key`（root 0600），由 systemd 的 `LoadCredential` 提供给服务。升级旧 unit 时先把 `/etc/agenterm-staging.env` 中的 `AGENTERM_MANAGEMENT_KEY` 原值写入新文件的一行，再移除旧的环境变量。客户端必须从预发布返回的安装脚本下载，以保证版本和 P2P capability 匹配。预发布连接、Token 和邀请与正式环境隔离。
 
 新源码每次构建将六平台 Client CLI 安装资源和六平台 P2P 归档统一合并为 `components.zip` 并内嵌 Server，启动时自动解压到实例运行目录 `components/<包哈希>/`。每次部署固定源码提交 SHA，并校验 P2P 清单及 macOS、Windows 各架构的 2 MiB 下载体积上限。使用独立发布目录 `/opt/agenterm-staging/releases/<release-id>`，`current` 指向当前版本。初次接入 Nginx 仅增加本目录的 location include，先执行 `nginx -t` 后 reload；不重启正式 Agenterm 服务。
 

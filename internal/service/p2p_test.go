@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,39 @@ func p2pTestAssets(t *testing.T) string {
 	t.Setenv("P2P_CLI_STUN", "none")
 	return directory
 }
+func TestP2PDownloadsUseOneVerifiedManifestPerFrontend(t *testing.T) {
+	dir := p2pTestAssets(t)
+	front := &frontend{p2pAssets: dir}
+	file := filepath.Join(dir, "manifest.json")
+	manifest, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(f *frontend, method string, want int) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		f.p2pHTTP(w, httptest.NewRequest(method, "/p2p/downloads/p2p-cli-linux-amd64", nil))
+		if w.Code != want {
+			t.Fatalf("%s: got HTTP %d, want %d", method, w.Code, want)
+		}
+	}
+	check(front, http.MethodHead, http.StatusOK)
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	check(front, http.MethodGet, http.StatusOK)
+	if _, err := front.p2pManifest(); err != nil {
+		t.Fatal("P2P start lost the verified manifest", err)
+	}
+	failed := &frontend{p2pAssets: dir}
+	check(failed, http.MethodGet, http.StatusServiceUnavailable)
+	if err := os.WriteFile(file, manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	check(failed, http.MethodHead, http.StatusServiceUnavailable)
+	check(&frontend{p2pAssets: dir}, http.MethodGet, http.StatusOK)
+}
+
 func enableP2PTestClient(h *multiHarness, id string) {
 	h.s.mu.Lock()
 	defer h.s.mu.Unlock()

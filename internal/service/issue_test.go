@@ -42,7 +42,7 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			}
 			h.s.mu.Lock()
 			entry := h.s.invitations[decoded.Secret]
-			ownerExpiry := h.s.clientOwners[h.s.tokens[created["client_token"].(string)]].expires
+			ownerExpiry := h.s.clientOwners[h.s.tokens[created["device_token"].(string)]].expires
 			h.s.mu.Unlock()
 			if entry.expires.Before(before.Add(tc.want)) || entry.expires.After(after.Add(tc.want)) || ownerExpiry.Before(entry.expires) {
 				t.Fatalf("invitation expiry %s, owner expiry %s, want lifetime %s", entry.expires, ownerExpiry, tc.want)
@@ -241,10 +241,10 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 						t.Fatal("multi-device output includes a short code")
 					}
 				} else {
-					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != shortCodeURL(structured.ClientToken, structured.ShortCode) || structured.ShortCode == "" {
+					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != shortCodeURL(structured.DeviceToken, structured.ShortCode) || structured.ShortCode == "" {
 						t.Fatal("single-device output lacks short code or expiry")
 					}
-					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.ClientToken + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL
+					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.DeviceToken + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL
 					if !strings.Contains(structured.DisplayText, expected) {
 						t.Fatal("short code is not directly after the token")
 					}
@@ -320,7 +320,7 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if created["isError"] != false {
 		t.Fatalf("create: %v", created)
 	}
-	token := created["client_token"].(string)
+	token := created["device_token"].(string)
 	control := created["control_token"].(string)
 	invitation := created["invitation"].(string)
 	got, err := invite.Redeem(context.Background(), invitation)
@@ -338,7 +338,7 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if missing["isError"] != true {
 		t.Fatalf("missing client accepted: %v", missing)
 	}
-	args, _ := json.Marshal(map[string]any{"client_token": control})
+	args, _ := json.Marshal(map[string]any{"control_token": control})
 	_, waited := call("admin-test", "list_client", string(args))
 	if len(waited["clients"].([]any)) != 0 {
 		t.Fatalf("wait: %v", waited)
@@ -412,7 +412,7 @@ func TestCreateClientMCPWithShortCodesDisabled(t *testing.T) {
 			t.Fatalf("unexpected %s", key)
 		}
 	}
-	if fields["control_token"] == "" || fields["client_token"] == "" || strings.Contains(fields["display_text"].(string), "short code ( ") {
+	if fields["control_token"] == "" || fields["device_token"] == "" || strings.Contains(fields["display_text"].(string), "short code ( ") {
 		t.Fatalf("invalid result: %v", fields)
 	}
 }

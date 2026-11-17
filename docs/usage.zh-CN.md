@@ -50,7 +50,7 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 
 需要连接多台电脑时，可以让 Agent 创建多设备邀请，并在操作前说明目标设备。多设备令牌不提供短码。单设备连接的短码默认禁用，须由服务器管理员启用。
 
-连接成功后，客户端会在本地保存 Server 地址。输入 6 位短码时，可从历史列表中选择生成该短码的 Server；客户端只查询选中的 Server，并沿用记录中的 HTTP 或 HTTPS 协议。没有历史记录时，请输入完整短码地址。
+连接成功后，客户端会在本地保存 Server 地址。输入 6 位短码时，可从历史列表中选择生成该短码的 Server；客户端只查询选中的 Server，并沿用记录中的 HTTP 或 HTTPS 协议。没有历史记录时，可直接粘贴受邀短码地址。CLI 将省略协议的地址按 HTTP 处理；使用 HTTPS 时请保留 `https://`。
 
 ## 💻 客户端操作
 

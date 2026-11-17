@@ -138,7 +138,7 @@ func TestClientShellMetadataThroughMCP(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { ws.Close() })
-			out := h.call(t, "admin-test", "list_client", map[string]any{"client_token": token, "wait_ms": 20000}, false).(map[string]any)
+			out := h.call(t, "admin-test", "list_client", map[string]any{"control_token": token, "wait_ms": 20000}, false).(map[string]any)
 			clients := out["clients"].([]any)
 			if len(clients) != 1 || clients[0].(map[string]any)["client_info"].(map[string]any)["shell"] != tc.want {
 				t.Fatalf("shell metadata: %v, want %q", out, tc.want)

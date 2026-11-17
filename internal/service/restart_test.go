@@ -123,7 +123,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 		defer client.http.CloseIdleConnections()
 		_, _ = controlCall[bool](ctx, client, "runtime/shutdown", struct{}{})
 	})
-	initialArgs := []string{"-listen", address, "-public-url", origin, "-passwd", "admin-test"}
+	initialArgs := []string{"-listen", address, "-public-url", origin, "-passwd-file", managementKeyFile(t, "admin-test")}
 	a := startService(t, "server", dir, initialArgs...)
 	waitReady(t, origin+"/healthz", http.DefaultTransport, a)
 	h := &multiHarness{ts: &httptest.Server{URL: origin}}
@@ -229,7 +229,7 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	if len(after) != 1 || after[0].(map[string]any)["client_id"] != deviceID {
 		t.Fatalf("client reconnected across server restart: %v", after)
 	}
-	if redeemed, err := invite.Redeem(context.Background(), pending["invitation"].(string)); err != nil || redeemed != pending["client_token"] {
+	if redeemed, err := invite.Redeem(context.Background(), pending["invitation"].(string)); err != nil || redeemed != pending["device_token"] {
 		t.Fatalf("invitation lost across upgrade: %v", err)
 	}
 	if info, err := os.Stat(runtimeSocket); err != nil || info.Mode().Perm() != 0600 {

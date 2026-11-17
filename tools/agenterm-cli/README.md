@@ -18,6 +18,8 @@ tools/agenterm-cli/target/release/agenterm-cli
 
 The interactive prompt accepts a full device token, a short-code URL, or a bare
 six-character short code when a server is already in `~/.agenterm/servers.json`.
+Paste short-code URLs as issued. An address without a scheme uses HTTP.
+For HTTPS, include the `https://` prefix.
 Existing server history and per-server connection locks are shared.
 
 ```sh

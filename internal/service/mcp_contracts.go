@@ -38,7 +38,7 @@ type sessionStopResult struct {
 }
 
 type invitationResult struct {
-	ClientToken              string `json:"client_token"`
+	DeviceToken              string `json:"device_token"`
 	ControlToken             string `json:"control_token"`
 	TokenIdentifier          string `json:"token_identifier,omitempty"`
 	MultiDevice              bool   `json:"multi_device"`

@@ -44,8 +44,16 @@
     "zh-CN": "%s 的输出队列已满，正在关闭连接"
   },
   "mcp.management.key.generated.when.omitted": {
-    "en": "MCP management key (generated when omitted)",
-    "zh-CN": "MCP 管理密钥（省略时自动生成）"
+    "en": "MCP management key (generated when no key is supplied)",
+    "zh-CN": "MCP 管理密钥（未指定密钥时自动生成）"
+  },
+  "mcp.management.key.file": {
+    "en": "Read the MCP management key from a file",
+    "zh-CN": "从文件读取 MCP 管理密钥"
+  },
+  "mcp.management.key.conflicting.sources": {
+    "en": "Use either -passwd or -passwd-file",
+    "zh-CN": "-passwd 和 -passwd-file 只能使用其中一个"
   },
   "allow.mcp.management.access.without.a.password": {
     "en": "allow MCP management access without a password",
@@ -64,8 +72,8 @@
     "zh-CN": "URL 前缀必须为 / 或以 / 开头的路径，最多 1024 字节，仅可含字母、数字、-._~ 和 /；路径段不可为空、. 或 .."
   },
   "passwd.must.be.nonempty.and.cannot.be": {
-    "en": "passwd must be nonempty and cannot be combined with no-password",
-    "zh-CN": "passwd 不能为空，也不能与 no-password 同时使用"
+    "en": "the management key must be nonempty and cannot be combined with -no-password",
+    "zh-CN": "管理密钥不能为空，也不能与 -no-password 同时使用"
   },
   "mcp.management.key.save.securely.s": {
     "en": "MCP management key (save securely):\n%s\n\n",
@@ -452,8 +460,8 @@
     "zh-CN": "未授权"
   },
   "valid.client.token.is.required": {
-    "en": "valid client_token is required",
-    "zh-CN": "需要有效的 client_token"
+    "en": "valid control_token is required",
+    "zh-CN": "需要有效的 control_token"
   },
   "command.is.required": {
     "en": "command is required",
@@ -612,8 +620,8 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 900, or 15 minutes). When short codes are enabled, in single-device mode the short code permits up to 10 successful redemptions and follows the connection token’s lifetime; present short_code for clients that know the server. Multi-device tokens do not support short codes. Returns a fixed template with Markdown code blocks in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Preserve all sections and their order, and keep commands, URLs, connection tokens and short codes exactly unchanged. You MUST preserve the separate Markdown code blocks for each command, the connection token, and the browser invitation message so they can be copied reliably. Express the invitation lifetime in readable units without changing its duration (for example, 300 seconds is 5 minutes). If the user’s time zone is known, convert expires_at, token_initial_expires_at, and short_code_expires_at when present to that time zone and label it explicitly; otherwise show the UTC deadline. Never guess the user’s time zone from their language or the server time zone. Do not omit any connection instructions. Keep structuredContent.control_token private; never include it in connection instructions or share it with the target device. After presenting the invitation, poll list_client with the returned control_token as client_token and wait_ms=30000, within a total 300-second wall-clock budget. Follow list_client’s retry and timeout rules. multi_device controls simultaneous connections and invitation reuse. Present short_code_url as a private browser link for viewing connection instructions.",
-    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 900 秒（15 分钟）。启用短码时，单设备模式下短码最多可成功兑换 10 次，有效期随连接令牌变化；向已知服务器地址的客户端提供 short_code。多设备令牌不支持短码。文本内容和 structuredContent.display_text 均返回固定模板，命令自带 Markdown 代码块，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言完整展示 display_text，保留所有段落及其顺序，命令、URL、连接令牌和短码必须保持原样。必须保留每条命令、连接令牌和浏览器邀请文案各自的 Markdown 代码块，方便准确复制。有效期可换算成易读的单位，但不能改变实际时长（例如 300 秒为 5 分钟）。已知用户时区时，将 expires_at、token_initial_expires_at 及存在时的 short_code_expires_at 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器时区猜测用户时区，也不得省略连接说明。structuredContent.control_token 是控制凭证，必须保密，不得放入连接说明或分享给目标设备。展示邀请后，将返回的 control_token 作为 client_token，以 wait_ms=30000 分轮调用 list_client，总预算为实际经过的 300 秒；重试和超时处理遵循 list_client 的说明。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。 请展示 short_code_url，作为在浏览器查看连接信息的私密链接。"
+    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 900, or 15 minutes). When short codes are enabled, in single-device mode the short code permits up to 10 successful redemptions and follows the connection token’s lifetime; present short_code for clients that know the server. Multi-device tokens do not support short codes. Returns a fixed template with Markdown code blocks in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Preserve all sections and their order, and keep commands, URLs, connection tokens and short codes exactly unchanged. You MUST preserve the separate Markdown code blocks for each command, the connection token, and the browser invitation message so they can be copied reliably. Express the invitation lifetime in readable units without changing its duration (for example, 300 seconds is 5 minutes). If the user’s time zone is known, convert expires_at, token_initial_expires_at, and short_code_expires_at when present to that time zone and label it explicitly; otherwise show the UTC deadline. Never guess the user’s time zone from their language or the server time zone. Do not omit any connection instructions. Keep structuredContent.control_token private; never include it in connection instructions or share it with the target device. After presenting the invitation, poll list_client with the returned control_token and wait_ms=30000, within a total 300-second wall-clock budget. Follow list_client’s retry and timeout rules. multi_device controls simultaneous connections and invitation reuse. Present short_code_url as a private browser link for viewing connection instructions.",
+    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 900 秒（15 分钟）。启用短码时，单设备模式下短码最多可成功兑换 10 次，有效期随连接令牌变化；向已知服务器地址的客户端提供 short_code。多设备令牌不支持短码。文本内容和 structuredContent.display_text 均返回固定模板，命令自带 Markdown 代码块，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言完整展示 display_text，保留所有段落及其顺序，命令、URL、连接令牌和短码必须保持原样。必须保留每条命令、连接令牌和浏览器邀请文案各自的 Markdown 代码块，方便准确复制。有效期可换算成易读的单位，但不能改变实际时长（例如 300 秒为 5 分钟）。已知用户时区时，将 expires_at、token_initial_expires_at 及存在时的 short_code_expires_at 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器时区猜测用户时区，也不得省略连接说明。structuredContent.control_token 是控制凭证，必须保密，不得放入连接说明或分享给目标设备。展示邀请后，使用返回的 control_token，以 wait_ms=30000 分轮调用 list_client，总预算为实际经过的 300 秒；重试和超时处理遵循 list_client 的说明。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。 请展示 short_code_url，作为在浏览器查看连接信息的私密链接。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 900 (15 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
@@ -660,8 +668,8 @@
     "zh-CN": "无法获取本机连接锁：%v"
   },
   "mcp.list.clients": {
-    "en": "List online devices belonging to the token. For an ordinary status check, use wait_ms=0 for an immediate snapshot. Positive wait_ms waits while no device is online and returns as soon as any device connects. After create_client, use its control_token as client_token and poll with wait_ms up to 30000 per call within a total 300-second wall-clock budget. An empty poll is not an overall timeout; continue within the remaining budget. After the budget expires, make a final wait_ms=0 check before reporting a connection-wait timeout. On a transient network error, recheck once with wait_ms=0; if that fails, report that device connectivity is unknown. Retries do not reset the budget. Stop on user cancellation or invalid, expired or revoked credentials; report credential errors separately. Legacy wait_ms values through 300000 remain accepted but each call is capped at 30000 ms.",
-    "zh-CN": "列出 token 下的在线设备。普通状态查询使用 wait_ms=0，立即返回快照；正值仅在无设备在线时等待，任一设备连接即返回。仅在 create_client 后，将其 control_token 作为 client_token，以每轮最多 30000 毫秒、实际经过时间为 300 秒的总预算分轮查询。单轮空列表不是整体超时，应在剩余预算内继续；预算耗尽后以 wait_ms=0 最后检查一次，仍无设备才报告等待超时。临时网络错误后以 wait_ms=0 复查一次，仍失败则报告设备状态未知；重试不重置预算。用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧 wait_ms 至 300000，但每轮实际最多等待 30000 毫秒。"
+    "en": "List online devices belonging to the token. For an ordinary status check, use wait_ms=0 for an immediate snapshot. Positive wait_ms waits while no device is online and returns as soon as any device connects. After create_client, use its control_token and poll with wait_ms up to 30000 per call within a total 300-second wall-clock budget. An empty poll is not an overall timeout; continue within the remaining budget. After the budget expires, make a final wait_ms=0 check before reporting a connection-wait timeout. On a transient network error, recheck once with wait_ms=0; if that fails, report that device connectivity is unknown. Retries do not reset the budget. Stop on user cancellation or invalid, expired or revoked credentials; report credential errors separately. Legacy wait_ms values through 300000 remain accepted but each call is capped at 30000 ms.",
+    "zh-CN": "列出 token 下的在线设备。普通状态查询使用 wait_ms=0，立即返回快照；正值仅在无设备在线时等待，任一设备连接即返回。仅在 create_client 后，使用其 control_token，以每轮最多 30000 毫秒、实际经过时间为 300 秒的总预算分轮查询。单轮空列表不是整体超时，应在剩余预算内继续；预算耗尽后以 wait_ms=0 最后检查一次，仍无设备才报告等待超时。临时网络错误后以 wait_ms=0 复查一次，仍失败则报告设备状态未知；重试不重置预算。用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧 wait_ms 至 300000，但每轮实际最多等待 30000 毫秒。"
   },
   "mcp.wait.for.connection": {
     "en": "Maximum wait for one connection poll in milliseconds; use 0–30000. 0 returns an immediate snapshot. Legacy values through 300000 are accepted but capped at 30000. After create_client, use separate polls within a total 300-second wall-clock budget, not one long HTTP request.",
@@ -827,7 +835,7 @@
     "en": "Private scoped control credential in token:key format; never share with the target device.",
     "zh-CN": "私密控制凭证，格式为 token:密钥；不得分享给目标设备。"
   },
-  "mcp.result.client_token": {
+  "mcp.result.device_token": {
     "en": "Device connection credential; it cannot authorize MCP control. Use the separate control_token for control access.",
     "zh-CN": "设备连接凭证，不能用于 MCP 控制。控制访问须使用单独的 control_token。"
   },

@@ -5,12 +5,13 @@ After=network.target
 [Service]
 User=agenterm
 Group=agenterm
+LoadCredential=management-key:/etc/agenterm-management-key
 EnvironmentFile=/etc/agenterm.env
 Environment=AGENTERM_LOG_FORMAT=json
 Environment=AGENTERM_RUNTIME_LOG_FILE=stderr
 StandardOutput=journal
 StandardError=journal
-ExecStart=/opt/agenterm/agenterm-server -listen 127.0.0.1:8080 -public-url ${AGENTERM_PUBLIC_URL} -passwd ${AGENTERM_MANAGEMENT_KEY}
+ExecStart=/opt/agenterm/agenterm-server -listen 127.0.0.1:8080 -public-url ${AGENTERM_PUBLIC_URL} -passwd-file %d/management-key
 # Preserve the managed runtime while the main server process is replaced.
 KillMode=process
 Restart=on-failure

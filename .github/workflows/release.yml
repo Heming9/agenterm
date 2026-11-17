@@ -172,15 +172,16 @@ jobs:
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
           python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
           AGENTERM_RELEASE_DIR="$RUNNER_TEMP/cli-downloads" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
-          for os in darwin linux windows; do
-            for arch in amd64 arm64; do
-              platform="$os"
-              extension=""
-              if [ "$os" = darwin ]; then platform=macos; fi
-              if [ "$os" = windows ]; then extension=.exe; fi
-              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/agenterm-server-${platform}-${arch}${extension}" ./cmd/agenterm-server
-            done
-          done
+          # Use the inventory from the selected source ref, including for historical rebuilds.
+          PYTHONPATH=scripts/release python3 - <<'PY'
+          import os, subprocess
+          from release import assets
+          for filename in assets("server"):
+              _, platform, arch = filename.removesuffix(".exe").rsplit("-", 2)
+              env = dict(os.environ, GOOS="darwin" if platform == "macos" else platform, GOARCH=arch)
+              subprocess.run(["go", "build", "-trimpath", "-ldflags", "-s -w",
+                              "-o", f"dist/{filename}", "./cmd/agenterm-server"], env=env, check=True)
+          PY
       - name: Stage raw executables for publication
         run: python3 scripts/release/release.py stage --directory dist --output release-files --components cli server
       - name: Report artifact sizes

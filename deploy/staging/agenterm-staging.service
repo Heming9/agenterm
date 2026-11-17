@@ -7,12 +7,13 @@ Wants=network-online.target
 Type=simple
 User=agenterm-staging
 Group=agenterm-staging
+LoadCredential=management-key:/etc/agenterm-staging-management-key
 EnvironmentFile=/etc/agenterm-staging.env
 Environment=AGENTERM_SYSTEMD_UNIT=agenterm-staging
 Environment=AGENTERM_LOG_FORMAT=json
 Environment=AGENTERM_RUNTIME_LOG_FILE=stderr
-ExecStart=/usr/bin/python3 /opt/agenterm-staging/current/service_manager.py run -- /opt/agenterm-staging/current/agenterm-server --listen 127.0.0.1:7776 --public-url https://agenterm.net --url-prefix /staging --passwd ${AGENTERM_MANAGEMENT_KEY} --max-clients-per-ip 4 --client-ip-header X-Real-IP
-ExecReload=/usr/bin/python3 /opt/agenterm-staging/current/service_manager.py reload -- /opt/agenterm-staging/current/agenterm-server --listen 127.0.0.1:7776 --public-url https://agenterm.net --url-prefix /staging --passwd ${AGENTERM_MANAGEMENT_KEY} --max-clients-per-ip 4 --client-ip-header X-Real-IP
+ExecStart=/usr/bin/python3 /opt/agenterm-staging/current/service_manager.py run -- /opt/agenterm-staging/current/agenterm-server --listen 127.0.0.1:7776 --public-url https://agenterm.net --url-prefix /staging --passwd-file %d/management-key --max-clients-per-ip 4 --client-ip-header X-Real-IP
+ExecReload=/usr/bin/python3 /opt/agenterm-staging/current/service_manager.py reload -- /opt/agenterm-staging/current/agenterm-server --listen 127.0.0.1:7776 --public-url https://agenterm.net --url-prefix /staging --passwd-file %d/management-key --max-clients-per-ip 4 --client-ip-header X-Real-IP
 NotifyAccess=all
 TimeoutStartSec=120
 TimeoutStopSec=80

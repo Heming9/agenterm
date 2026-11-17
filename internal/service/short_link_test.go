@@ -371,7 +371,7 @@ func TestConnectionValidityStates(t *testing.T) {
 func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{"timeout_seconds": 3600}, false).(map[string]any)
-	token, code := issued["client_token"].(string), issued["short_code"].(string)
+	token, code := issued["device_token"].(string), issued["short_code"].(string)
 	read := func() string {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/c/"+code, nil)

@@ -149,7 +149,7 @@ func TestMCPToolLogsFailuresWithoutArgumentsOrResults(t *testing.T) {
 		}
 		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "private-result"}}}, nil
 	})
-	_, err := handler(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "execute_command", Arguments: json.RawMessage(`{"command":"private-command","client_token":"private-token"}`)}})
+	_, err := handler(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "execute_command", Arguments: json.RawMessage(`{"command":"private-command","control_token":"private-token"}`)}})
 	if err != nil {
 		t.Fatal(err)
 	}

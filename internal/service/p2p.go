@@ -286,7 +286,6 @@ func (s *frontend) p2pHTTP(w http.ResponseWriter, r *http.Request) {
 				compatible = base + ".zip"
 			}
 			if requested == asset.File || requested == base+".tar.xz" || requested == compatible {
-				s.p2pDownloadsOnce.Do(func() { s.p2pDownloads = components.Downloads(os.DirFS(s.p2pAssets), "p2p-cli") })
 				w.Header().Del("Content-Type")
 				http.ServeFileFS(w, r, s.p2pDownloads, file)
 				return
@@ -325,10 +324,18 @@ func (s *frontend) p2pHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *frontend) p2pManifest() (p2p.Manifest, error) {
-	if s.p2pAssets == "" {
-		return p2p.Manifest{}, errors.New("server components have not been initialized")
-	}
-	return p2p.Load(s.p2pAssets)
+	// The frontend owns one immutable, content-addressed component directory.
+	s.p2pOnce.Do(func() {
+		if s.p2pAssets == "" {
+			s.p2pErr = errors.New("server components have not been initialized")
+			return
+		}
+		s.p2pVerified, s.p2pErr = p2p.Load(s.p2pAssets)
+		if s.p2pErr == nil {
+			s.p2pDownloads = components.Downloads(os.DirFS(s.p2pAssets), "p2p-cli")
+		}
+	})
+	return s.p2pVerified, s.p2pErr
 }
 
 func (s *frontend) p2pTransferStart(ctx context.Context, secret string, args p2pStartArgs) (p2pStartResult, error) {

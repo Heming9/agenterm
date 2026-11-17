@@ -18,7 +18,7 @@ func TestServerCLIOptionsAndSeparateCommands(t *testing.T) {
 	if !errors.Is(err, flag.ErrHelp) {
 		t.Fatal(err)
 	}
-	wanted := []string{"client-ip-header", "enable-short-code", "instance", "listen", "max-clients-per-ip", "no-password", "passwd", "public-url", "stdio", "url-prefix"}
+	wanted := []string{"client-ip-header", "enable-short-code", "instance", "listen", "max-clients-per-ip", "no-password", "passwd", "passwd-file", "public-url", "stdio", "url-prefix"}
 	actual := make([]string, 0)
 	for _, line := range strings.Split(help.String(), "\n") {
 		if strings.HasPrefix(line, "  -") {
@@ -46,10 +46,39 @@ func TestCLIRejectsRemovedFlagsAndInvalidCommandsBeforeStarting(t *testing.T) {
 			t.Fatalf("accepted removed flag: %s", name)
 		}
 	}
-	for _, args := range [][]string{{"runtime"}, {"start", "extra"}, {"stop", "-passwd", "key"}, {"status", "-stdio"}, {"restart", "-passwd", ""}, {"restart", "-public-url", "bad"}, {"-instance", "../escape"}, {"-instance", "WithSpaces "}} {
+	for _, args := range [][]string{{"runtime"}, {"start", "extra"}, {"stop", "-passwd-file", "key"}, {"status", "-stdio"}, {"restart", "-passwd-file", ""}, {"restart", "-public-url", "bad"}, {"-instance", "../escape"}, {"-instance", "WithSpaces "}} {
 		if _, err := parseServerCommand(args, &bytes.Buffer{}); err == nil {
 			t.Fatalf("accepted: %v", args)
 		}
+	}
+}
+
+func managementKeyFile(t *testing.T, key string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "management-key")
+	if err := os.WriteFile(path, []byte(key), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestManagementKeyFile(t *testing.T) {
+	for _, data := range []string{"key", "key\n", "key\r\n"} {
+		key, err := readManagementKey(managementKeyFile(t, data))
+		if err != nil || key != "key" {
+			t.Fatal("cannot read single-line key", err)
+		}
+	}
+	for _, value := range []string{"", "one\ntwo", "one\x00two", "one\x7ftwo", "one\xfftwo", "key\n\r\n", strings.Repeat("a", 65537)} {
+		if _, err := parseServerCommand([]string{"restart", "-passwd-file", managementKeyFile(t, value)}, &bytes.Buffer{}); err == nil {
+			t.Fatal("accepted invalid key file")
+		}
+	}
+	if _, err := parseServerCommand([]string{"restart", "-passwd-file", managementKeyFile(t, "key"), "-no-password"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("accepted conflicting authentication settings")
+	}
+	if _, err := parseServerCommand([]string{"-passwd", "inline-key", "-passwd-file", managementKeyFile(t, "file-key")}, &bytes.Buffer{}); err == nil {
+		t.Fatal("accepted two management key sources")
 	}
 }
 

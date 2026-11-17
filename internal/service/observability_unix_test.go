@@ -67,7 +67,7 @@ func TestRuntimeLogsSurviveServerCrashAndCorrelateMCP(t *testing.T) {
 	address := reserved.Addr().String()
 	reserved.Close()
 	origin := "http://" + address
-	args := []string{"-instance", "logging", "-listen", address, "-public-url", origin, "-passwd", "admin-test"}
+	args := []string{"-instance", "logging", "-listen", address, "-public-url", origin, "-passwd-file", managementKeyFile(t, "admin-test")}
 	first := startService(t, "server", dir, args...)
 	t.Cleanup(func() { _ = exec.Command(filepath.Join(dir, "agenterm-server"), "stop", "-instance", "logging").Run() })
 	waitReady(t, origin+"/healthz", http.DefaultTransport, first)

@@ -86,8 +86,11 @@ class ReleaseTests(unittest.TestCase):
     def test_published_inventory_contains_only_raw_programs(self):
         self.assertEqual(release.COMPONENTS, ("cli", "server"))
         names = [name for component in release.COMPONENTS for name in release.assets(component)]
-        self.assertEqual(len(names), 12)
-        self.assertEqual(len(set(names)), 12)
+        self.assertEqual(len(names), 10)
+        self.assertEqual(len(release.assets("cli")), 6)
+        self.assertEqual(set(release.assets("server")), {f"agenterm-server-{os}-{arch}"
+                         for os in ("linux", "macos") for arch in ("amd64", "arm64")})
+        self.assertEqual(len(set(names)), 10)
         self.assertFalse(any(name.endswith((".zip", ".tar.gz", ".tar.xz")) for name in names))
 
     def test_staging_excludes_generated_archives_and_checksums(self):
@@ -114,6 +117,10 @@ class ReleaseTests(unittest.TestCase):
                 self.assertFalse(output.exists())
 
     def test_server_only_reuses_complete_clients(self):
+        # Past releases also contained two Windows server assets.
+        (self.base / "agenterm-server-windows-amd64.exe").write_text("old unsupported server")
+        (self.base / "agenterm-server-windows-arm64.exe").write_text("old unsupported server")
+        self.refresh_digests()
         manifest = self.prepare("server")
         self.assertEqual(manifest["components"]["server"]["version"], "0.2.27")
         self.assertEqual(manifest["components"]["cli"]["version"], "0.2.26")
@@ -237,7 +244,7 @@ class ReleaseTests(unittest.TestCase):
             for name in release.assets(component):
                 (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
-        self.assertEqual(len(list(directory.iterdir())), 13)
+        self.assertEqual(len(list(directory.iterdir())), 11)
 
     def test_obsolete_release_attachments_are_rejected(self):
         self.prepare("all")
@@ -246,7 +253,8 @@ class ReleaseTests(unittest.TestCase):
         for component in release.COMPONENTS:
             for name in release.assets(component):
                 (directory / name).write_text("new bytes: " + name)
-        for name in ["install.sh", "install.ps1", "SHA256SUMS", "components.tar.xz", "components.zip",
+        for name in ["agenterm-server-windows-amd64.exe", "agenterm-server-windows-arm64.exe",
+                     "install.sh", "install.ps1", "SHA256SUMS", "components.tar.xz", "components.zip",
                      "agenterm-client-cli-linux-amd64.tar.xz", "agenterm-client-cli-macos-arm64.tar.gz",
                      "agenterm-client-cli-windows-amd64.zip", "agenterm-client-gui-macos-arm64",
                      "agenterm-client-gui-windows-amd64.exe", "agenterm-client-gui-macos-arm64.zip",
@@ -257,6 +265,20 @@ class ReleaseTests(unittest.TestCase):
                     release.finalize(directory, Path("release-plan"))
                 (directory / name).unlink()
 
+    def test_draft_repair_uses_original_server_inventory(self):
+        self.prepare("all")
+        plan = Path("release-plan")
+        manifest = json.loads((plan / release.MANIFEST).read_text())
+        manifest["schema"] = 1
+        (plan / release.MANIFEST).write_text(json.dumps(manifest))
+        artifacts = Path("artifacts")
+        shutil.copytree(self.base, artifacts)
+        with self.assertRaisesRegex(ValueError, "Release assets differ"):
+            release.finalize(artifacts, plan)
+        for arch in ("amd64", "arm64"):
+            (artifacts / f"agenterm-server-windows-{arch}.exe").write_text("legacy executable")
+        release.finalize(artifacts, plan)
+
     def test_complete_release_and_reused_digests(self):
         self.prepare("server")
         directory = Path("artifacts")
@@ -265,7 +287,7 @@ class ReleaseTests(unittest.TestCase):
             (directory / name).write_text("new bytes: " + name)
         release.finalize(directory, Path("release-plan"))
         hashes = json.loads((Path("release-plan") / release.REUSED_DIGESTS).read_text())
-        self.assertEqual(len(list(directory.iterdir())), 13)  # Twelve raw executables and the version manifest.
+        self.assertEqual(len(list(directory.iterdir())), 11)
         self.assertEqual(set(hashes), set(release.assets("cli")))
         release.verify(directory, list(hashes), hashes)
         for name in ["install.sh", "install.ps1", "SHA256SUMS", release.REUSED_DIGESTS]:

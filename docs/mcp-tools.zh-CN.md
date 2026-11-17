@@ -4,7 +4,7 @@
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
-| `create_client` | 创建私密连接邀请。 | `client_token`、`control_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
+| `create_client` | 创建私密连接邀请。 | `device_token`、`control_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
 | `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
 | `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
 | `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
@@ -52,7 +52,7 @@
 
 单设备邀请启用短码时，`short_code_url` 是可在浏览器查看连接信息的私密链接（例如 `example.com/c/abcdef`）。设备在线期间短链接和短码不可使用，断线后仍在有效期内时可重新使用。它与短码共用有效期，并在第 10 次成功兑换后失效；查看页面不计入兑换次数。
 
-通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令、连接令牌和浏览器邀请文案必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `client_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后将返回的 `control_token` 填入 `client_token` 参数，分多次调用 `list_client`，每轮 `wait_ms: 30000`，总预算为实际经过的 300 秒。任一设备在线立即结束等待；单轮空列表仅表示该轮没有在线设备，应在剩余预算内继续。预算耗尽后用 `wait_ms: 0` 最后检查一次，仍无设备才报告连接等待超时。临时网络错误后用 `wait_ms: 0` 即时复查一次；复查仍失败则报告检查失败、设备状态未知。重试不重置预算；用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧参数至 `300000`，但前端会将每轮实际等待限制为 30000 毫秒，向保留的旧 runtime 转发时同样生效。这些要求直接写在 MCP 工具说明中。
+通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令、连接令牌和浏览器邀请文案必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `device_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后使用返回的 `control_token`，分多次调用 `list_client`，每轮 `wait_ms: 30000`，总预算为实际经过的 300 秒。任一设备在线立即结束等待；单轮空列表仅表示该轮没有在线设备，应在剩余预算内继续。预算耗尽后用 `wait_ms: 0` 最后检查一次，仍无设备才报告连接等待超时。临时网络错误后用 `wait_ms: 0` 即时复查一次；复查仍失败则报告检查失败、设备状态未知。重试不重置预算；用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧参数至 `300000`，但前端会将每轮实际等待限制为 30000 毫秒，向保留的旧 runtime 转发时同样生效。这些要求直接写在 MCP 工具说明中。
 
 </details>
 
@@ -61,7 +61,7 @@
 
 `list_client` 只返回在线设备。每条包含 client_id、connected_at 和 client_info，不再返回顶层或设备条目的 status；是否在线由 clients 数组直接判断。client_info 的主机名、平台、架构、shell、默认目录、客户端版本和能力信息保持不变。心跳和 RTT 仍由连接内部及客户端界面使用，不拼接为 MCP 状态字符串。
 
-`close_client` 接受非空、无重复的 `client_ids` 数组；不传该参数时关闭当前 token 下所有在线设备并撤销该 token 和其邀请，即使没有在线设备也会撤销。所有 ID 均须属于该 token，校验失败时不关闭任何设备。返回的 `client_ids` 列出已关闭的连接，无设备在线时返回空数组。关闭会结束设备的会话和活动传输；仅关闭指定设备时保留 token 和邀请。已关闭客户端不会自动重连。管理访问须将 `control_token`（`token:密钥`）作为 `client_token` 传入；范围控制访问使用相同的控制凭证作为 Bearer token。仅有设备 token 不能调用控制工具。
+`close_client` 接受非空、无重复的 `client_ids` 数组；不传该参数时关闭当前 token 下所有在线设备并撤销该 token 和其邀请，即使没有在线设备也会撤销。所有 ID 均须属于该 token，校验失败时不关闭任何设备。返回的 `client_ids` 列出已关闭的连接，无设备在线时返回空数组。关闭会结束设备的会话和活动传输；仅关闭指定设备时保留 token 和邀请。已关闭客户端不会自动重连。管理访问须将 `control_token`（`token:密钥`）传入；范围控制访问使用相同的控制凭证作为 Bearer token。仅有设备 token 不能调用控制工具。
 
 </details>
 

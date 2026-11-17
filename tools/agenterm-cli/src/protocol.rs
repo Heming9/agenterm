@@ -280,7 +280,8 @@ pub fn short_address(raw: &str) -> Result<Address> {
     let a = Address::parse(&if raw.contains("://") {
         raw.into()
     } else {
-        format!("https://{raw}")
+        // The server omits the scheme only for HTTP short-code URLs.
+        format!("http://{raw}")
     })?;
     if !["http", "https"].contains(&a.scheme.as_str()) {
         return Err("expected a short-code HTTP address".into());
@@ -328,6 +329,23 @@ pub fn check_version(peer: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn short_code_addresses_follow_the_server_scheme_convention() {
+        for (input, expected) in [
+            ("example.com/c/abc123", "http://example.com/c/abc123"),
+            (
+                "[::1]:8080/test/c/abc123",
+                "http://[::1]:8080/test/c/abc123",
+            ),
+            (
+                "https://example.com/c/abc123",
+                "https://example.com/c/abc123",
+            ),
+            ("http://example.com/c/abc123", "http://example.com/c/abc123"),
+        ] {
+            assert_eq!(short_address(input).unwrap().url(), expected);
+        }
+    }
     #[test]
     fn token_ipv4() {
         let mut b = vec![1 | 4 | 64];

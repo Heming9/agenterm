@@ -40,13 +40,13 @@ func (h *multiHarness) request(auth, name string, args map[string]any, timeout .
 	if credential, ok := h.controls.Load(auth); ok {
 		auth = credential.(string)
 	}
-	if token, ok := args["client_token"].(string); ok {
+	if token, ok := args["control_token"].(string); ok {
 		if credential, found := h.controls.Load(token); found {
 			copied := make(map[string]any, len(args))
 			for k, v := range args {
 				copied[k] = v
 			}
-			copied["client_token"] = credential.(string)
+			copied["control_token"] = credential.(string)
 			args = copied
 		}
 	}
@@ -92,7 +92,7 @@ func (h *multiHarness) request(auth, name string, args map[string]any, timeout .
 	result, err := decodeToolResult(payload.Result.Content[0].Text, payload.Result.IsError, payload.Result.StructuredContent)
 	if name == "create_client" && err == nil && !payload.Result.IsError {
 		if data, ok := result.(map[string]any); ok {
-			if device, ok := data["client_token"].(string); ok {
+			if device, ok := data["device_token"].(string); ok {
 				if control, ok := data["control_token"].(string); ok {
 					h.controls.Store(device, control)
 				}
@@ -113,7 +113,7 @@ func (h *multiHarness) call(t *testing.T, auth, name string, args map[string]any
 
 func (h *multiHarness) create(t *testing.T, multi bool) string {
 	t.Helper()
-	return h.call(t, "admin-test", "create_client", map[string]any{"multi_device": multi}, false).(map[string]any)["client_token"].(string)
+	return h.call(t, "admin-test", "create_client", map[string]any{"multi_device": multi}, false).(map[string]any)["device_token"].(string)
 }
 
 func (h *multiHarness) dial(token, hostname string) (*testDeviceConn, *http.Response, error) {
@@ -169,7 +169,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	if a == b || !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(a) || !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(b) {
 		t.Fatalf("invalid IDs: %q %q", a, b)
 	}
-	listed := h.call(t, "admin-test", "list_client", map[string]any{"client_token": token}, false).(map[string]any)["clients"].([]any)
+	listed := h.call(t, "admin-test", "list_client", map[string]any{"control_token": token}, false).(map[string]any)["clients"].([]any)
 	if len(listed) != 2 || listed[0].(map[string]any)["client_info"].(map[string]any)["platform"] != "linux" || listed[0].(map[string]any)["connected_at"] == "" {
 		t.Fatal(listed)
 	}
@@ -253,7 +253,7 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 func TestMultiDeviceInvitationsAndQuota(t *testing.T) {
 	h := newMultiHarness(t, 2)
 	created := h.call(t, "admin-test", "create_client", map[string]any{"multi_device": true}, false).(map[string]any)
-	value, token := created["invitation"].(string), created["client_token"].(string)
+	value, token := created["invitation"].(string), created["device_token"].(string)
 	for i := 0; i < 2; i++ {
 		got, err := invite.Redeem(context.Background(), value)
 		if err != nil || got != token {
@@ -336,7 +336,7 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 		for _, removed := range []string{"wait_for_client", "wait_for_clients"} {
 			args := map[string]any{}
 			if auth == "admin-test" {
-				args["client_token"] = h.create(t, false)
+				args["control_token"] = h.create(t, false)
 			}
 			h.call(t, auth, removed, args, true)
 		}
@@ -346,7 +346,7 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 func TestTokenIdentifierMatchesInvitationAndRoute(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	result := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	encoded := result["client_token"].(string)
+	encoded := result["device_token"].(string)
 	token, err := protocol.Decode(encoded)
 	if err != nil || !protocol.ValidTokenIdentifier(token.Identifier) || result["token_identifier"] != token.Identifier {
 		t.Fatalf("invalid identifier: %#v %v", token, err)

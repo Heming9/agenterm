@@ -10,7 +10,10 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type serverCommand struct {
@@ -33,6 +36,8 @@ func parseServerCommand(args []string, output io.Writer) (serverCommand, error) 
 	flags := flag.NewFlagSet("agenterm-server", flag.ContinueOnError)
 	flags.SetOutput(output)
 	options := addRuntimeLaunchFlags(flags)
+	flags.StringVar(&options.Password, "passwd", "", serverText("mcp.management.key.generated.when.omitted"))
+	passwordFile := flags.String("passwd-file", "", serverText("mcp.management.key.file"))
 	instance := flags.String("instance", defaultInstance, "Instance name; separates independent servers")
 	stdio := flags.Bool("stdio", false, serverText("mcp.stdio.transport"))
 	flags.Usage = func() {
@@ -66,6 +71,19 @@ func parseServerCommand(args []string, output io.Writer) (serverCommand, error) 
 	}
 	options.Settings.ServerSocket = paths.Server
 	if action == "start" || action == "restart" {
+		if options.Fields["passwd-file"] {
+			if options.Fields["passwd"] {
+				return serverCommand{}, errors.New(serverText("mcp.management.key.conflicting.sources"))
+			}
+			key, err := readManagementKey(*passwordFile)
+			if err != nil {
+				return serverCommand{}, err
+			}
+			options.Password = key
+			// Keep the existing private runtime/check wire field for retained runtimes.
+			options.Fields["passwd"] = true
+			delete(options.Fields, "passwd-file")
+		}
 		if err := validateRuntimeLaunch(options); err != nil {
 			return serverCommand{}, err
 		}
@@ -76,6 +94,28 @@ func parseServerCommand(args []string, output io.Writer) (serverCommand, error) 
 		}
 	}
 	return serverCommand{Action: action, Paths: paths, Options: options, Stdio: *stdio}, nil
+}
+
+// A credentials file contains one bearer value with an optional final line ending.
+func readManagementKey(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	const maxBytes = 64 << 10
+	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return "", err
+	}
+	key, newline := strings.CutSuffix(string(data), "\n")
+	if newline {
+		key = strings.TrimSuffix(key, "\r")
+	}
+	if len(data) > maxBytes || key == "" || strings.TrimSpace(key) != key || !utf8.ValidString(key) || strings.ContainsFunc(key, unicode.IsControl) {
+		return "", errors.New("management key file must contain one nonempty key of at most 64 KiB")
+	}
+	return key, nil
 }
 
 // ServerMain is the sole public executable entrypoint. Runtime is an internal

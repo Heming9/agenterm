@@ -22,7 +22,7 @@ func TestCloseClientSelectionAndIsolation(t *testing.T) {
 	if got := h.call(t, token, "list_client", map[string]any{}, false).(map[string]any)["clients"].([]any); len(got) != 2 {
 		t.Fatalf("validation closed devices: %v", got)
 	}
-	out := h.call(t, "admin-test", "close_client", map[string]any{"client_token": token, "client_ids": []string{firstID}}, false).(map[string]any)
+	out := h.call(t, "admin-test", "close_client", map[string]any{"control_token": token, "client_ids": []string{firstID}}, false).(map[string]any)
 	if ids := out["client_ids"].([]any); len(ids) != 1 || ids[0] != firstID {
 		t.Fatal(out)
 	}
@@ -38,8 +38,8 @@ func TestCloseClientSelectionAndIsolation(t *testing.T) {
 	if ids := out["client_ids"].([]any); len(ids) != 1 || ids[0] != secondID {
 		t.Fatal(out)
 	}
-	h.call(t, "admin-test", "list_client", map[string]any{"client_token": token}, true)
-	h.call(t, "admin-test", "close_client", map[string]any{"client_token": token}, true)
+	h.call(t, "admin-test", "list_client", map[string]any{"control_token": token}, true)
+	h.call(t, "admin-test", "close_client", map[string]any{"control_token": token}, true)
 	if _, resp, err := h.dial(token, "reconnect"); err == nil || resp == nil || resp.StatusCode != 401 {
 		t.Fatalf("revoked token reconnected: response=%v error=%v", resp, err)
 	}
@@ -65,11 +65,11 @@ func TestCloseClientSelectionAndIsolation(t *testing.T) {
 func TestCloseClientRevokesTokenWithoutOnlineDevices(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	token := h.create(t, true)
-	out := h.call(t, "admin-test", "close_client", map[string]any{"client_token": token}, false).(map[string]any)
+	out := h.call(t, "admin-test", "close_client", map[string]any{"control_token": token}, false).(map[string]any)
 	if len(out["client_ids"].([]any)) != 0 {
 		t.Fatal(out)
 	}
-	h.call(t, "admin-test", "list_client", map[string]any{"client_token": token}, true)
+	h.call(t, "admin-test", "list_client", map[string]any{"control_token": token}, true)
 }
 
 func TestCloseClientRevocationWakesConnectionWaiter(t *testing.T) {
@@ -97,7 +97,7 @@ func TestCloseClientRevocationWakesConnectionWaiter(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	h.call(t, "admin-test", "close_client", map[string]any{"client_token": token}, false)
+	h.call(t, "admin-test", "close_client", map[string]any{"control_token": token}, false)
 	select {
 	case err := <-result:
 		if err == nil {

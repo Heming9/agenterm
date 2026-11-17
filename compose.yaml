@@ -19,8 +19,10 @@ services:
       - 0.0.0.0:8080
       - -public-url
       - "${AGENTERM_PUBLIC_URL:?Set AGENTERM_PUBLIC_URL in .env}"
-      - -passwd
-      - "${AGENTERM_MANAGEMENT_KEY:?Set AGENTERM_MANAGEMENT_KEY in .env}"
+      - -passwd-file
+      - /run/secrets/management_key
+    secrets:
+      - management_key
     healthcheck:
       test: ["CMD", "/agenterm-server", "status"]
       start_period: 90s
@@ -34,3 +36,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     stop_grace_period: 80s
+
+secrets:
+  management_key:
+    file: "${AGENTERM_MANAGEMENT_KEY_FILE:-./.secrets/management-key}"

@@ -27,18 +27,22 @@ Docker and Docker Compose are required. Run:
 ```sh
 git clone https://github.com/Heming9/agenterm.git
 cd agenterm
-cp .env.example .env
-openssl rand -hex 24
+install -m 600 .env.example .env
+install -d -m 700 .secrets
+(umask 077 && openssl rand -hex 24 > .secrets/management-key)
+chmod 444 .secrets/management-key
 ```
 
-Edit `.env`: set `AGENTERM_MANAGEMENT_KEY` to the generated value and `AGENTERM_PUBLIC_URL` to an address reachable by both sides. The default binding accepts local connections, suitable for a reverse proxy on the host. For direct access on a trusted LAN, set `AGENTERM_BIND_ADDRESS` to `0.0.0.0`.
+Compose mounts the key file at `/run/secrets/management_key`. Mode 0700 on the host directory restricts access to its owner, while mode 0444 on the file allows the container's service user to read the mount. When upgrading, put the existing `AGENTERM_MANAGEMENT_KEY` value from `.env` into the file on one line with the same permissions, then remove the old environment entry. To use another file, set `AGENTERM_MANAGEMENT_KEY_FILE` in `.env`.
+
+Set `AGENTERM_PUBLIC_URL` in `.env` to an address reachable by both sides. The default binding accepts local connections, suitable for a reverse proxy on the host. For direct access on a trusted LAN, set `AGENTERM_BIND_ADDRESS` to `0.0.0.0`.
 
 ```sh
 docker compose up -d --build
 docker compose logs -f server
 ```
 
-Use the MCP URL displayed in the logs and the management key from `.env` to connect your agent. Restarting or recreating the container disconnects devices and clears in-memory sessions.
+Use the MCP URL displayed in the logs and the key from the management key file to connect your agent. Restarting or recreating the container disconnects devices and clears in-memory sessions.
 
 ## ⚙️ Option 3: systemd
 
@@ -51,17 +55,18 @@ sudo install -m 755 agenterm-server /opt/agenterm/agenterm-server
 sudo install -m 644 deploy/systemd/agenterm-server.service /etc/systemd/system/
 ```
 
-Generate a management key:
+Create the service credential on a new installation:
 
 ```sh
-openssl rand -hex 24
+sudo sh -c 'umask 077 && openssl rand -hex 24 > /etc/agenterm-management-key'
 ```
 
-Create `/etc/agenterm.env` with your public HTTPS address and the generated key:
+During an upgrade, copy the existing key value from `AGENTERM_MANAGEMENT_KEY` in `/etc/agenterm.env` into the root-owned, mode 0600 file `/etc/agenterm-management-key` as a single line, then remove the key entry from the environment file. This preserves access to an existing runtime. A runtime originally started with `-passwd` retains its original process arguments until it exits. To clear them, arrange a runtime restart after active sessions have ended. The unit uses systemd's `LoadCredential` to provide the file to its service user.
+
+Set the public HTTPS address in `/etc/agenterm.env`:
 
 ```text
 AGENTERM_PUBLIC_URL=https://YOUR_HOST
-AGENTERM_MANAGEMENT_KEY=YOUR_FIXED_KEY
 ```
 
 ```sh
@@ -102,7 +107,7 @@ After building, deploy using the direct or systemd instructions above.
 
 ## Release pipeline
 
-The [release workflow](../.github/workflows/release.yml) runs [build checks](../.github/workflows/checks.yml), six native Rust CLI builds, and native P2P builds in parallel. Server packaging waits for CLI and P2P distributions; publication requires all checks and generated client download validation to pass. Only the Rust CLI and Go Server are maintained. Selective releases never reuse legacy Go CLI or GUI assets.
+The [release workflow](../.github/workflows/release.yml) runs [build checks](../.github/workflows/checks.yml), six native Rust CLI builds, and native P2P builds in parallel. Server packaging waits for CLI and P2P distributions; publication requires all checks and generated client download validation to pass. The release includes CLI binaries for macOS, Linux and Windows and Server binaries for macOS and Linux, each for amd64 and arm64. Selective releases never reuse legacy Go CLI or GUI assets.
 
 See [Rust CLI release builds](../tools/agenterm-cli/README.md#release-builds) to rebuild the client bundle. Linux CLI downloads use system OpenSSL and are built on Ubuntu 24.04; target machines need compatible glibc and OpenSSL shared libraries.
 Native P2P caches require an exact fingerprint of the component source, native validation scripts, packaging workflow, Rust version, runner and target. Restored artifacts are checked for component version, executable architecture and SHA-256 before use. Missing or invalid caches trigger a full native build; Cargo dependencies and compilation outputs have a separate cache.
@@ -137,8 +142,9 @@ agenterm-server -help
 | `-listen` | Listening address; default `127.0.0.1:8080`. |
 | `-public-url` | External address, default `http://127.0.0.1:8080`. This only sets the address; it does not enable HTTPS. Transport encryption is the responsibility of the deployment environment. |
 | `-url-prefix` | URL path prefix for all endpoints; default `/agenterm`. Use `/` for root routes. |
-| `-passwd` | MCP management key; generated when omitted. Cannot be combined with `-no-password`. |
-| `-no-password` | Allow access to the MCP management interface without a password. |
+| `-passwd` | Supply the MCP management key directly. The key is visible in the launching process's command line. |
+| `-passwd-file` | Read the MCP management key from a single-line file. Choose one of `-passwd` and `-passwd-file`. With authentication enabled, omitting both generates a key on first startup. |
+| `-no-password` | Allow access to the MCP management interface without a password. Mutually exclusive with both key options. |
 | `-max-clients-per-ip` | Maximum connected clients per invitation creator's IP; default `0`, meaning unlimited. |
 | `-client-ip-header` | Trusted request header containing a single client IP; empty by default, using the directly connected peer IP. |
 | `-enable-short-code` | Enable issuing and redeeming short codes; short codes are disabled by default. |

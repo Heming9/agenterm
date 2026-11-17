@@ -3,13 +3,13 @@ package service
 import (
 	"agenterm/internal/components"
 	"agenterm/internal/logging"
+	"agenterm/internal/p2p"
 	"context"
+	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -31,15 +31,17 @@ import (
 // frontend has no device credentials, connections or execution state. A fresh
 // instance can serve the same runtime immediately after an upgrade.
 type frontend struct {
-	control          control
-	clientURL        string
-	p2pAssets        string
-	p2pDownloads     fs.FS
-	p2pDownloadsOnce sync.Once
-	mcpOnce          sync.Once
-	mcpHandler       http.Handler
-	stopping         atomic.Bool
-	shutdown         context.CancelFunc
+	control      control
+	clientURL    string
+	p2pAssets    string
+	p2pDownloads fs.FS
+	p2pOnce      sync.Once
+	p2pVerified  p2p.Manifest
+	p2pErr       error
+	mcpOnce      sync.Once
+	mcpHandler   http.Handler
+	stopping     atomic.Bool
+	shutdown     context.CancelFunc
 }
 
 const remoteAddrHeader = "X-Agenterm-Ingress-Remote-Addr"
@@ -220,24 +222,19 @@ func (s *frontend) socketHandler(assets http.Handler) http.Handler {
 // runtimeWorkerMain is accessible only through the server's inherited startup pipe.
 func runtimeWorkerMain() {
 	output, ready := runtimeStartupOutput()
-	flags := flag.NewFlagSet("runtime-worker", flag.ExitOnError)
-	flags.SetOutput(output)
-	options := addRuntimeLaunchFlags(flags)
-	controlSocket := flags.String("runtime-socket", "", "Internal control socket")
-	upstreamSocket := flags.String("server-socket", "", "Internal backend entrypoint")
-	if err := flags.Parse(os.Args[1:]); err != nil {
-		log.Fatal(err)
+	var startup runtimeBootstrap
+	if err := json.NewDecoder(os.Stdin).Decode(&startup); err != nil {
+		fmt.Fprintln(output, "invalid runtime startup configuration")
+		os.Exit(1)
 	}
-	options.Fields = make(map[string]bool)
-	flags.Visit(func(f *flag.Flag) { options.Fields[f.Name] = true })
-	options.Settings.ServerSocket = *upstreamSocket
+	_ = os.Stdin.Close()
 	closeLog, err := configureServiceLogging("runtime", os.Getenv("AGENTERM_LOG_INSTANCE"))
 	if err != nil {
 		fmt.Fprintln(output, err)
 		os.Exit(1)
 	}
 	defer closeLog()
-	if err := runtimeMain(options, *controlSocket, output, ready); err != nil {
+	if err := runtimeMain(&startup.Options, startup.ControlSocket, output, ready); err != nil {
 		// Startup errors must reach the launcher even when the independent log
 		// sink is a file. After readiness this pipe is already closed.
 		fmt.Fprintln(output, err)

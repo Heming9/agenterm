@@ -51,7 +51,11 @@ func TestRustCLIRealServer(t *testing.T) {
 	}
 	defer log.Close()
 	env := append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1", "HOME="+home, "TMPDIR="+home, "AGENTERM_LANG=en", "P2P_CLI_STUN=none")
-	server := exec.Command(serverPath, "start", "-instance", instance, "-listen", address, "-public-url", url, "-passwd", "prototype-test-password", "-enable-short-code")
+	keyFile := filepath.Join(home, "management-key")
+	if err := os.WriteFile(keyFile, []byte("prototype-test-password"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := exec.Command(serverPath, "start", "-instance", instance, "-listen", address, "-public-url", url, "-passwd-file", keyFile, "-enable-short-code")
 	server.Env = env
 	server.Stdout = log
 	server.Stderr = log
@@ -130,7 +134,7 @@ func TestRustCLIRealServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer clientLog.Close()
-	client := exec.Command(clientPath, "-token", url+"/agenterm/c/"+created["short_code"].(string), "-connection-mode", "persistent")
+	client := exec.Command(clientPath, "-token", created["short_code_url"].(string), "-connection-mode", "persistent")
 	remoteState := filepath.Join(home, "p2p-remote")
 	client.Env = append(env, "SHELL=/bin/sh", "NO_COLOR=1", "P2P_CLI_STATE_DIR="+remoteState,
 		"XDG_CACHE_HOME="+filepath.Join(home, "cache-remote"))
@@ -158,27 +162,27 @@ func TestRustCLIRealServer(t *testing.T) {
 			t.Logf("Rust client log: %s", b)
 		}
 	})
-	listed := call("list_client", map[string]any{"client_token": control, "wait_ms": 5000})
+	listed := call("list_client", map[string]any{"control_token": control, "wait_ms": 5000})
 	clients := listed["clients"].([]any)
 	if len(clients) != 1 {
 		t.Fatal("Rust client did not connect to the real runtime")
 	}
 	id := clients[0].(map[string]any)["client_id"]
-	result := call("execute_command", map[string]any{"client_token": control, "client_id": id, "command": "export RUST_REAL_SERVER=works; printf 'rust-through-mcp\\n'", "setup": map[string]any{"session_id": "smoke"}})
+	result := call("execute_command", map[string]any{"control_token": control, "client_id": id, "command": "export RUST_REAL_SERVER=works; printf 'rust-through-mcp\\n'", "setup": map[string]any{"session_id": "smoke"}})
 	if result["status"] != "idle" || !strings.Contains(result["output"].(string), "rust-through-mcp") {
 		t.Fatal(result)
 	}
-	result = call("execute_command", map[string]any{"client_token": control, "client_id": id, "session_id": "smoke", "command": "printf '%s' \"$RUST_REAL_SERVER\""})
+	result = call("execute_command", map[string]any{"control_token": control, "client_id": id, "session_id": "smoke", "command": "printf '%s' \"$RUST_REAL_SERVER\""})
 	if !strings.Contains(result["output"].(string), "works") {
 		t.Fatal(result)
 	}
-	stopped := call("session_control", map[string]any{"client_token": control, "client_id": id, "session_id": "smoke", "action": "stop"})
+	stopped := call("session_control", map[string]any{"control_token": control, "client_id": id, "session_id": "smoke", "action": "stop"})
 	if stopped["status"] != "closed" {
 		t.Fatal(stopped)
 	}
 	agentState := filepath.Join(home, "p2p-agent")
 	agentEnv := append(env, "P2P_CLI_STATE_DIR="+agentState, "XDG_CACHE_HOME="+filepath.Join(home, "cache-agent"))
 	testRustP2PRoundTrip(t, ctx, agentEnv, agentState, remoteState, func() map[string]any {
-		return call("p2p_transfer_start", map[string]any{"client_token": control, "client_id": id})
+		return call("p2p_transfer_start", map[string]any{"control_token": control, "client_id": id})
 	}, func() error { return client.Process.Signal(os.Interrupt) })
 }

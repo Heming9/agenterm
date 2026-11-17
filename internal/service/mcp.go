@@ -46,10 +46,10 @@ func (s *frontend) mcp(w http.ResponseWriter, r *http.Request) {
 }
 
 type targetArgs struct {
-	ClientToken string `json:"client_token,omitempty"`
+	ControlToken string `json:"control_token,omitempty"`
 }
 
-func (a targetArgs) targetToken() string { return a.ClientToken }
+func (a targetArgs) targetToken() string { return a.ControlToken }
 
 type listClientsArgs struct {
 	targetArgs
@@ -96,13 +96,13 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 		panic(err)
 	}
 	if admin {
-		schema.Required = append(schema.Required, "client_token")
+		schema.Required = append(schema.Required, "control_token")
 	} else {
-		delete(schema.Properties, "client_token")
+		delete(schema.Properties, "control_token")
 	}
 	descriptions := map[string]string{
-		"client_token": "mcp.target.client.connection.token.required.when.authenticated.with",
-		"client_id":    "mcp.client.id", "command": "mcp.shell.command",
+		"control_token": "mcp.target.client.connection.token.required.when.authenticated.with",
+		"client_id":     "mcp.client.id", "command": "mcp.shell.command",
 		"client_ids": "mcp.client.ids",
 		"setup":      "mcp.execution.setup",
 		"session_id": "mcp.session.identifier", "cursor": "mcp.byte.cursor.initially.0",
@@ -117,7 +117,7 @@ func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, m
 			property.Description = serverText(key)
 		}
 		switch field {
-		case "command", "session_id", "client_token":
+		case "command", "session_id", "control_token":
 			property.MinLength = new(1)
 			if field == "session_id" {
 				property.MaxLength = new(64)
@@ -271,18 +271,22 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
+			// Runtime API 14 calls the device credential client_token on its private wire.
+			deviceToken := out["client_token"].(string)
+			delete(out, "client_token")
+			out["device_token"] = deviceToken
 			expires, err := time.Parse(time.RFC3339, out["expires_at"].(string))
 			if err != nil {
 				return nil, nil, err
 			}
 			code, _ := out["short_code"].(string)
 			if code != "" {
-				out["short_code_url"] = shortCodeURL(out["client_token"].(string), code)
+				out["short_code_url"] = shortCodeURL(deviceToken, code)
 			}
-			shell, powershell := installCommands(out["client_token"].(string))
+			shell, powershell := installCommands(deviceToken)
 			out["macos_linux_command"] = shell
 			out["windows_powershell_command"] = powershell
-			out["display_text"] = connectionDisplayText(out["client_token"].(string), out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, a.TimeoutSeconds, expires, out["multi_device"].(bool))
+			out["display_text"] = connectionDisplayText(deviceToken, out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, a.TimeoutSeconds, expires, out["multi_device"].(bool))
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})
 	}

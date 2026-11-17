@@ -37,7 +37,7 @@ func TestSessionControlDiscoveryAndRetiredTools(t *testing.T) {
 		for _, name := range []string{"session_start", "session_write", "session_interrupt", "session_eof", "session_stop"} {
 			args := map[string]any{"session_id": "unknown", "input": "text"}
 			if auth == "admin-test" {
-				args["client_token"] = token
+				args["control_token"] = token
 			}
 			result, err := client.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 			if err == nil || !strings.Contains(err.Error(), "unknown tool") {
