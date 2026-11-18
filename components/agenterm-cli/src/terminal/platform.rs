@@ -280,10 +280,13 @@ pub fn control(t: &Terminal, action: &str) -> Result<()> {
         if libc::tcgetattr(fd, &mut settings) != 0 {
             return Err(std::io::Error::last_os_error().to_string());
         }
-        if settings.c_lflag & libc::ICANON == 0 || settings.c_cc[libc::VEOF] == 0xff {
+        let eof = settings.c_cc[libc::VEOF];
+        if settings.c_lflag & libc::ICANON == 0
+            || libc::c_long::from(eof) == libc::fpathconf(fd, libc::_PC_VDISABLE)
+        {
             return Err("EOF requires canonical terminal input".into());
         }
-        t.write(&[settings.c_cc[libc::VEOF]])
+        t.write(&[eof])
     }
 }
 
