@@ -170,7 +170,9 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._+-]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
-          python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
+          client_version=$(python3 -c 'import json; print(json.load(open("release-plan/release-manifest.json"))["components"]["cli"]["version"])')
+          python3 scripts/build_components.py --client-dir dist --client-version "$client_version" --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
+          python3 scripts/build_server.py --prepare-only
           AGENTERM_RELEASE_DIR="$RUNNER_TEMP/cli-downloads" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           # Use the inventory from the selected source ref, including for historical rebuilds.
           PYTHONPATH=scripts/release python3 - <<'PY'

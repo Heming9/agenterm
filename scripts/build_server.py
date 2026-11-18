@@ -77,6 +77,8 @@ def cache_lock(path):
 
 def prepare(root, cache):
     manifest = read_manifest(root / 'internal/components/assets/components.tar.xz')
+    from client_bundle_provenance import validate
+    validate(root, manifest)
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     cache.chmod(0o700)
     # Protect publication, prepared download copies and the auxiliary raw CLI

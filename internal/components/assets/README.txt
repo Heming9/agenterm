@@ -42,3 +42,10 @@ The Go packer and HTTP download path share the deterministic per-file encoders.
 GitHub Release publishes only original executables and version metadata.
 HTTP distribution generates archives only on demand. scripts/build_server.py prepares raw sources for local build/deploy
 helpers without generating all download formats.
+
+client-provenance.json records the six client hashes, their compatible protocol
+version, and a digest of client build inputs. scripts/build_server.py rejects
+stale or mismatched bundles. Rebuild and repack the clients whenever those inputs
+change; a compatible patch-version client may be reused explicitly with
+--client-version when its source inputs are unchanged. Ordinary go build does not
+run this check; use scripts/build_server.py or the release workflow.
