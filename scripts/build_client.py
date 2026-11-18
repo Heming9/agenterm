@@ -24,7 +24,7 @@ def binary_name(target):
 
 
 def build(root, output, target):
-    component = root / 'tools/agenterm-cli'
+    component = root / 'components/agenterm-cli'
     manifest = component / 'Cargo.toml'
     env = os.environ.copy()
     if TARGETS[target][0] == 'windows':

@@ -1,6 +1,6 @@
 # Terminal client API
 
-The [Rust CLI](../tools/agenterm-cli/README.md) executes terminal commands and owns session state, processes, output and retention. The Go server uses the request and response types in `internal/terminalapi` to expose the terminal API through MCP.
+The [Rust CLI](../components/agenterm-cli/README.md) executes terminal commands and owns session state, processes, output and retention. The Go server uses the request and response types in `internal/terminalapi` to expose the terminal API through MCP.
 
 `protocol.Message` carries `api_call`, `api_cancel` and `api_result` envelopes with JSON request and result bodies. The server and client negotiate the terminal API version in the WebSocket handshake. Cancelling an API request cancels the response waiter. Commands that the client has accepted continue running.
 

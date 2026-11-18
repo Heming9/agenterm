@@ -12,8 +12,8 @@ translations from `internal/i18n/messages.json`, so build inside this repository
 Dependencies are pinned in `Cargo.lock`.
 
 ```sh
-cargo build --release --locked --manifest-path tools/agenterm-cli/Cargo.toml
-tools/agenterm-cli/target/release/agenterm-cli
+cargo build --release --locked --manifest-path components/agenterm-cli/Cargo.toml
+components/agenterm-cli/target/release/agenterm-cli
 ```
 
 The interactive prompt accepts a full device token, a short-code URL, or a bare
@@ -23,9 +23,9 @@ For HTTPS, include the `https://` prefix.
 Existing server history and per-server connection locks are shared.
 
 ```sh
-tools/agenterm-cli/target/release/agenterm-cli -invite INVITATION
-tools/agenterm-cli/target/release/agenterm-cli -token TOKEN -connection-mode persistent
-tools/agenterm-cli/target/release/agenterm-cli -token https://SERVER/agenterm/c/ABC123
+components/agenterm-cli/target/release/agenterm-cli -invite INVITATION
+components/agenterm-cli/target/release/agenterm-cli -token TOKEN -connection-mode persistent
+components/agenterm-cli/target/release/agenterm-cli -token https://SERVER/agenterm/c/ABC123
 ```
 
 ## Protocol links
@@ -131,30 +131,30 @@ Errors currently use English where there is no ported localized message.
 ## Verification
 
 ```sh
-cargo fmt --check --manifest-path tools/agenterm-cli/Cargo.toml
-cargo clippy --locked --manifest-path tools/agenterm-cli/Cargo.toml --all-targets -- -D warnings
-cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml
-AGENTERM_LANG=en cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
-AGENTERM_LANG=zh-CN cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
-cargo build --release --locked --manifest-path tools/agenterm-cli/Cargo.toml
+cargo fmt --check --manifest-path components/agenterm-cli/Cargo.toml
+cargo clippy --locked --manifest-path components/agenterm-cli/Cargo.toml --all-targets -- -D warnings
+cargo test --locked --manifest-path components/agenterm-cli/Cargo.toml
+AGENTERM_LANG=en cargo test --locked --manifest-path components/agenterm-cli/Cargo.toml tui::tests
+AGENTERM_LANG=zh-CN cargo test --locked --manifest-path components/agenterm-cli/Cargo.toml tui::tests
+cargo build --release --locked --manifest-path components/agenterm-cli/Cargo.toml
 
 # Real Go token encoder + HTTP/WebSocket/TLS server fixtures.
-AGENTERM_RUST_CLI="$PWD/tools/agenterm-cli/target/release/agenterm-cli" \
-  go test -v ./tools/agenterm-cli/tests
+AGENTERM_RUST_CLI="$PWD/components/agenterm-cli/target/release/agenterm-cli" \
+  go test -v ./components/agenterm-cli/tests
 
 # Full isolated Go server/runtime + official MCP SDK + Rust client.
 go build -trimpath -gcflags=all=-l -ldflags='-s -w' \
-  -o tools/agenterm-cli/target/agenterm-server ./cmd/agenterm-server
-AGENTERM_RUST_CLI="$PWD/tools/agenterm-cli/target/release/agenterm-cli" \
-AGENTERM_GO_SERVER="$PWD/tools/agenterm-cli/target/agenterm-server" \
-  go test -v ./tools/agenterm-cli/tests
+  -o components/agenterm-cli/target/agenterm-server ./cmd/agenterm-server
+AGENTERM_RUST_CLI="$PWD/components/agenterm-cli/target/release/agenterm-cli" \
+AGENTERM_GO_SERVER="$PWD/components/agenterm-cli/target/agenterm-server" \
+  go test -v ./components/agenterm-cli/tests
 
-python3 tools/agenterm-cli/measure.py
+python3 components/agenterm-cli/measure.py
 
 # macOS only, opt-in: registers the real handler and opens a Terminal window.
-AGENTERM_RUST_CLI="$PWD/tools/agenterm-cli/target/release/agenterm-cli" \
+AGENTERM_RUST_CLI="$PWD/components/agenterm-cli/target/release/agenterm-cli" \
 AGENTERM_TEST_NATIVE_LINK=1 \
-  go test -v ./tools/agenterm-cli/tests -run '^TestRustNativeMacProtocolLaunch$'
+  go test -v ./components/agenterm-cli/tests -run '^TestRustNativeMacProtocolLaunch$'
 ```
 
 The tests use local servers, a temporary home, and an explicitly trusted temporary
@@ -215,8 +215,8 @@ belong in an ignored build directory, not source control:
 
 ```sh
 rustup target add x86_64-pc-windows-msvc
-python3 tools/agenterm-cli/build_windows.py \
-  --sdk-lib tools/agenterm-cli/target/cross/windows-sdk --tests
+python3 components/agenterm-cli/build_windows.py \
+  --sdk-lib components/agenterm-cli/target/cross/windows-sdk --tests
 ```
 
 The SDK directory must contain the combined libraries from MSVC `lib/x64`,
@@ -228,12 +228,12 @@ Linux builds and runtime tests use an ARM64 Docker image with an x64 cross
 compiler, both OpenSSL development packages, a target glibc sysroot, and QEMU:
 
 ```sh
-cargo fetch --locked --manifest-path tools/agenterm-cli/Cargo.toml
-python3 tools/agenterm-cli/build_linux.py --build-image --test
+cargo fetch --locked --manifest-path components/agenterm-cli/Cargo.toml
+python3 components/agenterm-cli/build_linux.py --build-image --test
 ```
 
 The helper shares the local Cargo registry cache and builds offline. It writes
 `target/cross/linux-arm64/agenterm-cli` and `target/cross/linux-amd64/agenterm-cli`.
 Subsequent runs can omit `--build-image`; `--arch arm64` or `--arch amd64`
-selects one architecture. All paths above are relative to `tools/agenterm-cli`
+selects one architecture. All paths above are relative to `components/agenterm-cli`
 unless the full repository path is shown. Build products and SDKs are ignored.

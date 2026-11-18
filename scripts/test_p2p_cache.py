@@ -18,10 +18,10 @@ class NativeCacheTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         files = {
-            'tools/p2p-cli/Cargo.toml': '[package]\nversion="0.1.1"\n',
-            'tools/p2p-cli/Cargo.lock': '# dependencies\n',
-            'tools/p2p-cli/src/main.rs': 'fn main() {}\n',
-            'tools/p2p-cli/daemon_e2e.py': '# native validation\n',
+            'components/p2p-cli/Cargo.toml': '[package]\nversion="0.1.1"\n',
+            'components/p2p-cli/Cargo.lock': '# dependencies\n',
+            'components/p2p-cli/src/main.rs': 'fn main() {}\n',
+            'components/p2p-cli/daemon_e2e.py': '# native validation\n',
             'scripts/build_p2p_cli.py': '# packaging\n',
             'scripts/install_linux_musl.sh': '# Linux build setup\n',
             'scripts/p2p_cache.py': '# cache contract\n',
@@ -56,14 +56,14 @@ class NativeCacheTests(unittest.TestCase):
         go.parent.mkdir(parents=True)
         go.write_text('package terminalapi\n')
         subprocess.run(['git', '-c', 'core.autocrlf=false', 'add', 'internal/terminalapi/types.go'], cwd=self.root, check=True)
-        target = self.root / 'tools/p2p-cli/target/output'
+        target = self.root / 'components/p2p-cli/target/output'
         target.parent.mkdir(parents=True)
         target.write_bytes(b'compiled object')
         self.assertEqual(self.value, cache.identity(self.root, self.target, '1.99.1', 'macos-15-intel'))
 
     def test_native_sources_lockfile_packaging_and_validation_changes_invalidate(self):
-        for name in ('tools/p2p-cli/src/main.rs', 'tools/p2p-cli/Cargo.lock',
-                     'tools/p2p-cli/daemon_e2e.py', 'scripts/build_p2p_cli.py',
+        for name in ('components/p2p-cli/src/main.rs', 'components/p2p-cli/Cargo.lock',
+                     'components/p2p-cli/daemon_e2e.py', 'scripts/build_p2p_cli.py',
                      'scripts/p2p_cache.py', 'scripts/install_linux_musl.sh', '.github/workflows/p2p-cli.yml'):
             with self.subTest(file=name):
                 path = self.root / name
@@ -95,7 +95,7 @@ class NativeCacheTests(unittest.TestCase):
 
     def test_source_mismatch_rejects_before_copying(self):
         cache.store(self.root, self.directory, self.source, self.value)
-        source = self.root / 'tools/p2p-cli/src/main.rs'
+        source = self.root / 'components/p2p-cli/src/main.rs'
         source.write_text('fn main() { panic!() }')
         changed = cache.identity(self.root, self.target, '1.99.1', 'macos-15-intel')
         self.assertFalse(self.restore(changed))

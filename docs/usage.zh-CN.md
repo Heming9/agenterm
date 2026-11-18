@@ -54,7 +54,7 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 
 ## 💻 客户端操作
 
-目前维护的客户端为 [Rust CLI](../tools/agenterm-cli/README.md)。粘贴连接令牌或短码地址即可连接；使用方向键或鼠标滚轮浏览，拖选文字复制，按 Ctrl+C 断开并返回连接界面。在连接界面中，Ctrl+C 先清空令牌，再按一次退出。
+目前维护的客户端为 [Rust CLI](../components/agenterm-cli/README.md)。粘贴连接令牌或短码地址即可连接；使用方向键或鼠标滚轮浏览，拖选文字复制，按 Ctrl+C 断开并返回连接界面。在连接界面中，Ctrl+C 先清空令牌，再按一次退出。
 
 受邀页面保留“打开终端版并连接”入口，供协议链接启动使用。Rust CLI 暂未支持协议链接；支持完成前，请使用连接命令或粘贴令牌。连接命令会提示选择临时连接、持久连接或拒绝授权。
 
@@ -84,7 +84,7 @@ Agenterm 提供终端协助，不提供远程桌面。Windows 支持简单的交
 
 ### 如何传输文件？
 
-在目标设备通过 Rust CLI 上线后，可通过 MCP 的 `p2p_transfer_start` 发起文件传输。两台设备需要能建立直连，每次传输一个文件。关闭客户端会停止其 P2P 组件。详见 [P2P 组件说明](../tools/p2p-cli/README.md)。
+在目标设备通过 Rust CLI 上线后，可通过 MCP 的 `p2p_transfer_start` 发起文件传输。两台设备需要能建立直连，每次传输一个文件。关闭客户端会停止其 P2P 组件。详见 [P2P 组件说明](../components/p2p-cli/README.md)。
 
 ### 权限与隐私
 

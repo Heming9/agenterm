@@ -93,11 +93,11 @@ python3 scripts/build_server.py --output dist/agenterm-server
 ## 验证
 
 ```sh
-cargo test --manifest-path tools/p2p-cli/Cargo.toml --locked
-cargo clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets -- -D warnings
-python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli
+cargo test --manifest-path components/p2p-cli/Cargo.toml --locked
+cargo clippy --manifest-path components/p2p-cli/Cargo.toml --all-targets -- -D warnings
+python3 components/p2p-cli/daemon_e2e.py components/p2p-cli/target/release/p2p-cli
 # 单独运行 45 秒延迟启动回归
-python3 tools/p2p-cli/daemon_e2e.py tools/p2p-cli/target/release/p2p-cli --delayed-only
+python3 components/p2p-cli/daemon_e2e.py components/p2p-cli/target/release/p2p-cli --delayed-only
 ```
 
 服务端信令和启动脚本测试：
@@ -107,7 +107,7 @@ go test ./internal/p2p ./internal/service -run 'TestP2P|TestManifest' -count=1
 ```
 
 设置 `AGENTERM_RUST_CLI` 与 `AGENTERM_GO_SERVER` 指向已构建的二进制后，运行
-`go test ./tools/agenterm-cli/tests -run 'P2PBootstrapLifecycle|RustCLIRealServer' -count=1`
+`go test ./components/agenterm-cli/tests -run 'P2PBootstrapLifecycle|RustCLIRealServer' -count=1`
 可验证协议回执、停止和重连清理。在 macOS 和 Linux 上也会通过真实 MCP 启动组件并双向传输文件。
 
 Windows 的直接命令测试使用相应 `.exe` 路径。单元测试覆盖 SDP 兼容、拒绝中转、STUN、Windows 路径、校验失败、目标写入竞争和覆盖提交；持久连接测试覆盖连续双向复制、空文件、块边界、32 MiB 与 256 MiB 文件、大小限制、拒绝目录、未经授权的本地命令，以及 stop、取消文件和复制调用方退出时的清理。大文件测试在 macOS/Linux 采样后台进程 RSS，延迟启动回归让另一端等待 45 秒后再加入连接。所有端到端用例均通过 `start/status/cp/stop` 执行。

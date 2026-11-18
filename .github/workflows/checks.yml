@@ -74,11 +74,11 @@ jobs:
       - name: Check Rust CLI
         shell: bash
         run: |
-          cargo fmt --manifest-path tools/agenterm-cli/Cargo.toml --check
-          cargo clippy --locked --manifest-path tools/agenterm-cli/Cargo.toml --all-targets -- -D warnings
-          cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml
-          AGENTERM_LANG=en cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
-          AGENTERM_LANG=zh-CN cargo test --locked --manifest-path tools/agenterm-cli/Cargo.toml tui::tests
+          cargo fmt --manifest-path components/agenterm-cli/Cargo.toml --check
+          cargo clippy --locked --manifest-path components/agenterm-cli/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path components/agenterm-cli/Cargo.toml
+          AGENTERM_LANG=en cargo test --locked --manifest-path components/agenterm-cli/Cargo.toml tui::tests
+          AGENTERM_LANG=zh-CN cargo test --locked --manifest-path components/agenterm-cli/Cargo.toml tui::tests
       - name: Test Rust CLI with the Go server
         shell: bash
         run: |
@@ -86,4 +86,4 @@ jobs:
           go build -o dist/agenterm-server.exe ./cmd/agenterm-server
           export AGENTERM_RUST_CLI="$PWD/$(find dist -maxdepth 1 -name 'agenterm-client-cli-*' -print -quit)"
           export AGENTERM_GO_SERVER="$PWD/dist/agenterm-server.exe"
-          go test -v ./tools/agenterm-cli/tests
+          go test -v ./components/agenterm-cli/tests

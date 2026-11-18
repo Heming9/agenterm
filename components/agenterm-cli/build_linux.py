@@ -34,7 +34,7 @@ def main():
         # Build the test harness and Go server on the host; only the Rust
         # executable needs to be emulated for the x64 interoperability run.
         env = dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH="arm64")
-        subprocess.run(["go", "test", "-c", "-o", str(native / "interop.test"), "./tools/agenterm-cli/tests"], cwd=root, env=env, check=True)
+        subprocess.run(["go", "test", "-c", "-o", str(native / "interop.test"), "./components/agenterm-cli/tests"], cwd=root, env=env, check=True)
         subprocess.run(["go", "build", "-trimpath", "-gcflags=all=-l", "-ldflags", "-s -w", "-o", str(native / "agenterm-server"), "./cmd/agenterm-server"], cwd=root, env=env, check=True)
     for arch in ("arm64", "amd64") if args.arch == "all" else (args.arch,):
         target = {"arm64": "aarch64-unknown-linux-gnu", "amd64": "x86_64-unknown-linux-gnu"}[arch]

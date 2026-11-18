@@ -54,7 +54,7 @@ After a successful connection, the client saves the server address locally. Ente
 
 ## 💻 Client controls
 
-The maintained client is the [Rust CLI](../tools/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use arrow keys or the mouse wheel to browse, drag to select and copy text, and press Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
+The maintained client is the [Rust CLI](../components/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use arrow keys or the mouse wheel to browse, drag to select and copy text, and press Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
 
 The invitation page retains **Open terminal client and connect** for protocol-link support. The Rust CLI does not handle those links yet; use the connection command or paste the token while this support is being added. Connection commands ask you to authorize temporary or persistent access, or deny it.
 
@@ -84,7 +84,7 @@ Agenterm provides terminal assistance, not a remote desktop. Windows supports si
 
 ### How do I transfer files?
 
-Use `p2p_transfer_start` through MCP to start file transfer on a device connected with the Rust CLI. The two devices must be able to connect directly, and each transfer handles one file. Closing the client stops its P2P helper. See the [P2P component guide](../tools/p2p-cli/README.md).
+Use `p2p_transfer_start` through MCP to start file transfer on a device connected with the Rust CLI. The two devices must be able to connect directly, and each transfer handles one file. Closing the client stops its P2P helper. See the [P2P component guide](../components/p2p-cli/README.md).
 
 ### Permissions and privacy
 

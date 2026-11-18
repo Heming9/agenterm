@@ -111,7 +111,7 @@ def main():
     if args.require_all:
         parser.error('--require-all requires --merge')
     root = Path(__file__).resolve().parent.parent
-    component = root / "tools/p2p-cli"
+    component = root / "components/p2p-cli"
     os_name = {"Darwin": "darwin", "Linux": "linux", "Windows": "windows"}[platform.system()]
     arch = {"x86_64": "amd64", "AMD64": "amd64", "aarch64": "arm64", "arm64": "arm64", "ARM64": "arm64"}[platform.machine()]
     if args.target:

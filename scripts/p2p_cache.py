@@ -14,9 +14,9 @@ from build_p2p_cli import TARGETS, binary_name, verify_binary
 def identity(root, target, rust, runner):
     if target not in TARGETS:
         raise ValueError('Unsupported native target')
-    required = {'tools/p2p-cli/Cargo.toml', 'tools/p2p-cli/Cargo.lock',
+    required = {'components/p2p-cli/Cargo.toml', 'components/p2p-cli/Cargo.lock',
                 'scripts/build_p2p_cli.py', 'scripts/install_linux_musl.sh', 'scripts/p2p_cache.py', '.github/workflows/p2p-cli.yml'}
-    tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', 'tools/p2p-cli'], cwd=root)
+    tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', 'components/p2p-cli'], cwd=root)
     files = required | {name.decode() for name in tracked.split(b'\0') if name}
     digest = hashlib.sha256()
     for name in sorted(files):
@@ -30,7 +30,7 @@ def cache_key(value):
 
 def checked_assets(root, directory, target):
     manifest = json.loads((directory / 'manifest.json').read_text())
-    version = tomllib.loads((root / 'tools/p2p-cli/Cargo.toml').read_text())['package']['version']
+    version = tomllib.loads((root / 'components/p2p-cli/Cargo.toml').read_text())['package']['version']
     system, arch = TARGETS[target]
     name = binary_name(system, arch)
     if not isinstance(manifest, dict) or manifest.get('version') != version:

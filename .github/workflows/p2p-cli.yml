@@ -61,7 +61,7 @@ jobs:
     name: ${{ matrix.platform }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     env:
-      P2P_CLI_BINARY: tools/p2p-cli/target/${{ matrix.target }}/release/p2p-cli${{ matrix.extension }}
+      P2P_CLI_BINARY: components/p2p-cli/target/${{ matrix.target }}/release/p2p-cli${{ matrix.extension }}
       P2P_RUST_VERSION: '1.99.1'
     steps:
       - uses: actions/checkout@v4
@@ -120,25 +120,25 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            tools/p2p-cli/target
-          key: p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-${{ hashFiles('tools/p2p-cli/Cargo.lock') }}-${{ steps.native-key.outputs.key || hashFiles('tools/p2p-cli/src/**') }}
+            components/p2p-cli/target
+          key: p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-${{ hashFiles('components/p2p-cli/Cargo.lock') }}-${{ steps.native-key.outputs.key || hashFiles('components/p2p-cli/src/**') }}
           restore-keys: |
-            p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-${{ hashFiles('tools/p2p-cli/Cargo.lock') }}-
+            p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-${{ hashFiles('components/p2p-cli/Cargo.lock') }}-
             p2p-cargo-v1-${{ matrix.os }}-${{ matrix.target }}-${{ env.P2P_RUST_VERSION }}-
       - name: Check and build native component
         if: steps.reuse.outputs.usable != 'true'
         shell: bash
         run: |
-          cargo +"$P2P_RUST_VERSION" fmt --manifest-path tools/p2p-cli/Cargo.toml --check
+          cargo +"$P2P_RUST_VERSION" fmt --manifest-path components/p2p-cli/Cargo.toml --check
           if [ '${{ matrix.platform }}' = linux ]; then
             export CC=musl-gcc
           fi
           if [ '${{ matrix.platform }}' = windows ]; then
             export RUSTFLAGS='-C target-feature=+crt-static'
           fi
-          cargo +"$P2P_RUST_VERSION" clippy --manifest-path tools/p2p-cli/Cargo.toml --all-targets --target '${{ matrix.target }}' --locked -- -D warnings
-          cargo +"$P2P_RUST_VERSION" test --manifest-path tools/p2p-cli/Cargo.toml --target '${{ matrix.target }}' --locked
-          cargo +"$P2P_RUST_VERSION" build --manifest-path tools/p2p-cli/Cargo.toml --release --target '${{ matrix.target }}' --locked
+          cargo +"$P2P_RUST_VERSION" clippy --manifest-path components/p2p-cli/Cargo.toml --all-targets --target '${{ matrix.target }}' --locked -- -D warnings
+          cargo +"$P2P_RUST_VERSION" test --manifest-path components/p2p-cli/Cargo.toml --target '${{ matrix.target }}' --locked
+          cargo +"$P2P_RUST_VERSION" build --manifest-path components/p2p-cli/Cargo.toml --release --target '${{ matrix.target }}' --locked
           python scripts/build_p2p_cli.py --target '${{ matrix.target }}' --binary "$P2P_CLI_BINARY" --output dist/p2p-assets
       - name: Test component extraction, downloads, and build scripts
         shell: bash
@@ -149,7 +149,7 @@ jobs:
       - name: Exercise native persistent connections
         if: steps.reuse.outputs.usable != 'true'
         shell: bash
-        run: python tools/p2p-cli/daemon_e2e.py "$P2P_CLI_BINARY"
+        run: python components/p2p-cli/daemon_e2e.py "$P2P_CLI_BINARY"
       - name: Prepare successfully validated native cache
         if: steps.native-key.outputs.key != '' && steps.native-cache.outputs.cache-hit != 'true'
         shell: bash

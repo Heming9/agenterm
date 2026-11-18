@@ -3,8 +3,8 @@ name: Build checks
 on:
   pull_request:
     paths:
-      - 'tools/p2p-cli/**'
-      - 'tools/agenterm-cli/**'
+      - 'components/p2p-cli/**'
+      - 'components/agenterm-cli/**'
       - 'cmd/agenterm-server/**'
       - 'internal/i18n/**'
       - 'internal/version/**'
@@ -31,8 +31,8 @@ on:
   push:
     branches: ['**']
     paths:
-      - 'tools/p2p-cli/**'
-      - 'tools/agenterm-cli/**'
+      - 'components/p2p-cli/**'
+      - 'components/agenterm-cli/**'
       - 'cmd/agenterm-server/**'
       - 'internal/i18n/**'
       - 'internal/version/**'
