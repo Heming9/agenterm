@@ -1,13 +1,15 @@
 # MCP tool reference
 
-Current source builds publish explicit output schemas and behavior annotations for all eight tools. Use the connected server's `tools/list` response as the contract; existing deployments and older release binaries may expose an earlier schema.
+[简体中文](mcp-tools.zh-CN.md) · [User guide](usage.md) · [Terminal client API](client-api.md)
+
+Use the connected server's `tools/list` response for its schemas and behavior annotations. The management endpoint exposes all eight tools. When authenticating with a scoped `control_token` as the HTTP Bearer credential, the seven device tools use that credential directly. When calling those tools with management access, pass the invitation's `control_token` as a tool argument.
 
 | Tool | When to use it | Main result fields |
 | --- | --- | --- |
-| `create_client` | Create a private connection invitation. | `device_token`, `control_token`, `invitation`, `expires_at`, platform commands, `display_text`. |
+| `create_client` | Create a private connection invitation. | `device_token`, `control_token`, `invitation`, `expires_at`, platform commands, `display_text`, optional `short_code_url`. |
 | `list_client` | List online devices or wait for a connection. | `clients`; empty means no online device when returned. |
 | `close_client` | Close selected devices or all online devices for the token. | Closed `client_ids`. |
-| `p2p_transfer_start` | Bootstrap p2p-cli remotely and return Agent-side scripts after remote signaling registration. | `connection_id`, endpoint IDs, `state`, `shell_script`, `powershell_script`. |
+| `p2p_transfer_start` | Start the remote P2P helper and return Agent-side scripts after signaling registration. | `connection_id`, `local_client_id`, `remote_client_id`, `state`, `shell_script`, `powershell_script`. |
 | `execute_command` | Create through setup or reuse through session_id; anonymous commands close quickly or retain on wait expiry. | `command_id`, `status`, `output`, `next_cursor`, `has_more`; optional `session_id`, `exit_code`, `error`, `truncated`. |
 | `session_read` | Read paginated output using the same result format as execute_command. | Six regular fields; completion adds exit_code, with error/truncated only when needed. |
 | `session_control` | Input, interrupt, EOF or stop selected by action. | Input/interrupt/EOF return `ok:true`; stop returns `status` and optional `exit_code/error`. |
@@ -16,13 +18,11 @@ Current source builds publish explicit output schemas and behavior annotations f
 
 ## Common usage
 
-Create an invitation and share its connection command privately. Once the device connects, execute commands. Specify session_id through execute_command to preserve shell state across subsequent commands. When the current command requests input, use session_control:
+Create an invitation and privately share its short link or connection command. The examples below assume a single device and a scoped MCP connection. For a multi-device invitation, provide `client_id` when executing commands, reading output, or controlling a session. To preserve shell state across commands, reuse the `session_id` returned by `execute_command`. When the current command requests input, use `session_control`:
 
 ```json
 {"session_id":"…","action":"input","input":"pwd\n"}
 ```
-
-Use the connected server’s `tools/list` as the source of truth for tools and fields.
 
 Fast anonymous command (automatically closed on completion):
 
@@ -42,6 +42,7 @@ Reuse the terminal:
 {"session_id":"…","command":"git status"}
 ```
 
+To transfer a file, call `p2p_transfer_start` for the connected device. The result starts in `waiting_for_agent`. Run the script for the Agent's OS and wait for `p2p-cli status` to report `connected` before copying. See the [P2P component guide](../components/p2p-cli/README.md).
 
 ## Details
 

@@ -21,20 +21,20 @@
   <a href="docs/demo/agenterm-cleanup.mp4"><img src="docs/demo/quickstart.gif" alt="Agent 发出邀请，目标电脑授权连接，随后执行任务" width="800"></a>
 </p>
 <p align="center">生成邀请 → 确认授权 → 设备上线 → 执行任务</p>
-<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">完整演示 · 1 分 42 秒</a></p>
+<p align="center"><a href="docs/demo/README.md">早期版本演示 · 1 分 42 秒 · 旧版终端界面</a></p>
 
 ## 🚀 快速开始
 
 <p align="center">
-  <img src="docs/design/connection-flow-zh.gif" alt="使用流程：让 Agent 接入 MCP，生成连接命令，分享连接命令，对方执行并授权连接，Agent 开始远程协助" width="1000">
+  <img src="docs/design/connection-flow-zh.gif" alt="让 Agent 接入 MCP，创建并私下分享邀请链接，对方打开链接并授权后开始远程协助" width="1000">
 </p>
 
 1. **接入 Agent：** 在支持 Streamable HTTP 的 Agent 中添加 MCP 服务 `https://agenterm.net/mcp`。[查看配置示例](docs/usage.zh-CN.md#接入-agent)
-2. **邀请并授权：** 让 Agent 创建邀请，将包含六位短码的邀请页短链接（例如 `agenterm.net/c/xef2k1`）私下发给对方。对方在需要协助的电脑上打开链接，页面会引导对方完成远程授权。
+2. **邀请并授权：** 让 Agent 创建邀请，将短链接（例如 `https://agenterm.net/c/xef2k1`）私下发给对方。对方在需要协助的电脑上打开链接，按页面提示授权。若服务端未提供短链接，请分享对方系统对应的连接命令。
 3. **开始协助：** 设备上线后，告诉 Agent 要完成的任务。对方可查看命令和输出，并随时断开。
 
 <p align="center">
-  <img src="docs/design/invitepage_cn.png" alt="Agenterm 邀请页面，展示连接选项和命令" width="800">
+  <img src="docs/design/invitepage_cn.png" alt="Agenterm 受邀页面，展示用过 Agenterm 的用户如何打开终端版连接" width="800">
 </p>
 <p align="center">将邀请页短链接发给对方，页面会引导对方完成远程授权。</p>
 
@@ -55,7 +55,7 @@
   <img src="docs/design/architecture-blue.gif" alt="Agenterm 架构：AI Agent 通过 MCP 接入 Server，经 WebSocket 向 Client 和本地 shell 下发命令并接收结果" width="1000">
 </p>
 
-Agent 和目标电脑通过 Server 连接。目标电脑运行客户端后，即可授权 Agent 通过终端协助操作，无需开放入站端口。
+终端命令和输出经 Server 转发。目标电脑授权后主动建立出站连接，无需开放入站端口。使用 P2P 传输文件时，两端另外建立直连，Server 负责信令协商。[文件传输说明](docs/usage.zh-CN.md#如何传输文件)
 
 可以使用托管服务，也可以[部署自己的 Server](docs/deployment.zh-CN.md)。
 

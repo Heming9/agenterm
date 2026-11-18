@@ -20,9 +20,11 @@ chmod +x agenterm-server
 
 首次启动时，终端会显示 MCP 地址和管理密钥。请妥善保存密钥，并按[使用指南](usage.zh-CN.md#接入-agent)将 MCP 地址接入 Agent。
 
+使用默认 URL 前缀时，`https://example.com` 的 MCP 地址为 `https://example.com/agenterm/mcp`。如需使用根路径下的 `/mcp`，请设置 `-url-prefix /`。公网反向代理负责 TLS 终止，并保留配置的前缀转发 HTTP 与 WebSocket 请求。
+
 ## 🐳 方式二：Docker Compose
 
-需要 Docker 和 Docker Compose。在仓库目录中执行：
+首次安装需要 Docker、Docker Compose 和 OpenSSL：
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
@@ -37,6 +39,8 @@ Compose 只将密钥文件挂载到容器的 `/run/secrets/management_key`。宿
 
 将 `.env` 中的 `AGENTERM_PUBLIC_URL` 设置为双方可访问的服务地址。默认只监听本机，适合通过本机反向代理访问；需要在可信局域网直接访问时，将 `AGENTERM_BIND_ADDRESS` 设置为 `0.0.0.0`。
 
+Compose 会内嵌当前源码目录中的组件包。修改 Rust CLI 源码或组件包后，先运行 `python3 scripts/build_server.py --prepare-only` 校验内嵌客户端，再构建镜像。见[源码构建说明](#-从源码构建服务端)。
+
 ```sh
 docker compose up -d --build
 docker compose logs -f server
@@ -49,7 +53,7 @@ docker compose logs -f server
 适用于 Linux，需要 systemd 和已下载的 Linux 服务端程序。在仓库目录中执行，先将下载文件放在当前目录并命名为 `agenterm-server`：
 
 ```sh
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin agenterm
+sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin agenterm
 sudo install -d -m 755 /opt/agenterm
 sudo install -m 755 agenterm-server /opt/agenterm/agenterm-server
 sudo install -m 644 deploy/systemd/agenterm-server.service /etc/systemd/system/
@@ -91,16 +95,18 @@ docker compose logs -f server
 sudo journalctl -u agenterm-server -f
 ```
 
-接入 Agent 后，创建邀请，在另一台电脑运行邀请命令并授权，确认可以执行终端任务。管理密钥和邀请命令请只分享给信任的人。
+`/healthz` 检查服务端前端和 runtime，`/livez` 检查 runtime 监听端口。直接启动时，前端默认写入 stderr，runtime 则写入实例目录的 `runtime.log`。仓库提供的 Compose 和 systemd 配置会收集两个进程的日志。可用 `AGENTERM_LOG_FORMAT`（`text` 或 `json`）和 `AGENTERM_LOG_LEVEL`（`DEBUG`、`INFO`、`WARN` 或 `ERROR`）配置日志。
+
+接入 Agent 后，创建邀请，在另一台电脑授权连接，确认 Agent 可以执行终端任务。需要为单设备邀请生成浏览器短链接时，在 runtime 启动参数中加入 `-enable-short-code`。
 
 ## 🔨 从源码构建服务端
 
-需要 Go 1.26.10 或更高版本：
+需要 Go 1.26.10 和 Python 3.11 或更高版本。构建脚本会先校验内嵌客户端的版本、源码指纹和可执行文件哈希，再编译服务端。校验失败时，请[重建 Rust CLI 组件包](../components/agenterm-cli/README.md#release-builds)。
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
 cd agenterm
-go build -o agenterm-server ./cmd/agenterm-server
+python3 scripts/build_server.py --output agenterm-server
 ```
 
 构建后可按“直接运行”或“systemd”方式部署。
@@ -130,11 +136,11 @@ agenterm-server -help
 
 `stop` 和 `status` 只接受 `-instance`。其他参数用于 `start` 或 `restart`；修改运行中 runtime 的启动参数需要使用 `restart`。
 
-**从 runtime API 12 升级到 13：** 旧 runtime 与新的短码及认证规则不兼容。启动 API 13 服务端前，请用原有的 API 12 服务端程序停止旧 runtime；若旧程序不可用，按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
+### 升级时提示 runtime API 不兼容
 
-**从 runtime API 13 升级到 14：** 单设备在线凭证及重连规则需要新 runtime。启动 API 14 前，请用原有的服务端程序停止 API 13 runtime。这会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。
+当前 runtime 使用 API 14。若新程序提示旧 runtime 不兼容，请用启动旧 runtime 的服务端程序，以相同的系统用户和实例名执行 `/path/to/old/agenterm-server stop -instance <实例名>`。如果旧程序已经不可用，按兼容性提示识别并停止旧 runtime。随后使用预期配置启动新服务端。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建邀请。
 
-**从 runtime API 7 升级到 8：** 先保留现有 API 7 服务端程序，以相同用户执行 `/path/to/api7/agenterm-server stop -instance <实例名>`，待旧 runtime 停止后，再使用 API 8 程序和预期配置启动。API 8 的 `start`、`stop` 和 `restart` 均无法管理 API 7 runtime；如果没有旧程序，请按兼容性提示识别并停止旧 runtime。停止 runtime 会断开客户端并清除内存中的凭证和会话，升级后需重新创建连接。不要为绕过兼容检查而降级认证或向旧 runtime 发送控制凭证。
+### 启动参数
 
 | 参数 | 说明 |
 | --- | --- |

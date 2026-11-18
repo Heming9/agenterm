@@ -2,7 +2,7 @@
 
 > A service that lets an AI agent assist with a remote computer through terminal access after the target user runs a connection command and authorizes it.
 
-Agents connect via the MCP service at https://agenterm.net/mcp (Streamable HTTP), create invitations, and share a one-time connection command; no SSH or inbound ports are needed. Use the Rust CLI client on the target computer, which supports reconnects and multiple devices; hosted or self-hosted servers are available, with a user guide, deployment docs, and Apache-2.0 license.
+Agents connect via the MCP service at https://agenterm.net/mcp (Streamable HTTP), create an invitation, and privately share its short link or connection command. The target user authorizes access and connects with the Rust CLI. The client supports reconnects and multi-device invitations. Agenterm is available as a hosted or self-hosted service.
 
 ## Docs
 
@@ -14,4 +14,4 @@ Agents connect via the MCP service at https://agenterm.net/mcp (Streamable HTTP)
 
 ## Demo
 
-- [Agenterm cloud demo / 云托管演示](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/demo/README.md): Demo materials showing invitation, authorization, connection and cleanup with a 1:42 video, subtitles and narration scripts.
+- [Agenterm cloud demo / 云托管演示](https://raw.githubusercontent.com/Heming9/agenterm/main/docs/demo/README.md): Original 1:42 recording using an earlier terminal interface, with subtitles and narration.

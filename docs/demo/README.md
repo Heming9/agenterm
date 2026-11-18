@@ -4,6 +4,10 @@
 
 [16-second preview / 16 秒预览 (GIF)](quickstart.gif) · [Video / 视频 (MP4)](agenterm-cleanup.mp4) · [Bilingual subtitles / 双语字幕 (SRT)](subtitles.zh-en.srt) · [Chinese narration script / 中文旁白文稿](narration.zh.txt)
 
+This recording uses an earlier terminal client with a `Y` authorization prompt. For the current invitation page and Rust CLI access modes, see the [user guide](../usage.md#-start-a-remote-assistance-session).
+
+本视频录制时使用旧版终端客户端，画面中的 `Y` 是当时的授权操作。当前受邀页面和 Rust CLI 的授权方式见[使用指南](../usage.zh-CN.md#-开始远程协助)。
+
 ## What the demo shows
 
 The silent 16-second README preview uses excerpts from this recording: invitation, authorization, connection, and execution. / 首页的 16 秒无声预览截取自本视频，展示邀请、授权、连接和执行。

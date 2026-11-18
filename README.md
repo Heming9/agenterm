@@ -21,20 +21,20 @@
   <a href="docs/demo/agenterm-cleanup.mp4"><img src="docs/demo/quickstart.gif" alt="An agent creates an invitation, the target computer authorizes access, and the task runs" width="800"></a>
 </p>
 <p align="center">Create invitation → Authorize access → Connect device → Run task</p>
-<p align="center"><a href="docs/demo/agenterm-cleanup.mp4">Full demo · 1 min 42 sec</a></p>
+<p align="center"><a href="docs/demo/README.md">Original demo · 1 min 42 sec · Earlier terminal interface</a></p>
 
 ## 🚀 Quick start
 
 <p align="center">
-  <img src="docs/design/connection-flow-en.gif" alt="Connection workflow: connect Agent to MCP, ask Agent to generate a connection command, share the command, the recipient runs it and grants access, then Agent provides remote assistance" width="1000">
+  <img src="docs/design/connection-flow-en.gif" alt="Connect the agent to MCP, create and privately share an invitation link, then start remote assistance after the recipient opens the link and grants access" width="1000">
 </p>
 
 1. **Connect your agent:** Add the MCP service `https://agenterm.net/mcp` to an agent that supports Streamable HTTP. [See configuration examples](docs/usage.md#connect-your-agent).
-2. **Invite and authorize:** Ask the agent to create an invitation and privately share the invitation page's short link containing a six-character code, for example `agenterm.net/c/xef2k1`. The other person opens it on the computer that needs assistance; the page guides them through authorizing remote access.
+2. **Invite and authorize:** Ask the agent to create an invitation and privately share its short link, such as `https://agenterm.net/c/xef2k1`. The recipient opens it on the computer that needs assistance and follows the instructions to authorize the connection. If your server does not issue short links, share the connection command for the recipient's operating system.
 3. **Start assisting:** Once the device connects, tell the agent what to do. The other person can see commands and output and disconnect at any time.
 
 <p align="center">
-  <img src="docs/design/invitepage.png" alt="Agenterm invitation page with connection options and commands" width="800">
+  <img src="docs/design/invitepage.png" alt="Agenterm invitation page showing how to open the terminal client on a returning device" width="800">
 </p>
 <p align="center">Share the short invitation link so the recipient can follow the page to authorize remote access.</p>
 
@@ -55,7 +55,7 @@ Interactive terminal tasks are supported. Use the Rust CLI on the target compute
   <img src="docs/design/architecture-blue.gif" alt="Agenterm architecture: AI Agent connects over MCP to the Server, which relays commands and results over WebSocket to the Client and local shell" width="1000">
 </p>
 
-The agent and target computer connect through the server. After running the client, the person at the target computer can authorize terminal assistance without opening an inbound port.
+Terminal commands and results pass through the server as shown above. The target computer makes an outbound connection after its user authorizes access. Optional P2P file transfers use a separate direct connection between devices, with the server handling signaling. [File transfer guide](docs/usage.md#how-do-i-transfer-files)
 
 Use the hosted service or [deploy your own server](docs/deployment.md).
 

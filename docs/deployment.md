@@ -20,9 +20,11 @@ chmod +x agenterm-server
 
 On first startup, the terminal displays the MCP URL and management key. Save the key securely and connect the MCP URL to your agent as described in the [user guide](usage.md#connect-your-agent).
 
+With the default URL prefix, a server at `https://example.com` serves MCP at `https://example.com/agenterm/mcp`. Set `-url-prefix /` to serve MCP at `/mcp`. A public reverse proxy should terminate TLS and forward HTTP and WebSocket requests with the configured prefix intact.
+
 ## 🐳 Option 2: Docker Compose
 
-Docker and Docker Compose are required. Run:
+For a new installation, use Docker, Docker Compose, and OpenSSL:
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
@@ -37,6 +39,8 @@ Compose mounts the key file at `/run/secrets/management_key`. Mode 0700 on the h
 
 Set `AGENTERM_PUBLIC_URL` in `.env` to an address reachable by both sides. The default binding accepts local connections, suitable for a reverse proxy on the host. For direct access on a trusted LAN, set `AGENTERM_BIND_ADDRESS` to `0.0.0.0`.
 
+Compose embeds the component bundle from your checkout. If you change the Rust CLI sources or the bundle, run `python3 scripts/build_server.py --prepare-only` before building the image to validate the bundled clients. See [source builds](#-build-the-server-from-source).
+
 ```sh
 docker compose up -d --build
 docker compose logs -f server
@@ -49,7 +53,7 @@ Use the MCP URL displayed in the logs and the key from the management key file t
 This option requires Linux, systemd, and the downloaded Linux server executable. From the repository directory, place the downloaded executable in the current directory as `agenterm-server`, then run:
 
 ```sh
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin agenterm
+sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin agenterm
 sudo install -d -m 755 /opt/agenterm
 sudo install -m 755 agenterm-server /opt/agenterm/agenterm-server
 sudo install -m 644 deploy/systemd/agenterm-server.service /etc/systemd/system/
@@ -91,16 +95,18 @@ docker compose logs -f server
 sudo journalctl -u agenterm-server -f
 ```
 
-After connecting your agent, create an invitation, run its connection command on another computer, and authorize access. Confirm that the agent can perform a terminal task. Share management keys and invitation commands only with people you trust.
+`/healthz` checks both the server frontend and the runtime. `/livez` checks the runtime listener. For a direct launch, the frontend logs to stderr by default and the runtime writes `runtime.log` in its instance directory. The supplied Compose and systemd configurations collect logs from both processes. Use `AGENTERM_LOG_FORMAT` (`text` or `json`) and `AGENTERM_LOG_LEVEL` (`DEBUG`, `INFO`, `WARN` or `ERROR`) to configure them.
+
+After connecting your agent, create an invitation, authorize the connection from another computer, and verify that the agent can perform a terminal task. To issue browser invitation links for single-device invitations, include `-enable-short-code` in the runtime startup options.
 
 ## 🔨 Build the server from source
 
-Go 1.26.10 or later is required:
+Use Go 1.26.10 or later and Python 3.11 or later. The build script verifies the embedded client versions, source fingerprint, and executable hashes before compiling the server. If validation fails, [rebuild the Rust CLI bundle](../components/agenterm-cli/README.md#release-builds).
 
 ```sh
 git clone https://github.com/Heming9/agenterm.git
 cd agenterm
-go build -o agenterm-server ./cmd/agenterm-server
+python3 scripts/build_server.py --output agenterm-server
 ```
 
 After building, deploy using the direct or systemd instructions above.
@@ -130,11 +136,11 @@ agenterm-server -help
 
 `stop` and `status` accept only `-instance`. The other options apply to `start` and `restart`; changing the startup settings of a running runtime requires `restart`.
 
-**Upgrading runtime API 12 to 13:** The old runtime is incompatible with the new short-code and authentication behavior. Stop it with its existing API 12 server executable before starting the API 13 server. If it is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and clears in-memory credentials and sessions; recreate connections after upgrading.
+### When an upgrade reports a runtime API mismatch
 
-**Upgrading runtime API 13 to 14:** The online single-device credential and reconnect rules require the new runtime. Stop the API 13 runtime with its existing server executable before starting API 14. This disconnects clients and clears in-memory credentials and sessions; recreate connections afterward.
+The current runtime uses API 14. If the new binary reports an incompatible runtime, stop the old runtime with the server executable that launched it. Run `/path/to/old/agenterm-server stop -instance <name>` as the same OS user and with the same instance name. If that executable is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Then start the new server with the desired configuration. Stopping the runtime disconnects clients and clears in-memory credentials and sessions. Create new invitations after the upgrade.
 
-**Upgrading runtime API 7 to 8:** Keep the existing API 7 server executable until the old runtime has been stopped. Run `/path/to/api7/agenterm-server stop -instance <name>` using the same user and instance, then start the API 8 server with the intended configuration. API 8 `start`, `stop`, and `restart` cannot manage an API 7 runtime; if the previous executable is unavailable, follow the compatibility diagnostic to identify and stop the old runtime. Stopping the runtime disconnects clients and discards in-memory credentials and sessions; create new connections after the upgrade. Never downgrade authentication or send control credentials to an older runtime to bypass this check.
+### Startup options
 
 | Option | Description |
 | --- | --- |
@@ -150,4 +156,4 @@ agenterm-server -help
 | `-enable-short-code` | Enable issuing and redeeming short codes; short codes are disabled by default. |
 | `-stdio` | Also serve management MCP over standard input/output, trusting the process owner. |
 
-Short-code lookup failures share a per-IP counter across the browser and client endpoints. MCP administrator key authentication uses an independent counter with the same policy; connection tokens and other authentication interfaces are not rate-limited. After three consecutive failures, requests are rejected for 2 seconds; each subsequent failure adds 2 seconds to the wait, up to 10 minutes. Requests during the wait do not increase the counter. Successful short-code redemption resets the short-code counter; viewing a invitation page does not. Successful administrator authentication resets only the administrator counter. Concurrent requests for each kind of credential share its limiter.
+Short-code lookup failures share a per-IP counter across the browser and client endpoints. MCP administrator key authentication uses an independent counter with the same policy; connection tokens and other authentication interfaces are not rate-limited. After three consecutive failures, requests are rejected for 2 seconds; each subsequent failure adds 2 seconds to the wait, up to 10 minutes. Requests during the wait do not increase the counter. Successful short-code redemption resets the short-code counter; viewing an invitation page does not. Successful administrator authentication resets only the administrator counter. Concurrent requests for each kind of credential share its limiter.

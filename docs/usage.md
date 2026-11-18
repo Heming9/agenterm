@@ -36,29 +36,29 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 
 Reload the MCP configuration or restart your agent, then check its MCP settings for the connection status. Other agents that support Streamable HTTP can use the same URL.
 
-For self-hosting, replace the URL with the MCP address shown after deployment and configure the management key using your agent's settings. Do not commit the key to version control.
+For self-hosting, use the MCP address printed at startup and configure your agent to send the management key as an HTTP Bearer credential. Keep the key out of version control.
 
 ## 🤝 Start a remote assistance session
 
 1. Describe the task to your agent and ask it to create an invitation for the target computer.
-2. Privately share the connection command or short-code address with the person at that computer. Open the short link (for example, `example.com/c/abcdef`) in a browser on the target computer to view the commands and connection token. While a single-device client is online, its short link, code and connection token cannot be used to start another connection; they can be used again after disconnection while still valid. The short link and code follow the connection token’s lifetime. Viewing the invitation page does not count as a redemption; after the tenth successful client redemption the code and link become invalid. GET displays the invitation page; clients redeem using POST. Installer scripts use a separate connection-token secret in the path. The connection command follows the connection token’s lifetime. Share the link privately with trusted people because it provides access to credentials.
-
-   When both the single-device client and server support resume credentials, the client keeps a private credential in its current process and can replace its own stale connection after a network interruption. Other devices cannot take over without it. Older clients or servers do not support this capability; update both for reliable automatic reconnection.
-3. They run the command for their operating system, read the notice, and authorize access.
+2. Privately send the invitation link to the person at the target computer. When the server issues an invitation without a short link, share the connection command for their operating system. Keep the management key and `control_token` with the agent.
+3. On the target computer, open the invitation link or run the shared connection command. On the invitation page, choose **Not yet** for first-time setup, then run the command for your operating system and follow the authorization prompts. If you have used the Rust CLI on that computer, choose **I have**, then **Open terminal app** and confirm the access mode. If the browser cannot open the client, use the command shown on the page or paste the connection token into the CLI.
 4. Keep the agent conversation active while the device connects, then start the task. The other person can see commands and output in the client and disconnect at any time.
 5. Close or disconnect the client when finished.
 
-To connect several computers, ask the agent for a multi-device invitation and identify the target before each operation. Multi-device tokens do not have short codes. Short codes for single-device connections are disabled by default and must be enabled by the server administrator.
+### Invitation lifetime and short codes
+
+Short links and codes are available for single-device invitations when the server administrator enables short codes. To connect multiple computers, ask the agent for a multi-device invitation, share the connection command, and identify the target device before each operation.
+
+While a single device is connected, its short link, code, and connection token cannot start another connection. They become available again after disconnection if the token is still valid. The tenth successful short-code redemption retires the link and code. Opening the invitation page does not count toward that limit.
 
 After a successful connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, paste the short-code address as issued. The CLI uses HTTP for addresses without a scheme. For HTTPS, keep the `https://` prefix.
 
 ## 💻 Client controls
 
-The maintained client is the [Rust CLI](../components/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use arrow keys or the mouse wheel to browse, drag to select and copy text, and press Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
+The maintained client is the [Rust CLI](../components/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to scroll and drag to select and copy text. Press Esc to clear a selection, then Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
 
-The invitation page retains **Open terminal client and connect** for protocol-link support. The Rust CLI does not handle those links yet; use the connection command or paste the token while this support is being added. Connection commands ask you to authorize temporary or persistent access, or deny it.
-
-The terminal client accepts `-connection-mode=temporary` or `-connection-mode=persistent`; the default is `temporary`. One-click connections and invitations use the mode selected during authorization.
+Temporary connections disconnect after five minutes of inactivity, excluding time spent running commands. Persistent connections stay open until disconnected. Connections from the invitation page or an installer command use the mode selected during authorization. When launching the CLI directly with a token, use `-connection-mode=temporary` or `-connection-mode=persistent`. The default is `temporary`. See [how the Rust CLI registers browser links](../components/agenterm-cli/README.md#protocol-links).
 
 The one-command connection stores a client in a local cache. You can delete it after closing the client:
 
@@ -76,7 +76,7 @@ Make sure both the agent and target computer can reach the service; `127.0.0.1` 
 
 ### Network interruptions
 
-The client automatically attempts to reconnect but does not replay commands. Ask the agent to check the device and task state before continuing. Connecting a device does not wake an agent conversation that has already ended.
+The client automatically attempts to reconnect without replaying commands. With resume credentials, a single-device CLI process can replace its own stale connection after an interruption. Keep the client open and ask the agent to check the device and task state after reconnecting. Connecting a device does not wake an agent conversation that has already ended.
 
 ### Can I control a remote desktop?
 
@@ -84,7 +84,7 @@ Agenterm provides terminal assistance, not a remote desktop. Windows supports si
 
 ### How do I transfer files?
 
-Use `p2p_transfer_start` through MCP to start file transfer on a device connected with the Rust CLI. The two devices must be able to connect directly, and each transfer handles one file. Closing the client stops its P2P helper. See the [P2P component guide](../components/p2p-cli/README.md).
+Use `p2p_transfer_start` through MCP to start a direct connection to a device connected with the Rust CLI. Once both ends are connected, you can copy files in either direction over the same connection, one file per copy. Closing the client stops its P2P helper. See the [P2P component guide](../components/p2p-cli/README.md).
 
 ### Permissions and privacy
 

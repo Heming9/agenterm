@@ -1,13 +1,15 @@
 # MCP 工具技术参考
 
-当前源码构建会为全部八个工具提供明确的返回 Schema 和行为标注。请以实际连接 Server 的 `tools/list` 响应为准，既有部署或较旧发布的二进制可能仍提供旧版 Schema。
+[English](mcp-tools.md) · [使用指南](usage.zh-CN.md) · [终端客户端 API](client-api.md)
+
+工具的 Schema 和行为标注以所连接服务端的 `tools/list` 为准。管理访问提供全部八个工具。将范围限定的 `control_token` 用作 HTTP Bearer 凭据时，七个设备操作工具直接使用该凭据。以管理身份调用这些工具时，将对应邀请的 `control_token` 作为工具参数传入。
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
-| `create_client` | 创建私密连接邀请。 | `device_token`、`control_token`、`invitation`、`expires_at`、平台命令、`display_text`。 |
+| `create_client` | 创建私密连接邀请。 | `device_token`、`control_token`、`invitation`、`expires_at`、平台命令、`display_text`，以及可选的 `short_code_url`。 |
 | `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
 | `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
-| `p2p_transfer_start` | 让远端自动下载并初始化 p2p-cli，注册协商后返回 Agent 端脚本。 | `connection_id`、双方客户端 ID、`state`、`shell_script`、`powershell_script`。 |
+| `p2p_transfer_start` | 启动远端 P2P 组件，信令注册后返回 Agent 端脚本。 | `connection_id`、`local_client_id`、`remote_client_id`、`state`、`shell_script`、`powershell_script`。 |
 | `execute_command` | 通过 setup 创建、session_id 复用；匿名任务快速完成关闭，等待到期保留。 | `command_id`、`status`、`output`、`next_cursor`、`has_more`；按需返回 `session_id`、`exit_code`、`error`、`truncated`。 |
 | `session_read` | 分页读取输出，与 execute_command 使用同一返回格式。 | 六个常规字段；命令结束时带 `exit_code`，有错误或丢失输出时带对应字段。 |
 | `session_control` | 用 action 选择输入、中断、EOF 或停止。 | 输入/中断/EOF 返回 `ok:true`；stop 返回 `status` 和可选 `exit_code/error`。 |
@@ -16,13 +18,11 @@
 
 ## 常用调用
 
-创建邀请后，将连接命令私下交给目标用户；设备连接后可执行命令。后续命令通过 execute_command 指定 session_id 复用终端；当前命令等待输入时，使用 session_control：
+创建邀请后，将短链接或连接命令私下交给目标用户。以下示例使用单设备和范围限定的 MCP 连接。多设备邀请下，执行命令、读取输出或控制会话时须指定 `client_id`。后续命令可使用 `execute_command` 返回的 `session_id` 复用终端。当前命令等待输入时，调用 `session_control`：
 
 ```json
 {"session_id":"…","action":"input","input":"pwd\n"}
 ```
-
-工具和字段以已连接服务的 `tools/list` 为准。
 
 匿名终端中快速执行，完成后自动关闭：
 
@@ -42,6 +42,7 @@
 {"session_id":"…","command":"git status"}
 ```
 
+要传输文件，先对已连接的设备调用 `p2p_transfer_start`，返回状态为 `waiting_for_agent`。运行适合 Agent 所在系统的脚本，等 `p2p-cli status` 显示 `connected` 后再复制文件。详见 [P2P 组件说明](../components/p2p-cli/README.md)。
 
 ## 详细说明
 

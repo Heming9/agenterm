@@ -34,16 +34,16 @@ class FlowCanvas(Canvas):
 W, H, FPS, DURATION = 1500, 400, 20, 8
 STEPS = [
     ('让 Agent', '接入 MCP'),
-    ('让Agent', '生成连接命令'),
-    ('分享连接命令', ''),
-    ('对方执行', '授权连接'),
-    ('Agent开始', '远程协助'),
+    ('让 Agent', '创建邀请'),
+    ('私下分享', '邀请链接'),
+    ('对方打开链接', '并授权连接'),
+    ('Agent 开始', '远程协助'),
 ]
 STEPS_EN = [
     ('Connect Agent', 'to MCP'),
-    ('Ask Agent for a', 'connection command'),
-    ('Share the', 'connection command'),
-    ('Recipient runs it', 'and grants access'),
+    ('Ask Agent to', 'create an invitation'),
+    ('Privately share', 'the invitation link'),
+    ('Recipient opens it', 'and grants access'),
     ('Agent provides', 'remote assistance'),
 ]
 STEP_SECONDS = 1.35
