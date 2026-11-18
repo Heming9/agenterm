@@ -3,6 +3,7 @@ package installer
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/theme"
 	"embed"
 	"fmt"
 	"regexp"
@@ -20,7 +21,17 @@ func Script(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	template := string(data)
+	powershell := strings.HasSuffix(name, ".ps1")
+	logo := theme.TerminalLogo()
+	wordmark := theme.InstallerWordmark()
+	template := strings.NewReplacer(
+		"@LOGO_TOP@", logo[0], "@LOGO_MIDDLE@", logo[1], "@LOGO_BOTTOM@", logo[2],
+		"@WORDMARK_TOP@", wordmark[0], "@WORDMARK_BOTTOM@", wordmark[1],
+		"@COLOR_PRIMARY_SGR@", theme.PrimarySGR(),
+		"@COLOR_PRIMARY@", theme.InstallerColor("primary", powershell),
+		"@COLOR_SUCCESS@", theme.InstallerColor("success", powershell),
+		"@COLOR_WARNING@", theme.InstallerColor("warning", powershell),
+	).Replace(string(data))
 	unique := make(map[string]string)
 	for _, key := range resourceKey.FindAllString(template, -1) {
 		unique[key] = ""
@@ -34,5 +45,5 @@ func Script(name string) ([]byte, error) {
 		unique[key] = fmt.Sprintf("k%d", index)
 	}
 	template = resourceKey.ReplaceAllStringFunc(template, func(key string) string { return unique[key] })
-	return []byte(strings.ReplaceAll(template, "@TRANSLATIONS@", i18n.ScriptTranslations(strings.HasSuffix(name, ".ps1"), unique))), nil
+	return []byte(strings.ReplaceAll(template, "@TRANSLATIONS@", i18n.ScriptTranslations(powershell, unique))), nil
 }

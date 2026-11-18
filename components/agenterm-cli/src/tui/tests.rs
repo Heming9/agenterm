@@ -410,33 +410,26 @@ fn osc52_handles_plain_tmux_and_screen_terminals() {
 }
 
 #[test]
-fn adaptive_colors_and_no_color_selection_match_go() {
+fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     use ratatui::style::{Color, Modifier};
-    for (light, primary, secondary) in [
-        (false, Color::Rgb(133, 201, 155), Color::Rgb(153, 177, 195)),
-        (true, Color::Rgb(37, 116, 69), Color::Rgb(75, 103, 122)),
-    ] {
-        let mut app = app();
-        app.client_event(ClientEvent::Connected);
-        app.refresh();
-        app.palette = view::Palette { color: true, light };
-        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|frame| app.render(frame)).unwrap();
-        let buffer = terminal.backend().buffer();
-        assert!(buffer.content.iter().any(|c| c.fg == primary));
-        for position in [(2, 2), (10, 2), (2, 3), (2, 4)] {
-            assert_eq!(buffer[position].fg, primary);
-        }
-        for position in [(10, 3), (10, 4)] {
-            assert_eq!(buffer[position].fg, secondary);
-        }
-    }
+    use view::colors;
+
     let mut app = app();
-    app.state = State::Connected;
-    app.palette = view::Palette {
-        color: false,
-        light: false,
-    };
+    app.client_event(ClientEvent::Connected);
+    app.refresh();
+    app.palette = view::Palette { color: true };
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(1, 5)].fg, Color::from_u32(colors::SUCCESS));
+    for position in [(2, 2), (10, 2), (2, 3), (2, 4)] {
+        assert_eq!(buffer[position].fg, Color::from_u32(colors::PRIMARY));
+    }
+    for position in [(10, 3), (10, 4)] {
+        assert_eq!(buffer[position].fg, Color::Reset);
+    }
+
+    app.palette = view::Palette { color: false };
     app.client_event(started("one", "echo hi"));
     app.client_event(output("one", "hello\n"));
     app.refresh();
@@ -570,10 +563,7 @@ fn clicking_unfoldable_text_keeps_following_the_bottom() {
 fn folded_markers_keep_default_color_while_timestamps_and_counts_are_dimmed() {
     let mut app = app();
     app.state = State::Connected;
-    app.palette = view::Palette {
-        color: true,
-        light: false,
-    };
+    app.palette = view::Palette { color: true };
     app.resize(25, 16);
     app.client_event(started(
         "one",
@@ -591,7 +581,10 @@ fn folded_markers_keep_default_color_while_timestamps_and_counts_are_dimmed() {
         terminal.draw(|frame| app.render(frame)).unwrap();
         let buffer = terminal.backend().buffer();
         assert_eq!(buffer[(0, 2)].fg, ratatui::style::Color::Reset);
-        assert_eq!(buffer[(2, 2)].fg, ratatui::style::Color::Rgb(153, 177, 195));
+        assert_eq!(
+            buffer[(2, 2)].fg,
+            ratatui::style::Color::from_u32(view::colors::SECONDARY)
+        );
     }
 }
 

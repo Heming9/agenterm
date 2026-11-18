@@ -21,6 +21,36 @@ fn build_revision() -> String {
     git(&["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "unknown".into())
 }
 
+fn write_colors(out: &Path) {
+    let path = "../../internal/theme/theme.json";
+    println!("cargo:rerun-if-changed={path}");
+    let palette: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).expect("read theme")).expect("parse theme");
+    let mut source = String::new();
+    let logo: [String; 3] = serde_json::from_value(palette["terminal-logo"].clone())
+        .expect("theme must define three terminal logo rows");
+    source.push_str(&format!("pub const TERMINAL_LOGO: [&str; 3] = {logo:?};\n"));
+    for role in [
+        "primary",
+        "secondary",
+        "success",
+        "warning",
+        "error",
+        "selection",
+        "on-selection",
+    ] {
+        let color = palette["terminal"][role]
+            .as_str()
+            .and_then(|hex| hex.strip_prefix('#'))
+            .filter(|hex| hex.len() == 6)
+            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+            .unwrap_or_else(|| panic!("invalid theme color: terminal.{role}"));
+        let name = role.to_ascii_uppercase().replace('-', "_");
+        source.push_str(&format!("pub const {name}: u32 = 0x{color:06x};\n"));
+    }
+    std::fs::write(out.join("theme_colors.rs"), source).expect("write theme");
+}
+
 fn main() {
     let path = "../../internal/version/version.go";
     println!("cargo:rerun-if-changed={path}");
@@ -87,4 +117,5 @@ fn main() {
     source.push_str("_ => panic!(\"unknown UI translation: {key}\"),\n} }\n");
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     std::fs::write(out.join("ui_messages.rs"), source).expect("write translations");
+    write_colors(&out);
 }

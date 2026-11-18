@@ -1,0 +1,39 @@
+{
+  "terminal-logo": ["╭────╮", "│ >_<", "╰────╯"],
+  "installer-wordmark": [
+    "▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█",
+    "█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █"
+  ],
+  "web": {
+    "primary": "#315ed3",
+    "secondary": "#53657c",
+    "success": "#287347",
+    "warning": "#805705",
+    "error": "#b33434",
+    "text": "#17243a",
+    "canvas": "#f5f7fa",
+    "surface": "#ffffff",
+    "border": "#dce4f0",
+    "primary-tint": "#eaf0ff",
+    "focus": "#8aa8f2",
+    "on-primary": "#ffffff",
+    "success-tint": "#eef5f0",
+    "shadow-small": "#21324e24",
+    "shadow-large": "#14233c33",
+    "overlay": "#14203380"
+  },
+  "terminal": {
+    "primary": "#8bb6ff",
+    "secondary": "#90a4bb",
+    "success": "#85c99b",
+    "warning": "#e6be6a",
+    "error": "#ff8a8a",
+    "selection": "#365d9c",
+    "on-selection": "#ffffff"
+  },
+  "installer": {
+    "primary": { "ansi": "94", "powershell": "Blue" },
+    "success": { "ansi": "32", "powershell": "Green" },
+    "warning": { "ansi": "33", "powershell": "Yellow" }
+  }
+}

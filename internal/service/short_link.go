@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"agenterm/internal/invite"
+	"agenterm/internal/theme"
 	"agenterm/internal/version"
 
 	"golang.org/x/text/language"
@@ -39,7 +40,9 @@ func shortCodeURL(token, code string) string {
 //go:embed assets/short-link.html
 var shortLinkHTML string
 
-var shortLinkPage = template.Must(template.New("connection").Parse(shortLinkHTML))
+var shortLinkPage = template.Must(template.New("connection").Parse(
+	strings.Replace(shortLinkHTML, "<style>", "<style>\n"+theme.WebCSS(), 1),
+))
 
 // Hash the exact inline script so the page can retain a restrictive CSP.
 var shortLinkScriptHash = func() string {

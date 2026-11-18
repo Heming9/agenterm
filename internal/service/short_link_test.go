@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"agenterm/internal/protocol"
+	"agenterm/internal/theme"
 	"agenterm/internal/version"
 )
 
@@ -175,6 +176,9 @@ func TestShortLinkPage(t *testing.T) {
 				body, _ := io.ReadAll(res.Body)
 				res.Body.Close()
 				text := html.UnescapeString(string(body))
+				if !strings.Contains(text, theme.WebCSS()) {
+					t.Fatal("invitation page did not render the embedded theme")
+				}
 				if !strings.Contains(text, "允许授权（临时连接）") || !strings.Contains(text, "允许授权（持久连接）") || !strings.Contains(text, "拒绝授权") {
 					t.Fatal("missing authorization options")
 				}

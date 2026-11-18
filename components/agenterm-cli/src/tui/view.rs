@@ -10,6 +10,10 @@ use ratatui::{
 use std::{env, fs::File, sync::OnceLock};
 use unicode_segmentation::UnicodeSegmentation;
 
+pub(super) mod colors {
+    include!(concat!(env!("OUT_DIR"), "/theme_colors.rs"));
+}
+
 pub(super) const COMMIT: &str = env!("AGENTERM_COMMIT");
 pub(super) const HASH_SEPARATOR: &str = "......";
 const PROJECT_URL: &str = "https://github.com/Heming9/agenterm";
@@ -32,72 +36,40 @@ pub(super) fn executable_hash() -> &'static str {
 #[derive(Clone, Copy)]
 pub(super) struct Palette {
     pub(super) color: bool,
-    pub(super) light: bool,
 }
 impl Palette {
     pub(super) fn current() -> Self {
         let color = std::env::var_os("NO_COLOR").is_none()
             && std::env::var("TERM").unwrap_or_default() != "dumb";
-        let light = match std::env::var("AGENTERM_THEME").as_deref() {
-            Ok("light") => true,
-            Ok("dark") => false,
-            _ => std::env::var("COLORFGBG")
-                .ok()
-                .and_then(|s| s.rsplit(';').next()?.parse::<u8>().ok())
-                .is_some_and(|n| n == 7 || n >= 9),
-        };
-        Self { color, light }
+        Self { color }
     }
-    pub(super) fn detect() -> Self {
-        let mut palette = Self::current();
-        let mut options = terminal_colorsaurus::QueryOptions::default();
-        options.timeout = std::time::Duration::from_millis(300);
-        if palette.color
-            && std::env::var_os("AGENTERM_THEME").is_none()
-            && let Ok(mode) = terminal_colorsaurus::theme_mode(options)
-        {
-            palette.light = mode == terminal_colorsaurus::ThemeMode::Light;
+    fn text(self, role: u32) -> Style {
+        if self.color {
+            Style::default().fg(Color::from_u32(role))
+        } else {
+            Style::default()
         }
-        palette
     }
     fn kind(self, kind: Kind) -> Style {
-        if !self.color {
-            return Style::default();
+        match kind {
+            Kind::System => self.text(colors::SECONDARY),
+            Kind::Command => self.text(colors::PRIMARY),
+            Kind::Error => self.text(colors::ERROR),
+            Kind::Output => Style::default(),
         }
-        let rgb = match (kind, self.light) {
-            (Kind::System, false) => (153, 177, 195),
-            (Kind::System, true) => (75, 103, 122),
-            (Kind::Command, false) => (133, 201, 155),
-            (Kind::Command, true) => (37, 116, 69),
-            (Kind::Error, false) => (255, 138, 138),
-            (Kind::Error, true) => (197, 48, 48),
-            (Kind::Output, _) => return Style::default(),
-        };
-        Style::default().fg(Color::Rgb(rgb.0, rgb.1, rgb.2))
     }
     fn status(self, state: State) -> Style {
-        if !self.color {
-            return Style::default();
-        }
         match state {
-            State::Connected => self.kind(Kind::Command),
-            State::Connecting | State::Reconnecting(_) => Style::default().fg(if self.light {
-                Color::Rgb(152, 96, 0)
-            } else {
-                Color::Rgb(230, 190, 106)
-            }),
-            _ => Style::default().fg(if self.light {
-                Color::Rgb(115, 115, 115)
-            } else {
-                Color::Rgb(163, 163, 163)
-            }),
+            State::Connected => self.text(colors::SUCCESS),
+            State::Connecting | State::Reconnecting(_) => self.text(colors::WARNING),
+            _ => self.text(colors::SECONDARY),
         }
     }
     fn selection(self) -> Style {
         if self.color {
             Style::default()
-                .fg(Color::White)
-                .bg(Color::Rgb(53, 104, 138))
+                .fg(Color::from_u32(colors::ON_SELECTION))
+                .bg(Color::from_u32(colors::SELECTION))
         } else {
             Style::default().add_modifier(Modifier::REVERSED)
         }
@@ -314,8 +286,7 @@ impl App {
         if area.is_empty() {
             return;
         }
-        let primary = self.palette.kind(Kind::Command);
-        let secondary = self.palette.kind(Kind::System);
+        let primary = self.palette.text(colors::PRIMARY);
         let hint = Paragraph::new(Line::from(vec![
             Span::styled("● ", self.palette.status(State::Connected)),
             Span::raw(tr("tui.welcome.waiting")),
@@ -330,15 +301,16 @@ impl App {
             && PROJECT_URL.len() + 11 <= width
             && metadata_rows >= 3
         {
+            let [top, middle, bottom] = colors::TERMINAL_LOGO;
             vec![
-                Line::styled(format!(" ╭────╮  {title}"), primary),
+                Line::styled(format!(" {top}  {title}"), primary),
                 Line::from(vec![
-                    Span::styled(" │ >_<", primary),
-                    Span::styled(format!("   - {hash}"), secondary),
+                    Span::styled(format!(" {middle}"), primary),
+                    Span::raw(format!("   - {hash}")),
                 ]),
                 Line::from(vec![
-                    Span::styled(" ╰────╯", primary),
-                    Span::styled(format!("  - {PROJECT_URL}"), secondary),
+                    Span::styled(format!(" {bottom}"), primary),
+                    Span::raw(format!("  - {PROJECT_URL}")),
                 ]),
             ]
         } else if metadata_rows > 0 {
@@ -349,16 +321,16 @@ impl App {
             };
             let mut lines = vec![Line::styled(title, primary)];
             if metadata_rows >= 2 && self.metrics.width(&hash) <= width {
-                lines.push(Line::styled(hash, secondary));
+                lines.push(Line::raw(hash));
             } else if metadata_rows >= 3
                 && width >= 16
                 && let Some((head, tail)) = executable_hash().split_once(HASH_SEPARATOR)
             {
-                lines.push(Line::styled(format!("sha256: {head}"), secondary));
-                lines.push(Line::styled(format!("{HASH_SEPARATOR}{tail}"), secondary));
+                lines.push(Line::raw(format!("sha256: {head}")));
+                lines.push(Line::raw(format!("{HASH_SEPARATOR}{tail}")));
             }
             if lines.len() < metadata_rows && PROJECT_URL.len() <= width {
-                lines.push(Line::styled(PROJECT_URL, secondary));
+                lines.push(Line::raw(PROJECT_URL));
             }
             lines
         } else {

@@ -17,43 +17,37 @@ fi
 case "$locale" in '') if [ "$(uname -s)" = Darwin ]; then locale=$(defaults read -g AppleLanguages 2>/dev/null | tr -d '"(), ' | head -n 1 || true); fi;; esac
 case "$locale" in zh_CN*|zh-SG*|zh_SG*|zh-CN*|zh-Hans*|zh_Hans*|zh|zh.*) chinese=1;; *) chinese=0;; esac
 @TRANSLATIONS@
-reset='' cyan='' teal='' muted='' gold='' green=''
+reset='' primary='' warning='' success=''
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
   reset=$(printf '\033[0m')
-  cyan=$(printf '\033[1;36m')
-  teal=$(printf '\033[36m')
-  muted=$(printf '\033[90m')
-  gold=$(printf '\033[1;33m')
-  green=$(printf '\033[1;32m')
+  case "${COLORTERM:-}:${TERM_PROGRAM:-}:${WT_SESSION:-}" in
+    truecolor:*|24bit:*|*:Apple_Terminal:*|*:vscode:*|*:*:?*) primary=$(printf '\033[@COLOR_PRIMARY_SGR@m') ;;
+    *) primary=$(printf '\033[1;@COLOR_PRIMARY@m') ;;
+  esac
+  warning=$(printf '\033[1;@COLOR_WARNING@m')
+  success=$(printf '\033[1;@COLOR_SUCCESS@m')
 fi
 say() {
   color=''
   case "$1" in
-    installer.connection.progress|installer.2.4.preparing.client) color=$cyan ;;
-    installer.cached.client.verified.skipping.download|installer.client.verified) color=$green ;;
+    installer.connection.progress|installer.2.4.preparing.client) color=$primary ;;
+    installer.cached.client.verified.skipping.download|installer.client.verified) color=$success ;;
   esac
   format=$(text "$1"); shift
   printf '%s' "$color"
   printf "$format\n" "$@"
   printf '%s' "$reset"
 }
-banner_row() {
-  printf '%s│%s   %s%s%s  %s%s%s%s│%s\n' "$muted" "$reset" "$gold" "$1" "$reset" "$2" "$3" "$reset" "$muted" "$reset"
-}
 banner() {
-  printf '\n%s╭──────────────────────────────────────────────────────╮%s\n' "$muted" "$reset"
-  printf '%s│                                                      │%s\n' "$muted" "$reset"
-  banner_row '▚▖     ▗▞' "$cyan" '▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█      '
-  banner_row ' ▸     ◂ ' "$teal" '█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █      '
-  banner_row '▞▘ ▄▄▄ ▝▚' '' "$(printf '%-40s' "Agenterm   [ $version ]")"
-  printf '%s│                                                      │%s\n' "$muted" "$reset"
-  printf '%s╰──────────────────────────────────────────────────────╯%s\n\n' "$muted" "$reset"
+  printf '\n%s  @LOGO_TOP@  %s\n' "$primary" '@WORDMARK_TOP@'
+  printf '  @LOGO_MIDDLE@   %s\n' '@WORDMARK_BOTTOM@'
+  printf '  @LOGO_BOTTOM@  Agenterm   [ %s ]%s\n\n' "$version" "$reset"
   say installer.project.s 'https://github.com/Heming9/agenterm'
   say installer.license
 }
 [ -n "$base" ] || { say installer.missing.download.url >&2; exit 1; }
 banner
-printf '\n%s%s%s\n' "$gold" "$(text installer.remote.control.authorization)" "$reset"
+printf '\n%s%s%s\n' "$warning" "$(text installer.remote.control.authorization)" "$reset"
 say installer.server.s "$origin"
 say installer.the.server.can.control.this.computer.with
 printf '\n'

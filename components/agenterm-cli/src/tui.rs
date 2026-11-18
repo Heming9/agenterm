@@ -796,12 +796,10 @@ impl App {
 pub fn run(options: Options, shutdown: Arc<AtomicBool>) -> Result<()> {
     let auto_connect =
         !options.token.is_empty() || !options.invite.is_empty() || options.token_provided;
-    let palette = view::Palette::detect();
     let guard = TerminalGuard::enter(true).map_err(|e| e.to_string())?;
     let mut terminal =
         Terminal::new(CrosstermBackend::new(io::stdout())).map_err(|e| e.to_string())?;
     let mut app = App::new(options);
-    app.palette = palette;
     if let Ok((w, h)) = terminal::size() {
         app.resize(w, h);
     }

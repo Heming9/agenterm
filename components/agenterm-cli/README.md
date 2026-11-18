@@ -69,9 +69,9 @@ input/output selects plain output. Ctrl+C disconnects and stops owned shells.
 Authorization text and connection menus share translations with the server. The TUI
 has a header, dividers, input form, connection mode and server history
 selectors, status colors, command counter and latency footer. It adapts to window
-size and terminal background; `AGENTERM_THEME=light` / `dark` overrides background
-detection. `NO_COLOR` and `TERM=dumb` disable colors while retaining visible menu
-and text-selection highlights.
+size. The terminal palette is built from [theme.json](../../internal/theme/theme.json).
+`NO_COLOR` and `TERM=dumb` disable colors while retaining visible menu and
+text-selection highlights.
 
 Commands and output appear in a bounded 10 MiB log with timestamps, spacing,
 wrapping and initial multiline folding. Click a folded block to expand/collapse;

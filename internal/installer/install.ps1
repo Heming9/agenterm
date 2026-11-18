@@ -9,50 +9,39 @@ $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AG
 $chinese = $language -match '^(zh-CN|zh-SG|zh-Hans)(-|$)' -or $language -eq 'zh'
 @TRANSLATIONS@
 $useColor = -not [Console]::IsOutputRedirected -and $env:TERM -ne 'dumb' -and -not $env:NO_COLOR
-function Write-Styled([string]$Message, [string]$Color = '', [switch]$NoNewline) {
-  if ($useColor -and $Color) {
-    Write-Host $Message -ForegroundColor $Color -NoNewline:$NoNewline
+$trueColor = $env:WT_SESSION -or $env:COLORTERM -in @('truecolor', '24bit') -or $env:TERM_PROGRAM -in @('Apple_Terminal', 'vscode')
+$primarySGR = '@COLOR_PRIMARY_SGR@'
+function Write-Styled([string]$Message, [string]$Color = '') {
+  if ($useColor -and $trueColor -and $Color -eq '@COLOR_PRIMARY@') {
+    $esc = [char]27
+    Write-Host "${esc}[${primarySGR}m${Message}${esc}[0m"
+  } elseif ($useColor -and $Color) {
+    Write-Host $Message -ForegroundColor $Color
   } else {
-    Write-Host $Message -NoNewline:$NoNewline
+    Write-Host $Message
   }
 }
 function Say([string]$Key) {
   $color = switch ($Key) {
-    'installer.connection.progress' { 'Cyan'; break }
-    'installer.2.4.preparing.client' { 'Cyan'; break }
-    'installer.cached.client.verified.skipping.download' { 'Green'; break }
-    'installer.client.verified' { 'Green'; break }
+    'installer.connection.progress' { '@COLOR_PRIMARY@'; break }
+    'installer.2.4.preparing.client' { '@COLOR_PRIMARY@'; break }
+    'installer.cached.client.verified.skipping.download' { '@COLOR_SUCCESS@'; break }
+    'installer.client.verified' { '@COLOR_SUCCESS@'; break }
     default { '' }
   }
   Write-Styled (Text $Key) $color
-}
-function Write-BannerRow([string]$Mark, [string]$Message, [string]$Color = '') {
-  Write-Styled '│' 'DarkGray' -NoNewline
-  Write-Styled '   ' -NoNewline
-  Write-Styled $Mark 'Yellow' -NoNewline
-  Write-Styled '  ' -NoNewline
-  Write-Styled ($Message.PadRight(40)) $Color -NoNewline
-  Write-Styled '│' 'DarkGray'
 }
 function Show-Banner {
   # Only use the block-character banner in known modern terminal hosts.
   $useUnicodeBanner = -not [Console]::IsOutputRedirected -and $env:TERM -ne 'dumb' -and
     ($env:WT_SESSION -or $env:TERM_PROGRAM -eq 'vscode')
   if ($useUnicodeBanner) {
-    Write-Styled "`n╭──────────────────────────────────────────────────────╮" 'DarkGray'
-    Write-Styled '│                                                      │' 'DarkGray'
-    Write-BannerRow '▚▖     ▗▞' '▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀ █▀▀ █▀█ █▀▄▀█' 'Cyan'
-    Write-BannerRow ' ▸     ◂ ' '█▀█ █▄█ ██▄ █ ▀█  █  ██▄ █▀▄ █ ▀ █' 'DarkCyan'
-    Write-BannerRow '▞▘ ▄▄▄ ▝▚' "Agenterm   [ $Version ]"
-    Write-Styled '│                                                      │' 'DarkGray'
-    Write-Styled "╰──────────────────────────────────────────────────────╯`n" 'DarkGray'
+    Write-Styled "`n  @LOGO_TOP@  @WORDMARK_TOP@" '@COLOR_PRIMARY@'
+    Write-Styled '  @LOGO_MIDDLE@   @WORDMARK_BOTTOM@' '@COLOR_PRIMARY@'
+    Write-Styled "  @LOGO_BOTTOM@  Agenterm   [ $Version ]`n" '@COLOR_PRIMARY@'
   } else {
     Write-Host ''
-    Write-Styled '  > _ <' 'Yellow' -NoNewline
-    Write-Styled '   AGENTERM' 'Cyan'
-    Write-Styled '  --------------------------------------------------' 'DarkGray'
-    Write-Host '  > AI remote terminal'
-    Write-Host "  > Version: $Version"
+    Write-Styled "  >_<  Agenterm   [ $Version ]" '@COLOR_PRIMARY@'
     Write-Host ''
   }
   Write-Host (Text 'installer.project.s' @('https://github.com/Heming9/agenterm'))
@@ -61,7 +50,7 @@ function Show-Banner {
 $origin = $Base -replace '/downloads/[^/]+$', ''
 Show-Banner
 Write-Host ''
-Write-Styled (Text 'installer.remote.control.authorization') 'Yellow'
+Write-Styled (Text 'installer.remote.control.authorization') '@COLOR_WARNING@'
 Write-Host (Text 'installer.server.s' @($origin))
 Say 'installer.the.server.can.control.this.computer.with'
 Write-Host ''
