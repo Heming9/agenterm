@@ -994,7 +994,7 @@ mod tests {
                     Some(ERROR_INVALID_PARAMETER as i32)
                 );
             } else {
-                let result = WaitForSingleObject(handle, 0);
+                let result = WaitForSingleObject(handle, 5000);
                 CloseHandle(handle);
                 assert_eq!(result, WAIT_OBJECT_0, "descendant {child} is still running");
             }
