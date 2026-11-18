@@ -195,10 +195,12 @@ struct App {
     servers: Vec<String>,
     select_mode_after_server: bool,
     address: String,
+    identity: String,
     message: String,
     ended_message: Option<String>,
     latency: Option<u64>,
     ever_connected: bool,
+    show_welcome: bool,
     log: Log,
     scroll: usize,
     follow: bool,
@@ -218,6 +220,12 @@ impl App {
         } else {
             options.invite.clone()
         };
+        let mut identity = format!(
+            "{}@{}",
+            crate::terminal::username(),
+            crate::terminal::hostname()
+        );
+        identity.retain(|c| !c.is_control());
         Self {
             input: Input::new(value),
             invitation: options.invite.clone(),
@@ -230,10 +238,12 @@ impl App {
             servers: vec![],
             select_mode_after_server: false,
             address: String::new(),
+            identity,
             message: String::new(),
             ended_message: None,
             latency: None,
             ever_connected: false,
+            show_welcome: false,
             log: Log::default(),
             scroll: 0,
             follow: true,
@@ -254,6 +264,11 @@ impl App {
     }
     fn body_width(&self) -> usize {
         usize::from(self.width.saturating_sub(2).max(1))
+    }
+    fn welcome_start(&self) -> Option<usize> {
+        // The log's trailing empty row is the first free row below connection messages.
+        (self.state == State::Connected && self.show_welcome)
+            .then(|| self.log.rows.len().saturating_sub(1))
     }
     fn max_scroll(&self) -> usize {
         self.log.rows.len().saturating_sub(self.body_height())
@@ -370,6 +385,7 @@ impl App {
                 }
                 self.state = State::Connected;
                 self.latency = None;
+                self.show_welcome = !self.ever_connected;
                 if self.ever_connected {
                     self.log.message(
                         Kind::System,
@@ -399,7 +415,12 @@ impl App {
                 self.ended_message = Some(clean(&message));
                 self.log.message(Kind::System, &message);
             }
-            event => self.log.event(event),
+            event => {
+                if matches!(event, ClientEvent::Started { .. }) {
+                    self.show_welcome = false;
+                }
+                self.log.event(event);
+            }
         }
     }
     fn drain(&mut self) -> bool {
@@ -628,7 +649,9 @@ impl App {
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if !self.inside(mouse.column, mouse.row) || self.log.rows.is_empty() {
+                let row = self.scroll + usize::from(mouse.row.saturating_sub(2));
+                let on_welcome = self.welcome_start().is_some_and(|start| row >= start);
+                if !self.inside(mouse.column, mouse.row) || self.log.rows.is_empty() || on_welcome {
                     self.clear_selection();
                     return;
                 }

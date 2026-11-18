@@ -159,7 +159,7 @@ pub fn register() -> Result<()> {
     }
 }
 
-fn hash_reader(file: &mut File) -> Result<String> {
+pub(crate) fn hash_reader(file: &mut File) -> Result<String> {
     let mut hash = Sha256::new();
     let mut buffer = [0; 65536];
     loop {

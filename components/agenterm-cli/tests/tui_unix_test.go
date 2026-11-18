@@ -5,6 +5,7 @@ package interop
 import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	neturl "net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"strings"
 	"sync"
@@ -293,13 +295,41 @@ func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 	f := newLiveTUI(t, false, "", false)
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (persistent)")
+	f.capture.wait(t, "Client connected. Waiting for remote operations...")
+	binary, err := os.Open(f.command.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer binary.Close()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, binary); err != nil {
+		t.Fatal(err)
+	}
+	hash := fmt.Sprintf("%x", digest.Sum(nil))
+	f.capture.wait(t, "sha256: "+hash[:8]+"......"+hash[len(hash)-8:])
+	username := strconv.Itoa(os.Geteuid())
+	if account, err := user.LookupId(username); err == nil {
+		username = account.Username
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := ansi.Truncate(username+"@"+host, f.capture.width-4, "…")
+	screen := f.capture.wait(t, identity)
+	if divider := strings.Split(screen, "\n")[f.capture.height-3]; !strings.HasSuffix(divider, " "+identity) {
+		t.Fatalf("identity missing from footer divider: %q", divider)
+	}
 	if err := f.peer.WriteJSON(protocol.Message{Type: "latency", LatencyMS: 42}); err != nil {
 		t.Fatal(err)
 	}
 	f.capture.wait(t, "0 commands · 42ms")
 	f.execute(t, "printf 'first line\\nsecond line\\nthird line\\n'")
 	f.capture.wait(t, "1 commands · 42ms")
-	screen := f.capture.wait(t, "[3 lines]")
+	screen = f.capture.wait(t, "[3 lines]")
+	if strings.Contains(screen, "Client connected. Waiting for remote operations...") {
+		t.Fatal("waiting message still visible after the first command")
+	}
 	if strings.Contains(screen, "\nsecond line\n") {
 		t.Fatal("multiline log should initially be folded:\n" + screen)
 	}

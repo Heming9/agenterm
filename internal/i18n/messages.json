@@ -267,6 +267,10 @@
     "en": "%d commands",
     "zh-CN": "%d 条"
   },
+  "tui.welcome.waiting": {
+    "en": "Client connected. Waiting for remote operations...",
+    "zh-CN": "客户端已连接成功，等待远程操作..."
+  },
   "tui.selection.help": {
     "en": "Esc clear selection",
     "zh-CN": "Esc 清除选区"

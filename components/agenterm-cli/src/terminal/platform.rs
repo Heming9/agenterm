@@ -28,6 +28,40 @@ pub fn hostname() -> String {
     }
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into())
 }
+#[cfg(unix)]
+pub fn username() -> String {
+    let uid = unsafe { libc::geteuid() };
+    let mut record = std::mem::MaybeUninit::<libc::passwd>::uninit();
+    let mut buffer = [0u8; 16 * 1024];
+    let mut found = std::ptr::null_mut();
+    // On success, found points to the record and pw_name points into buffer.
+    let status = unsafe {
+        libc::getpwuid_r(
+            uid,
+            record.as_mut_ptr(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut found,
+        )
+    };
+    if status == 0 && !found.is_null() {
+        let name = unsafe { std::ffi::CStr::from_ptr((*found).pw_name) };
+        return name.to_string_lossy().into_owned();
+    }
+    uid.to_string()
+}
+#[cfg(windows)]
+pub fn username() -> String {
+    use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
+
+    // GetUserNameW requires space for up to 256 characters and a NUL.
+    let mut buffer = [0u16; 257];
+    let mut len = buffer.len() as u32;
+    if unsafe { GetUserNameW(buffer.as_mut_ptr(), &mut len) } != 0 {
+        return String::from_utf16_lossy(&buffer[..len.saturating_sub(1) as usize]);
+    }
+    std::env::var("USERNAME").unwrap_or_else(|_| "unknown".into())
+}
 pub fn shell() -> String {
     #[cfg(unix)]
     {

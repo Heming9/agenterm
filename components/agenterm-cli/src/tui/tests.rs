@@ -65,11 +65,15 @@ fn screens_match_reference() {
     }
     let reference: Reference =
         serde_json::from_str(include_str!("../../tests/fixtures/tui.json")).unwrap();
+    let (hash_head, hash_tail) = view::executable_hash()
+        .split_once(view::HASH_SEPARATOR)
+        .unwrap();
     for expected in reference.screens {
         if (expected.language == "zh-CN") != ui::zh() {
             continue;
         }
         let mut app = app();
+        app.identity = "tester@workstation".into();
         app.resize(expected.width, expected.height);
         match expected.scenario.as_str() {
             "input" => {}
@@ -92,6 +96,10 @@ fn screens_match_reference() {
                 app.address = "ws://127.0.0.1:18743/agenterm/client/abc123".into();
                 app.state = State::Connected;
                 app.latency = Some(42);
+                if scenario == "connected" {
+                    app.client_event(ClientEvent::Connected);
+                    app.latency = Some(42);
+                }
                 if scenario == "connecting" {
                     app.state = State::Connecting;
                     app.latency = None;
@@ -133,6 +141,13 @@ fn screens_match_reference() {
                     &format!("Agenterm v{}", reference.version),
                     &format!("Agenterm v{}", crate::protocol::VERSION),
                 )
+                .replace(".0000000", &format!(".{}", view::COMMIT))
+                .replace("########......########", view::executable_hash())
+                .replace("sha256: ########", &format!("sha256: {hash_head}"))
+                .replace(
+                    "......########",
+                    &format!("{}{hash_tail}", view::HASH_SEPARATOR),
+                )
             })
             .collect();
         assert_eq!(
@@ -141,6 +156,36 @@ fn screens_match_reference() {
             expected.language, expected.scenario, expected.width
         );
     }
+}
+
+#[test]
+fn long_identity_fits_the_footer_divider() {
+    let mut app = app();
+    app.identity = "用户@工作站-abcdefghijklmnopqrstuvwxyz".into();
+    app.resize(28, 16);
+    app.client_event(ClientEvent::Connected);
+    app.latency = Some(42);
+
+    let rows = screen(&app);
+    assert_eq!(rows[13], " ─ 用户@工作站-abcdefghijk…");
+    assert!(rows[14].ends_with(" · 42ms"));
+}
+
+#[test]
+fn idle_reconnect_does_not_repeat_welcome() {
+    let mut app = app();
+    app.client_event(ClientEvent::Connected);
+    app.refresh();
+    assert!(screen(&app).join("\n").contains(tr("tui.welcome.waiting")));
+    app.client_event(ClientEvent::Retry {
+        message: "EOF".into(),
+        delay: 1,
+    });
+    app.client_event(ClientEvent::Connected);
+    app.refresh();
+    let restored = screen(&app).join("\n");
+    assert!(restored.contains(tr("connection.restored")));
+    assert!(!restored.contains(tr("tui.welcome.waiting")));
 }
 
 #[test]
@@ -367,17 +412,24 @@ fn osc52_handles_plain_tmux_and_screen_terminals() {
 #[test]
 fn adaptive_colors_and_no_color_selection_match_go() {
     use ratatui::style::{Color, Modifier};
-    for (light, expected) in [
-        (false, Color::Rgb(133, 201, 155)),
-        (true, Color::Rgb(37, 116, 69)),
+    for (light, primary, secondary) in [
+        (false, Color::Rgb(133, 201, 155), Color::Rgb(153, 177, 195)),
+        (true, Color::Rgb(37, 116, 69), Color::Rgb(75, 103, 122)),
     ] {
         let mut app = app();
-        app.state = State::Connected;
+        app.client_event(ClientEvent::Connected);
+        app.refresh();
         app.palette = view::Palette { color: true, light };
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal.draw(|frame| app.render(frame)).unwrap();
         let buffer = terminal.backend().buffer();
-        assert!(buffer.content.iter().any(|c| c.fg == expected));
+        assert!(buffer.content.iter().any(|c| c.fg == primary));
+        for position in [(2, 2), (10, 2), (2, 3), (2, 4)] {
+            assert_eq!(buffer[position].fg, primary);
+        }
+        for position in [(10, 3), (10, 4)] {
+            assert_eq!(buffer[position].fg, secondary);
+        }
     }
     let mut app = app();
     app.state = State::Connected;

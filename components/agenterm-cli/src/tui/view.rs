@@ -1,10 +1,33 @@
 use super::{App, Kind, Menu, State, clean};
-use crate::{protocol::VERSION, ui::tr};
+use crate::{deeplink::hash_reader, protocol::VERSION, ui::tr};
 use ratatui::{
     Frame,
+    layout::Rect,
     style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{self, Paragraph},
 };
+use std::{env, fs::File, sync::OnceLock};
 use unicode_segmentation::UnicodeSegmentation;
+
+pub(super) const COMMIT: &str = env!("AGENTERM_COMMIT");
+pub(super) const HASH_SEPARATOR: &str = "......";
+const PROJECT_URL: &str = "https://github.com/Heming9/agenterm";
+
+pub(super) fn executable_hash() -> &'static str {
+    static HASH: OnceLock<Option<String>> = OnceLock::new();
+    HASH.get_or_init(|| {
+        let mut file = File::open(env::current_exe().ok()?).ok()?;
+        let digest = hash_reader(&mut file).ok()?;
+        Some(format!(
+            "{}{HASH_SEPARATOR}{}",
+            &digest[..8],
+            &digest[digest.len() - 8..]
+        ))
+    })
+    .as_deref()
+    .unwrap_or("unavailable")
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct Palette {
@@ -209,12 +232,24 @@ impl App {
             );
         }
         if area.height >= 5 {
+            let width = usize::from(area.width.saturating_sub(2));
+            let label = self
+                .metrics
+                .truncate(&self.identity, width.saturating_sub(2), "…");
+            let footer_divider = if self.state == State::Connected && !label.is_empty() {
+                format!(
+                    "{} {label}",
+                    "─".repeat(width - self.metrics.width(&label) - 1)
+                )
+            } else {
+                divider
+            };
             self.metrics.draw(
                 frame.buffer_mut(),
                 1,
                 area.height - 3,
                 area.width.saturating_sub(2),
-                &divider,
+                &footer_divider,
                 default,
             );
             self.metrics.draw(
@@ -229,6 +264,19 @@ impl App {
         if self.state == State::Disconnected {
             self.render_form(frame, palette);
         } else {
+            if let Some(start) = self.welcome_start() {
+                let occupied = start.saturating_sub(self.scroll);
+                let top = 2 + occupied.min(self.body_height()) as u16;
+                self.render_welcome(
+                    frame,
+                    Rect::new(
+                        1,
+                        top,
+                        area.width.saturating_sub(2),
+                        area.height.saturating_sub(3).saturating_sub(top),
+                    ),
+                );
+            }
             for (i, row) in self
                 .log
                 .rows
@@ -261,6 +309,67 @@ impl App {
                 }
             }
         }
+    }
+    fn render_welcome(&self, frame: &mut Frame<'_>, area: Rect) {
+        if area.is_empty() {
+            return;
+        }
+        let primary = self.palette.kind(Kind::Command);
+        let secondary = self.palette.kind(Kind::System);
+        let hint = Paragraph::new(Line::from(vec![
+            Span::styled("● ", self.palette.status(State::Connected)),
+            Span::raw(tr("tui.welcome.waiting")),
+        ]))
+        .wrap(widgets::Wrap { trim: true });
+        let hint_height = hint.line_count(area.width) as u16;
+        let metadata_rows = usize::from(area.height.saturating_sub(hint_height));
+        let title = format!("Agenterm v{VERSION}.{COMMIT}");
+        let hash = format!("sha256: {}", executable_hash());
+        let width = usize::from(area.width);
+        let lines = if self.metrics.width(&title) + 9 <= width
+            && PROJECT_URL.len() + 11 <= width
+            && metadata_rows >= 3
+        {
+            vec![
+                Line::styled(format!(" ╭────╮  {title}"), primary),
+                Line::from(vec![
+                    Span::styled(" │ >_<", primary),
+                    Span::styled(format!("   - {hash}"), secondary),
+                ]),
+                Line::from(vec![
+                    Span::styled(" ╰────╯", primary),
+                    Span::styled(format!("  - {PROJECT_URL}"), secondary),
+                ]),
+            ]
+        } else if metadata_rows > 0 {
+            let title = if self.metrics.width(&title) <= width {
+                title
+            } else {
+                format!("Agenterm v{VERSION}")
+            };
+            let mut lines = vec![Line::styled(title, primary)];
+            if metadata_rows >= 2 && self.metrics.width(&hash) <= width {
+                lines.push(Line::styled(hash, secondary));
+            } else if metadata_rows >= 3
+                && width >= 16
+                && let Some((head, tail)) = executable_hash().split_once(HASH_SEPARATOR)
+            {
+                lines.push(Line::styled(format!("sha256: {head}"), secondary));
+                lines.push(Line::styled(format!("{HASH_SEPARATOR}{tail}"), secondary));
+            }
+            if lines.len() < metadata_rows && PROJECT_URL.len() <= width {
+                lines.push(Line::styled(PROJECT_URL, secondary));
+            }
+            lines
+        } else {
+            Vec::new()
+        };
+        let height = lines.len() as u16;
+        frame.render_widget(Paragraph::new(lines), Rect { height, ..area });
+        frame.render_widget(
+            hint,
+            Rect::new(area.x, area.y + height, area.width, area.height - height),
+        );
     }
     fn render_form(&self, frame: &mut Frame<'_>, palette: Palette) {
         if self.height < 6 {
