@@ -1013,14 +1013,16 @@ mod tests {
                 &worker_cancel,
             )
         });
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while m.lookup("cancel").is_err() && Instant::now() < deadline {
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(1));
         }
+        assert!(m.lookup("cancel").is_ok(), "execution was not accepted");
         cancel.store(true, Ordering::SeqCst);
         assert!(waiter.join().unwrap().is_err());
         let mut cursor = 0;
         let mut output = String::new();
+        let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             let r = call(
                 &m,
@@ -1030,7 +1032,7 @@ mod tests {
             .unwrap();
             output.push_str(r["output"].as_str().unwrap());
             cursor = r["next_cursor"].as_u64().unwrap();
-            if r["status"] == "idle" || Instant::now() > deadline {
+            if (r["status"] == "idle" && r["has_more"] == false) || Instant::now() > deadline {
                 break;
             }
         }
