@@ -80,7 +80,7 @@ func TestShortCodeLookupEndpoint(t *testing.T) {
 	request := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/c/"+code, nil)
-		r.Header.Set(version.Header, version.Current)
+		r.Header.Set(version.Header, version.Protocol)
 		s.installWrapper("v1.2.3").ServeHTTP(w, r)
 		return w
 	}
@@ -128,7 +128,7 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 	token := issued["client_token"].(string)
 	s.shortCodes = shortCodeStore{"ABC123": {token: token}}
 	req := httptest.NewRequest(http.MethodPost, "/c/ABC123", nil)
-	req.Header.Set(version.Header, version.Current)
+	req.Header.Set(version.Header, version.Protocol)
 	w := httptest.NewRecorder()
 	s.installWrapper("v1.2.3").ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -160,7 +160,7 @@ func TestShortCodesDisabled(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(method, "/c/ABC123", nil)
-		r.Header.Set(version.Header, version.Current)
+		r.Header.Set(version.Header, version.Protocol)
 		s.installWrapper("v1.2.3").ServeHTTP(w, r)
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("%s: got %d", method, w.Code)
@@ -187,7 +187,7 @@ func TestNewShortCodeCanBeRedeemedInUppercase(t *testing.T) {
 	redeem := func(value string) int {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/c/"+value, nil)
-		r.Header.Set(version.Header, version.Current)
+		r.Header.Set(version.Header, version.Protocol)
 		s.installWrapper("v1.2.3").ServeHTTP(w, r)
 		return w.Code
 	}

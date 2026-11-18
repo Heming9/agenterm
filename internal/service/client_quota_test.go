@@ -125,7 +125,7 @@ func TestQuotaConcurrentConnectionsAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	token, _ := protocol.Decode(issued["client_token"].(string))
-	headers := http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + token.Secret}}
+	headers := http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + token.Secret}}
 	conn, _, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +215,7 @@ func TestQuotaConcurrentReconnects(t *testing.T) {
 	for _, secret := range secrets {
 		go func(secret string) {
 			<-start
-			h := http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + secret}}
+			h := http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + secret}}
 			conn, resp, err := websocket.DefaultDialer.Dial(url, h)
 			if err != nil {
 				if resp != nil {

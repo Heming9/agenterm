@@ -156,7 +156,7 @@ func TestInstallerUsesTokenSecretIndependentlyOfShortCode(t *testing.T) {
 	}
 	code := issued["short_code"].(string)
 	lookup := httptest.NewRequest(http.MethodPost, "/c/"+code, nil)
-	lookup.Header.Set(version.Header, version.Current)
+	lookup.Header.Set(version.Header, version.Protocol)
 	response := httptest.NewRecorder()
 	s.installWrapper("v1.2.3").ServeHTTP(response, lookup)
 	if response.Code != http.StatusOK {

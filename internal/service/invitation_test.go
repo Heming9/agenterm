@@ -23,7 +23,7 @@ func TestInvitationSingleUseConcurrent(t *testing.T) {
 			defer wg.Done()
 			r := httptest.NewRequest(http.MethodPost, "/agenterm/invite/redeem", nil)
 			r.Header.Set("Authorization", "Bearer secret")
-			r.Header.Set(version.Header, version.Current)
+			r.Header.Set(version.Header, version.Protocol)
 			w := httptest.NewRecorder()
 			s.redeemInvitation(w, r)
 			statuses <- w.Code
@@ -48,7 +48,7 @@ func TestInvitationExpired(t *testing.T) {
 	s := &runtimeState{invitations: map[string]invitation{"secret": {token: "connection-token", expires: time.Now().Add(-time.Second)}}}
 	r := httptest.NewRequest(http.MethodPost, "/agenterm/invite/redeem", nil)
 	r.Header.Set("Authorization", "Bearer secret")
-	r.Header.Set(version.Header, version.Current)
+	r.Header.Set(version.Header, version.Protocol)
 	w := httptest.NewRecorder()
 	s.redeemInvitation(w, r)
 	if w.Code != http.StatusUnauthorized {

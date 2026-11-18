@@ -58,7 +58,7 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
-		w.Header().Set(version.Header, version.Current)
+		w.Header().Set(version.Header, version.Protocol)
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
 	})
 	mux.HandleFunc("/prototype/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +67,11 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 			http.Error(w, "method", 405)
 			return
 		}
-		w.Header().Set(version.Header, version.Current)
+		w.Header().Set(version.Header, version.Protocol)
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
 	})
 	mux.HandleFunc("/prototype/client/abc123", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+secret || r.Header.Get(version.Header) != version.Current || r.Header.Get(protocol.ClientAPIHeader) != "1" {
+		if r.Header.Get("Authorization") != "Bearer "+secret || r.Header.Get(version.Header) != version.Protocol || r.Header.Get(protocol.ClientAPIHeader) != "1" {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
@@ -81,7 +81,7 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 		if r.Header.Get(protocol.ResumeCredentialHeader) == "resume-test" {
 			f.resumes.Add(1)
 		}
-		headers := http.Header{version.Header: {version.Current}, protocol.ClientAPIHeader: {"1"}, protocol.HeartbeatHeader: {"1"}, protocol.ResumeCredentialHeader: {"resume-test"}}
+		headers := http.Header{version.Header: {version.Protocol}, protocol.ClientAPIHeader: {"1"}, protocol.HeartbeatHeader: {"1"}, protocol.ResumeCredentialHeader: {"resume-test"}}
 		peer, err := (&websocket.Upgrader{}).Upgrade(w, r, headers)
 		if err != nil {
 			return

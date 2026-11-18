@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import struct
-import subprocess
 import tempfile
 import unittest
 
@@ -19,22 +18,14 @@ class NativeCacheTests(unittest.TestCase):
         self.root = Path(temporary.name)
         files = {
             'components/p2p-cli/Cargo.toml': '[package]\nversion="0.1.1"\n',
-            'components/p2p-cli/Cargo.lock': '# dependencies\n',
             'components/p2p-cli/src/main.rs': 'fn main() {}\n',
-            'components/p2p-cli/daemon_e2e.py': '# native validation\n',
-            'scripts/build_p2p_cli.py': '# packaging\n',
-            'scripts/install_linux_musl.sh': '# Linux build setup\n',
-            'scripts/p2p_cache.py': '# cache contract\n',
-            '.github/workflows/p2p-cli.yml': '# toolchain and flags\n',
         }
         for name, content in files.items():
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
-        subprocess.run(['git', 'init', '-q'], cwd=self.root, check=True)
-        subprocess.run(['git', '-c', 'core.autocrlf=false', 'add', '.'], cwd=self.root, check=True)
         self.target = 'x86_64-apple-darwin'
-        self.value = cache.identity(self.root, self.target, '1.99.1', 'macos-15-intel')
+        self.value = cache.identity(self.root, self.target)
         self.directory = self.root / 'cache'
         self.source = self.root / 'source'
         self.assets = self.root / 'restored'
@@ -51,33 +42,11 @@ class NativeCacheTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             return cache.restore(self.root, self.directory, self.assets, self.binary, value or self.value)
 
-    def test_go_changes_and_untracked_build_outputs_keep_the_native_key(self):
-        go = self.root / 'internal/terminalapi/types.go'
-        go.parent.mkdir(parents=True)
-        go.write_text('package terminalapi\n')
-        subprocess.run(['git', '-c', 'core.autocrlf=false', 'add', 'internal/terminalapi/types.go'], cwd=self.root, check=True)
-        target = self.root / 'components/p2p-cli/target/output'
-        target.parent.mkdir(parents=True)
-        target.write_bytes(b'compiled object')
-        self.assertEqual(self.value, cache.identity(self.root, self.target, '1.99.1', 'macos-15-intel'))
-
-    def test_native_sources_lockfile_packaging_and_validation_changes_invalidate(self):
-        for name in ('components/p2p-cli/src/main.rs', 'components/p2p-cli/Cargo.lock',
-                     'components/p2p-cli/daemon_e2e.py', 'scripts/build_p2p_cli.py',
-                     'scripts/p2p_cache.py', 'scripts/install_linux_musl.sh', '.github/workflows/p2p-cli.yml'):
-            with self.subTest(file=name):
-                path = self.root / name
-                original = path.read_bytes()
-                path.write_bytes(original + b'changed')
-                self.assertNotEqual(self.value, cache.identity(self.root, self.target, '1.99.1', 'macos-15-intel'))
-                path.write_bytes(original)
-
-    def test_toolchain_target_and_runner_separate_cache_entries(self):
-        keys = {cache.cache_key(self.value)}
-        keys.add(cache.cache_key(cache.identity(self.root, self.target, '1.100.0', 'macos-15-intel')))
-        keys.add(cache.cache_key(cache.identity(self.root, 'aarch64-apple-darwin', '1.99.1', 'macos-15-intel')))
-        keys.add(cache.cache_key(cache.identity(self.root, self.target, '1.99.1', 'macos-15')))
-        self.assertEqual(len(keys), 4)
+    def test_source_changes_keep_the_native_key_until_the_version_changes(self):
+        (self.root / 'components/p2p-cli/src/main.rs').write_text('fn main() { panic!() }')
+        self.assertEqual(self.value, cache.identity(self.root, self.target))
+        (self.root / 'components/p2p-cli/Cargo.toml').write_text('[package]\nversion="0.1.2"\n')
+        self.assertNotEqual(cache.cache_key(self.value), cache.cache_key(cache.identity(self.root, self.target)))
 
     def test_validated_component_round_trip_preserves_manifest_bytes_and_execution(self):
         cache.store(self.root, self.directory, self.source, self.value)
@@ -93,21 +62,19 @@ class NativeCacheTests(unittest.TestCase):
         self.assertFalse(self.assets.exists())
         self.assertFalse(self.binary.exists())
 
-    def test_source_mismatch_rejects_before_copying(self):
+    def test_version_mismatch_rejects_before_copying(self):
         cache.store(self.root, self.directory, self.source, self.value)
-        source = self.root / 'components/p2p-cli/src/main.rs'
-        source.write_text('fn main() { panic!() }')
-        changed = cache.identity(self.root, self.target, '1.99.1', 'macos-15-intel')
+        (self.root / 'components/p2p-cli/Cargo.toml').write_text('[package]\nversion="0.1.2"\n')
+        changed = cache.identity(self.root, self.target)
         self.assertFalse(self.restore(changed))
         self.assertFalse(self.binary.exists())
 
-    def test_other_toolchain_or_runner_cannot_restore_the_component(self):
+    def test_other_target_cannot_restore_the_component(self):
         cache.store(self.root, self.directory, self.source, self.value)
-        for field, changed in (('rust', '1.100.0'), ('runner', 'macos-15'),
-                               ('target', 'aarch64-apple-darwin')):
-            with self.subTest(field=field):
-                self.assertFalse(self.restore(dict(self.value, **{field: changed})))
-                self.assertFalse(self.binary.exists())
+        changed = cache.identity(self.root, 'aarch64-apple-darwin')
+        self.assertNotEqual(cache.cache_key(self.value), cache.cache_key(changed))
+        self.assertFalse(self.restore(changed))
+        self.assertFalse(self.binary.exists())
 
     def test_corrupt_binary_rejects_before_copying(self):
         cache.store(self.root, self.directory, self.source, self.value)

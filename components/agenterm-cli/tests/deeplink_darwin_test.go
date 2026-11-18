@@ -75,7 +75,7 @@ func TestRustNativeMacProtocolLaunch(t *testing.T) {
 			http.Error(w, "method", 405)
 			return
 		}
-		w.Header().Set(version.Header, version.Current)
+		w.Header().Set(version.Header, version.Protocol)
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
 	})
 	mux.HandleFunc("/agenterm/client/abc123", func(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +83,7 @@ func TestRustNativeMacProtocolLaunch(t *testing.T) {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
-		headers := http.Header{version.Header: {version.Current}, protocol.ClientAPIHeader: {"1"}}
+		headers := http.Header{version.Header: {version.Protocol}, protocol.ClientAPIHeader: {"1"}}
 		peer, e := (&websocket.Upgrader{}).Upgrade(w, r, headers)
 		if e == nil {
 			peers <- peer

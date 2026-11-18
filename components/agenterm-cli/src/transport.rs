@@ -1,6 +1,6 @@
 use crate::{
     p2p::{self, Bootstrap},
-    protocol::{self, Address, Result, Token, VERSION},
+    protocol::{self, Address, Result, Token, VERSION, WIRE_VERSION},
     terminal::Manager,
     ui,
 };
@@ -69,7 +69,7 @@ pub fn redeem(a: &Address, secret: Option<&str>) -> Result<Token> {
     let auth = secret
         .map(|s| format!("Authorization: Bearer {s}\r\n"))
         .unwrap_or_default();
-    write!(stream,"POST {} HTTP/1.1\r\nHost: {}\r\nX-Agenterm-Version: {VERSION}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n",a.path,a.authority).map_err(|e|e.to_string())?;
+    write!(stream,"POST {} HTTP/1.1\r\nHost: {}\r\nX-Agenterm-Version: {WIRE_VERSION}\r\nX-Agenterm-Release-Version: {VERSION}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n",a.path,a.authority).map_err(|e|e.to_string())?;
     // The endpoint returns at most a small JSON token. Bound headers and body;
     // redirects are rejected so credentials never follow an untrusted Location.
     let mut bytes = Vec::new();
@@ -300,7 +300,8 @@ fn once(
         Ok(())
     };
     add("authorization", &format!("Bearer {}", t.secret))?;
-    add("x-agenterm-version", VERSION)?;
+    add("x-agenterm-version", WIRE_VERSION)?;
+    add("x-agenterm-release-version", VERSION)?;
     add("x-agenterm-client-api", "1")?;
     add(
         "x-agenterm-platform",

@@ -12,6 +12,8 @@ import tarfile
 import hashlib
 
 from build_p2p_cli import merge_assets
+from build_server import read_manifest
+from client_bundle_provenance import BUNDLE_PATH, CLIENT_BINARIES, P2P_MANIFEST, build_record, package_version, verify_builds
 
 
 def native_env():
@@ -20,7 +22,6 @@ def native_env():
 
 def reuse_p2p(bundle, directory):
     # Copy verified raw native binaries; never extract arbitrary tar paths.
-    from build_server import read_manifest
     from build_p2p_cli import binary_name
     manifest = read_manifest(bundle)
     artifacts = []
@@ -34,25 +35,31 @@ def reuse_p2p(bundle, directory):
     (directory / 'manifest.json').write_text(json.dumps(dict(version=manifest['p2p_version'], artifacts=artifacts), indent=2) + '\n')
 
 
+def matches_bundle(manifest, client_version, p2p_version, hashes):
+    if (manifest['schema'], manifest.get('client_version'), manifest['p2p_version']) != (3, client_version, p2p_version):
+        return False
+    return {name: entry['sha256'] for name, entry in manifest['files'].items()} == hashes
+
+
+def reusable_bundle(path, client_version, p2p_version, hashes):
+    try:
+        manifest = read_manifest(path)
+    except (OSError, ValueError, KeyError, tarfile.TarError, lzma.LZMAError):
+        return False
+    return matches_bundle(manifest, client_version, p2p_version, hashes)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='Defaults to the archive embedded by ordinary Go builds')
     parser.add_argument('--client-dir', required=True, type=Path, help='Directory containing all six native Rust CLI executables (scripts/build_client.py)')
-    parser.add_argument('--client-version', help='Version of client binaries (defaults to Server version; compatible patch versions allowed)')
     parser.add_argument('--p2p-assets', nargs='+', type=Path, help='Native build outputs; omitted reuses the tracked bundle')
     parser.add_argument('--download-output', type=Path, help='Also keep the exact public CLI downloads here')
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
-    embedded = root / 'internal/components/assets/components.tar.xz'
+    embedded = root / BUNDLE_PATH
     output = args.output.resolve() if args.output else embedded
-    from client_bundle_provenance import current_version, source_digest
-    client_version = args.client_version or current_version(root)
-    import re
-    if not re.fullmatch(r'\d+\.\d+\.\d+', client_version) or client_version.split('.')[:2] != current_version(root).split('.')[:2]:
-        raise ValueError('Client version is incompatible with Server version')
-    for path in args.client_dir.glob('agenterm-client-cli-*'):
-        if path.is_file() and client_version.encode() not in path.read_bytes():
-            raise ValueError(f'Client version marker missing in {path.name}')
+    p2p_version = package_version(root, P2P_MANIFEST)
     output.parent.mkdir(parents=True, exist_ok=True)
     bootstrap = not embedded.exists()
     if bootstrap:
@@ -61,40 +68,44 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='agenterm-components-') as temporary:
             work = Path(temporary)
-            peers, merged, downloads = (work / name for name in ('peers', 'merged', 'downloads'))
-            for path in (peers, merged, downloads):
-                path.mkdir()
+            peers = work / 'peers'
+            clients = work / 'clients'
+            clients.mkdir()
+            for name in CLIENT_BINARIES:
+                binary = args.client_dir / name
+                shutil.copyfile(binary, clients / name)
+                shutil.copyfile(build_record(binary), build_record(clients / name))
+            client_version, hashes = verify_builds(root, clients)
             if args.p2p_assets:
-                merge_assets(args.p2p_assets, peers)
+                merge_assets(args.p2p_assets, peers, require_all=True)
             else:
+                peers.mkdir()
                 reuse_p2p(embedded, peers)
-            merge_assets([peers], merged, require_all=True)
-            clients = args.client_dir.resolve()
-            descriptor, name = tempfile.mkstemp(prefix='.components-', suffix='.tar.xz', dir=output.parent)
-            os.close(descriptor)
-            pending = Path(name)
-            try:
-                subprocess.run(['go', 'run', './cmd/agenterm-pack', '-input', str(clients),
-                                '-output', str(downloads), '-p2p-assets', str(merged), '-bundle', str(pending)],
-                               cwd=root, env=native_env(), check=True)
-                # Use liblzma's stronger build-time encoder for the solid bundle.
-                # Runtime downloads keep the shared Go encoding pinned by its manifest.
-                raw_tar = lzma.decompress(pending.read_bytes())
-                pending.write_bytes(lzma.compress(raw_tar, preset=9))
-                pending.replace(output)
-                if output == embedded:
-                    from build_server import read_manifest
-                    manifest = read_manifest(output)
-                    files = {k: v['sha256'] for k, v in manifest['files'].items() if k.startswith('client-cli/')}
-                    lock = dict(client_version=client_version, source_sha256=source_digest(root), files=files)
-                    (embedded.parent / 'client-provenance.json').write_text(json.dumps(lock, indent=2, sort_keys=True) + '\n')
-            finally:
-                pending.unlink(missing_ok=True)
+            p2p = json.loads((peers / 'manifest.json').read_text())
+            if p2p['version'] != p2p_version:
+                raise ValueError(f'P2P CLI {p2p_version} is required. Build it and pass --p2p-assets')
+            hashes.update(('p2p-cli/' + asset['file'], asset['sha256']) for asset in p2p['artifacts'])
+            reuse = reusable_bundle(output, client_version, p2p_version, hashes)
+            packer = ['go', 'run', './cmd/agenterm-pack', '-input', str(clients)]
+            if not reuse:
+                descriptor, name = tempfile.mkstemp(prefix='.components-', suffix='.tar.xz', dir=output.parent)
+                os.close(descriptor)
+                pending = Path(name)
+                try:
+                    subprocess.run([*packer, '-output', '', '-p2p-assets', str(peers), '-bundle', str(pending),
+                                    '-client-version', client_version], cwd=root, env=native_env(), check=True)
+                    # Use liblzma's stronger build-time encoder for the solid bundle.
+                    raw_tar = lzma.decompress(pending.read_bytes())
+                    pending.write_bytes(lzma.compress(raw_tar, preset=9))
+                    if not matches_bundle(read_manifest(pending), client_version, p2p_version, hashes):
+                        raise ValueError('Component binaries changed during packing')
+                    pending.replace(output)
+                finally:
+                    pending.unlink(missing_ok=True)
             if args.download_output:
-                args.download_output.mkdir(parents=True, exist_ok=True)
-                for path in downloads.iterdir():
-                    shutil.copy2(path, args.download_output / path.name)
-        print(json.dumps(dict(components=str(output), bytes=output.stat().st_size)), flush=True)
+                subprocess.run([*packer, '-bundle', '', '-output', str(args.download_output.resolve())],
+                               cwd=root, env=native_env(), check=True)
+        print(json.dumps(dict(components=str(output), bytes=output.stat().st_size, reused=reuse)), flush=True)
     except BaseException:
         if bootstrap:
             embedded.unlink(missing_ok=True)

@@ -53,7 +53,7 @@ func fixture() map[string][]byte {
 func packed(t *testing.T, files map[string][]byte) []byte {
 	t.Helper()
 	var out bytes.Buffer
-	if err := Pack(&out, files, "0.1.0"); err != nil {
+	if err := Pack(&out, files, "0.1.0", "1.2.3"); err != nil {
 		t.Fatal(err)
 	}
 	return out.Bytes()
@@ -81,7 +81,7 @@ func TestBundleInstallReuseAndUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Dir(paths.Root) != filepath.Join(base, "components") {
+	if filepath.Dir(paths.Root) != filepath.Join(base, "components") || paths.ClientVersion != "1.2.3" {
 		t.Fatal(paths.Root)
 	}
 	cli, err := fs.ReadFile(Downloads(paths.ClientCLI(), "agenterm-client-cli"), "agenterm-client-cli-windows-arm64.tar.xz")

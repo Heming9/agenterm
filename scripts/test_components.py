@@ -10,6 +10,7 @@ import unittest
 
 import build_components
 import build_server
+from test_client_bundle_provenance import fixture as component_versions
 
 
 class ComponentBuildTests(unittest.TestCase):
@@ -39,6 +40,7 @@ class ComponentBuildTests(unittest.TestCase):
                                       file=name, sha256=build_server.digest(peers / name)))
         (peers / 'manifest.json').write_text(json.dumps(dict(version='0.1.0', artifacts=artifacts)))
         subprocess.run([str(self.packer), '-input', str(raw), '-p2p-assets', str(peers),
+                        '-client-version', '1.2.3',
                         '-bundle', str(path), '-output', str(path.parent / 'downloads')], check=True)
         if mutation:
             with tarfile.open(path, 'r:xz') as archive:
@@ -62,6 +64,7 @@ class ComponentBuildTests(unittest.TestCase):
     def test_prepare_reuses_exact_archives_and_recovers_a_corrupt_build_cache(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / 'repo'
+            component_versions(root)
             expected = self.fixture(root / 'internal/components/assets/components.tar.xz')
             cache = Path(td) / 'cache'
             downloads, cli, hit = build_server.prepare(root, cache)
@@ -80,6 +83,7 @@ class ComponentBuildTests(unittest.TestCase):
     def test_parallel_builds_publish_a_consistent_cache_and_downloads(self):
         with tempfile.TemporaryDirectory() as td:
             root, cache = Path(td) / 'repo', Path(td) / 'cache'
+            component_versions(root)
             expected = self.fixture(root / 'internal/components/assets/components.tar.xz')
             with ThreadPoolExecutor(max_workers=8) as executor:
                 results = list(executor.map(lambda _: build_server.prepare(root, cache), range(16)))
@@ -87,6 +91,17 @@ class ComponentBuildTests(unittest.TestCase):
             for downloads, cli, _ in results:
                 self.assertEqual(cli.read_bytes(), b'cli')
                 self.assertEqual((downloads / 'SHA256SUMS').read_bytes(), (expected / 'SHA256SUMS').read_bytes())
+
+    def test_reuse_requires_both_versions_and_verified_artifacts(self):
+        with tempfile.TemporaryDirectory() as td:
+            bundle = Path(td) / 'components.tar.xz'
+            self.fixture(bundle)
+            manifest = build_server.read_manifest(bundle)
+            hashes = {name: value['sha256'] for name, value in manifest['files'].items()}
+            self.assertTrue(build_components.reusable_bundle(bundle, '1.2.3', '0.1.0', hashes))
+            self.assertFalse(build_components.reusable_bundle(bundle, '1.2.4', '0.1.0', hashes))
+            self.assertFalse(build_components.reusable_bundle(bundle, '1.2.3', '0.1.1', hashes))
+            self.assertFalse(build_components.reusable_bundle(bundle, '1.2.3', '0.1.0', {}))
 
     def test_invalid_bundles_are_rejected_before_cache_creation(self):
         for mutation in ('traversal', 'hash', 'size'):

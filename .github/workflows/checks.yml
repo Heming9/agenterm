@@ -96,6 +96,6 @@ jobs:
         run: |
           python scripts/build_client.py --output dist
           go build -o dist/agenterm-server.exe ./cmd/agenterm-server
-          export AGENTERM_RUST_CLI="$PWD/$(find dist -maxdepth 1 -name 'agenterm-client-cli-*' -print -quit)"
+          export AGENTERM_RUST_CLI="$PWD/$(find dist -maxdepth 1 -name 'agenterm-client-cli-*' ! -name '*.build.json' -print -quit)"
           export AGENTERM_GO_SERVER="$PWD/dist/agenterm-server.exe"
           go test -v ./components/agenterm-cli/tests

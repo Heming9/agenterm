@@ -73,7 +73,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Fingerprint native build and validation inputs
+      - name: Select native component version
         if: hashFiles('scripts/p2p_cache.py') != ''
         id: native-key
         shell: bash
@@ -87,7 +87,7 @@ jobs:
         with:
           path: .p2p-native-cache
           key: ${{ steps.native-key.outputs.key }}
-      - name: Verify cached build inputs, version, target and checksum
+      - name: Verify cached version, target and checksum
         if: steps.native-cache.outputs.cache-hit == 'true'
         id: reuse
         shell: bash

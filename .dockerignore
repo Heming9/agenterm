@@ -7,6 +7,17 @@
 !cmd/agenterm-server/**
 !internal/
 !internal/**
+!components/
+!components/agenterm-cli/
+components/agenterm-cli/*
+!components/agenterm-cli/Cargo.toml
+!components/p2p-cli/
+components/p2p-cli/*
+!components/p2p-cli/Cargo.toml
+!scripts/
+scripts/*
+!scripts/build_server.py
+!scripts/client_bundle_provenance.py
 
 **/*_test.go
 **/.DS_Store

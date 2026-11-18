@@ -23,7 +23,7 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	}
 	origin := "http://" + listener.Addr().String()
 	s := &runtimeState{adminKey: "http-management-key", clientURL: "ws://" + listener.Addr().String() + "/agenterm/client", maxClientsPerIP: 1}
-	httpServer := &http.Server{Handler: s.routes(downloadTag, nil)}
+	httpServer := &http.Server{Handler: s.routes(installerTestTag, nil)}
 	serverInput, clientOutput := io.Pipe()
 	clientInput, serverOutput := io.Pipe()
 	ended := make(chan error, 1)
@@ -109,7 +109,7 @@ func TestStdioCancellationStopsBothTransports(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &runtimeState{adminKey: "key"}
-	httpServer := &http.Server{Handler: s.routes(downloadTag, nil)}
+	httpServer := &http.Server{Handler: s.routes(installerTestTag, nil)}
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ended := make(chan error, 1)
 	go func() { ended <- s.runStdio(ctx, httpServer, listener, serverTransport) }()

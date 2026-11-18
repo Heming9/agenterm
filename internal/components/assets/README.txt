@@ -1,14 +1,14 @@
 components.tar.xz is the single tracked archive embedded by every Server build.
 
 Contents (one shared XZ stream, not nested compressed downloads):
-    manifest.json       Schema 2: sizes/SHA-256 of raw executables and P2P version
+    manifest.json       Schema 3: CLI/P2P versions and raw executable sizes/SHA-256
     client-cli/         Six raw Rust CLI executables (Windows names end in .exe)
     p2p-cli/            Six raw P2P executables with OS/architecture names
 
 Build the Rust CLI on each native OS/architecture runner:
     python3 scripts/build_client.py --output dist
 
-Collect all six executables in dist, then regenerate the embedded bundle
+Collect all six executables and their .build.json files in dist, then regenerate the embedded bundle
 while retaining existing native P2P binaries:
     go generate ./internal/components
 
@@ -43,9 +43,8 @@ GitHub Release publishes only original executables and version metadata.
 HTTP distribution generates archives only on demand. scripts/build_server.py prepares raw sources for local build/deploy
 helpers without generating all download formats.
 
-client-provenance.json records the six client hashes, their compatible protocol
-version, and a digest of client build inputs. scripts/build_server.py rejects
-stale or mismatched bundles. Rebuild and repack the clients whenever those inputs
-change; a compatible patch-version client may be reused explicitly with
---client-version when its source inputs are unchanged. Ordinary go build does not
-run this check; use scripts/build_server.py or the release workflow.
+The two Cargo.toml package versions determine component reuse. Bump the relevant
+package version to release changes. A bundle with matching versions and verified
+artifacts can be reused. SHA-256 validates the downloaded and embedded bytes.
+Use scripts/build_server.py or Docker Compose to validate the embedded bundle
+against both declared versions before compiling the Server.

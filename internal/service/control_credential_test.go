@@ -109,7 +109,7 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 		t.Helper()
 		req, _ := http.NewRequest(method, h.ts.URL+path, nil)
 		req.Header.Set("Accept", "text/html")
-		req.Header.Set(version.Header, version.Current)
+		req.Header.Set(version.Header, version.Protocol)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

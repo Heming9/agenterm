@@ -13,6 +13,8 @@ import tarfile
 import tempfile
 import time
 
+from client_bundle_provenance import BUNDLE_PATH, validate
+
 
 
 def digest(path):
@@ -31,7 +33,7 @@ def read_manifest(bundle):
         if archive.getmember('manifest.json').size > 64 << 10:
             raise ValueError('Components manifest too large')
         manifest = json.loads(archive.extractfile('manifest.json').read())
-        if manifest['schema'] != 2 or names != set(manifest['files']) | {'manifest.json'}:
+        if manifest['schema'] not in (2, 3) or names != set(manifest['files']) | {'manifest.json'}:
             raise ValueError('Invalid unified components manifest')
         if not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]{0,63}', manifest['p2p_version']):
             raise ValueError('Invalid P2P version')
@@ -76,8 +78,7 @@ def cache_lock(path):
 
 
 def prepare(root, cache):
-    manifest = read_manifest(root / 'internal/components/assets/components.tar.xz')
-    from client_bundle_provenance import validate
+    manifest = read_manifest(root / BUNDLE_PATH)
     validate(root, manifest)
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     cache.chmod(0o700)
@@ -88,7 +89,7 @@ def prepare(root, cache):
 
 
 def prepare_locked(root, cache, manifest):
-    bundle = root / 'internal/components/assets/components.tar.xz'
+    bundle = root / BUNDLE_PATH
     cached = cache / 'components' / digest(bundle)
     expected = manifest['files']
     hit = cached.is_dir() and all((cached / name).is_file() and digest(cached / name) == info['sha256']
@@ -132,25 +133,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--prepare-only', action='store_true')
+    parser.add_argument('--verify-only', action='store_true', help='Check component versions and checksums without extracting the bundle')
     parser.add_argument('--linux-cli-output', type=Path)
     parser.add_argument('--components-xz', type=Path, help='Use this prepared unified archive before building')
     parser.add_argument('--cache-dir', type=Path, default=Path(os.environ.get('XDG_CACHE_HOME', str(Path.home() / '.cache'))) / 'agenterm/components')
     parser.add_argument('--goos', default=os.environ.get('GOOS'))
     parser.add_argument('--goarch', default=os.environ.get('GOARCH'))
     args = parser.parse_args()
-    if not args.prepare_only and not args.output:
-        parser.error('--output is required unless --prepare-only is set')
+    if not args.prepare_only and not args.verify_only and not args.output:
+        parser.error('--output is required unless --prepare-only or --verify-only is set')
     root = Path(__file__).resolve().parent.parent
     started = time.monotonic()
+    embedded = root / BUNDLE_PATH
+    if args.verify_only:
+        validate(root, read_manifest(args.components_xz or embedded))
+        return
     if args.components_xz:
-        embedded = root / 'internal/components/assets/components.tar.xz'
         if args.components_xz.resolve() != embedded:
-            read_manifest(args.components_xz)
             descriptor, name = tempfile.mkstemp(prefix='.components-', dir=embedded.parent)
             os.close(descriptor)
             pending = Path(name)
             try:
                 shutil.copyfile(args.components_xz, pending)
+                validate(root, read_manifest(pending))
                 pending.replace(embedded)
             finally:
                 pending.unlink(missing_ok=True)

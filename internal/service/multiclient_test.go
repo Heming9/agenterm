@@ -37,7 +37,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 	}
 	for i, token := range tokens {
 		secret := s.tokens[token]
-		h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
+		h := http.Header{version.Header: {version.Protocol}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
 		decoded, _ := protocol.Decode(token)
 		raw, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), h)
 		if err != nil {
@@ -100,7 +100,7 @@ func TestMultipleClientsAndTokenIsolation(t *testing.T) {
 		t.Fatalf("owner cannot read: %#v", allowed)
 	}
 	secret := s.tokens[tokens[0]]
-	h := http.Header{version.Header: {version.Current}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
+	h := http.Header{version.Header: {version.Protocol}, "Authorization": []string{"Bearer " + secret}, protocol.ClientAPIHeader: {terminal.APIVersion}}
 	decoded, _ := protocol.Decode(tokens[0])
 	_, resp, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), h)
 	if err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {

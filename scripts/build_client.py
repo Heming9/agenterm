@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Build a Rust CLI for a native runner using the public download filename."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+
+from client_bundle_provenance import CLIENT_MANIFEST, build_record, package_version
 
 
 TARGETS = {
@@ -26,6 +29,7 @@ def binary_name(target):
 def build(root, output, target):
     component = root / 'components/agenterm-cli'
     manifest = component / 'Cargo.toml'
+    version = package_version(root, CLIENT_MANIFEST)
     env = os.environ.copy()
     if TARGETS[target][0] == 'windows':
         # Keep downloads independent of separately installed MSVC runtimes.
@@ -37,6 +41,8 @@ def build(root, output, target):
             flags, '-C', 'target-feature=+crt-static')))
     subprocess.run(['cargo', 'build', '--release', '--locked', '--target', target,
                     '--manifest-path', str(manifest)], cwd=root, env=env, check=True)
+    if version != package_version(root, CLIENT_MANIFEST):
+        raise ValueError('Client CLI version changed during compilation')
     metadata = json.loads(subprocess.check_output([
         'cargo', 'metadata', '--no-deps', '--format-version', '1',
         '--manifest-path', str(manifest)], cwd=root, env=env, text=True))
@@ -45,6 +51,8 @@ def build(root, output, target):
     output.mkdir(parents=True, exist_ok=True)
     destination = output / binary_name(target)
     shutil.copy2(source, destination)
+    record = dict(version=version, sha256=hashlib.sha256(destination.read_bytes()).hexdigest())
+    build_record(destination).write_text(json.dumps(record, sort_keys=True) + '\n')
     return destination
 
 

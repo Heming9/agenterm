@@ -1,36 +1,28 @@
-"""Reuse native P2P artifacts only for identical build and validation inputs."""
+"""Reuse verified native P2P artifacts for the declared version and target."""
 import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
-import tomllib
 
 from build_p2p_cli import TARGETS, binary_name, verify_binary
+from client_bundle_provenance import P2P_MANIFEST, package_version
 
 
-def identity(root, target, rust, runner):
+def identity(root, target):
     if target not in TARGETS:
         raise ValueError('Unsupported native target')
-    required = {'components/p2p-cli/Cargo.toml', 'components/p2p-cli/Cargo.lock',
-                'scripts/build_p2p_cli.py', 'scripts/install_linux_musl.sh', 'scripts/p2p_cache.py', '.github/workflows/p2p-cli.yml'}
-    tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', 'components/p2p-cli'], cwd=root)
-    files = required | {name.decode() for name in tracked.split(b'\0') if name}
-    digest = hashlib.sha256()
-    for name in sorted(files):
-        digest.update(name.encode() + b'\0' + hashlib.sha256((root / name).read_bytes()).digest())
-    return dict(schema=1, target=target, rust=rust, runner=runner, inputs_sha256=digest.hexdigest())
+    return dict(schema=2, target=target, version=package_version(root, P2P_MANIFEST))
 
 
 def cache_key(value):
-    return 'p2p-native-v1-{runner}-{target}-rust{rust}-{inputs_sha256}'.format(**value)
+    return 'p2p-native-v2-{target}-v{version}'.format(**value)
 
 
 def checked_assets(root, directory, target):
     manifest = json.loads((directory / 'manifest.json').read_text())
-    version = tomllib.loads((root / 'components/p2p-cli/Cargo.toml').read_text())['package']['version']
+    version = package_version(root, P2P_MANIFEST)
     system, arch = TARGETS[target]
     name = binary_name(system, arch)
     if not isinstance(manifest, dict) or manifest.get('version') != version:
@@ -67,7 +59,7 @@ def store(root, directory, assets, value):
 def restore(root, directory, assets, binary, value):
     try:
         if json.loads((directory / 'identity.json').read_text()) != value:
-            raise ValueError('Native cache build inputs differ')
+            raise ValueError('Native cache version or target differs')
         name, payload, manifest = checked_assets(root, directory / 'assets', value['target'])
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f'Native cache rejected; rebuilding: {error}', file=sys.stderr)
@@ -85,13 +77,13 @@ def main():
     parser.add_argument('command', choices=('key', 'restore', 'store'))
     parser.add_argument('--root', type=Path, default=Path('.'))
     parser.add_argument('--target', required=True, choices=sorted(TARGETS))
-    parser.add_argument('--rust', required=True)
-    parser.add_argument('--runner', required=True)
+    parser.add_argument('--rust', help=argparse.SUPPRESS)
+    parser.add_argument('--runner', help=argparse.SUPPRESS)
     parser.add_argument('--cache-dir', type=Path, default=Path('.p2p-native-cache'))
     parser.add_argument('--assets', type=Path, default=Path('dist/p2p-assets'))
     parser.add_argument('--binary', type=Path)
     args = parser.parse_args()
-    value = identity(args.root.resolve(), args.target, args.rust, args.runner)
+    value = identity(args.root.resolve(), args.target)
     if args.command == 'key':
         print(cache_key(value))
     elif args.command == 'store':

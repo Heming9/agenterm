@@ -334,7 +334,7 @@ func TestShortCodeViewingCannotResetFailures(t *testing.T) {
 	s.limiter.entries["192.0.2.1"] = e
 	s.limiter.mu.Unlock()
 	req := httptest.NewRequest(http.MethodPost, "/c/"+code, nil)
-	req.Header.Set(version.Header, version.Current)
+	req.Header.Set(version.Header, version.Protocol)
 	w := httptest.NewRecorder()
 	s.installWrapper("v1.2.3").ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -386,7 +386,7 @@ func TestConcurrentShortCodeRedemptionLimit(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			r := httptest.NewRequest(http.MethodPost, "/c/"+code, nil)
-			r.Header.Set(version.Header, version.Current)
+			r.Header.Set(version.Header, version.Protocol)
 			w := httptest.NewRecorder()
 			s.installWrapper("v1.2.3").ServeHTTP(w, r)
 			switch w.Code {

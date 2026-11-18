@@ -4,6 +4,11 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY cmd/agenterm-server/ ./cmd/agenterm-server/
 COPY internal/ ./internal/
+COPY components/agenterm-cli/Cargo.toml ./components/agenterm-cli/Cargo.toml
+COPY components/p2p-cli/Cargo.toml ./components/p2p-cli/Cargo.toml
+COPY scripts/build_server.py scripts/client_bundle_provenance.py ./scripts/
+
+RUN apk add --no-cache python3 && python3 scripts/build_server.py --verify-only
 
 ARG TARGETOS
 ARG TARGETARCH

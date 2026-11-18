@@ -38,7 +38,7 @@ func holdHandshake(t *testing.T, s *runtimeState, token protocol.Token, resume s
 	req.Header = http.Header{
 		"Connection": {"Upgrade"}, "Upgrade": {"websocket"},
 		"Sec-Websocket-Version": {"13"}, "Sec-Websocket-Key": {"dGhlIHNhbXBsZSBub25jZQ=="},
-		"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Current},
+		"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol},
 		protocol.ResumeCredentialHeader: {resume},
 	}
 	p := &handshakePipe{httptest.NewRecorder(), server, make(chan struct{})}
@@ -72,7 +72,7 @@ func TestBlockedHandshakeAllowsOtherDeviceAndRevocation(t *testing.T) {
 	}
 	peer, finished := holdHandshake(t, h.s, a, "")
 	dialer := websocket.Dialer{HandshakeTimeout: 2 * time.Second}
-	headers := http.Header{"Authorization": {"Bearer " + b.Secret}, version.Header: {version.Current}}
+	headers := http.Header{"Authorization": {"Bearer " + b.Secret}, version.Header: {version.Protocol}}
 	conn, _, err := dialer.Dial(b.ConnectionURL(), headers)
 	if err != nil {
 		t.Fatalf("independent connection failed while first handshake was held: %v", err)
@@ -115,7 +115,7 @@ func TestFailedTakeoverKeepsCurrentDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Current}}
+	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol}}
 	first, resp, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestPendingMultiDeviceHandshakeReservesIPSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer, finished := holdHandshake(t, h.s, token, "")
-	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Current}}
+	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol}}
 	duplicate, resp, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
 	if duplicate != nil {
 		duplicate.Close()

@@ -36,7 +36,9 @@ class ReleaseTests(unittest.TestCase):
                 (self.base / name).write_text("original bytes: " + name)
         (self.base / release.MANIFEST).write_text(json.dumps({
             "schema": 1, "release_tag": "v0.2.26", "components": {
-                c: {"version": "0.2.26", "source_tag": "v0.2.26", **({"implementation": "rust"} if c == "cli" else {})}
+                c: {"source_tag": "v0.2.26", **(
+                    {"implementation": "rust", "version": "1.2.3"}
+                    if c == "cli" else {"version": "0.2.26"})}
                 for c in release.COMPONENTS
             },
         }))
@@ -74,13 +76,13 @@ class ReleaseTests(unittest.TestCase):
         for name in names:
             shutil.copyfile(self.base / name, directory / name)
 
-    def prepare(self, scope, base="", compatibility=True, is_ancestor=True):
+    def prepare(self, base="", cli_version="1.2.3", is_ancestor=True):
         with patch.object(release, "run", self.mock_run), \
              patch.object(release, "download", self.mock_download), \
              patch.object(release, "ancestor", return_value=is_ancestor), \
-             patch.object(release, "compatible", return_value=compatibility), \
+             patch.object(release, "package_version", return_value=cli_version), \
              contextlib.redirect_stdout(io.StringIO()):
-            release.prepare(scope, base)
+            release.prepare(base)
         return json.loads(Path("release-plan/release-manifest.json").read_text())
 
     def test_published_inventory_contains_only_raw_programs(self):
@@ -121,36 +123,23 @@ class ReleaseTests(unittest.TestCase):
         (self.base / "agenterm-server-windows-amd64.exe").write_text("old unsupported server")
         (self.base / "agenterm-server-windows-arm64.exe").write_text("old unsupported server")
         self.refresh_digests()
-        manifest = self.prepare("server")
+        manifest = self.prepare()
         self.assertEqual(manifest["components"]["server"]["version"], "0.2.27")
-        self.assertEqual(manifest["components"]["cli"]["version"], "0.2.26")
+        self.assertEqual(manifest["components"]["cli"]["version"], "1.2.3")
         self.assertIn("cli=false\nserver=true", Path("outputs").read_text())
         self.assertEqual(set(self.downloads), set(release.assets("cli")))
 
-    def test_cli_also_builds_server(self):
-        self.prepare("cli")
-        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
-        self.assertEqual(set(self.downloads), set())
-
-    def test_client_rebuilds_everything_without_downloads(self):
-        self.prepare("client")
-        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
-        self.assertEqual(self.downloads, [])
-
     def test_no_base_falls_back_to_full_build(self):
         self.releases = []
-        self.prepare("server")
+        self.prepare()
         self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
 
     def test_old_asset_layout_falls_back_before_downloading_programs(self):
-        for scope in ("server", "cli"):
-            with self.subTest(scope=scope):
-                self.metadata["assets"] = [a for a in self.metadata["assets"]
-                                           if a["name"] == release.MANIFEST or a["name"].startswith("agenterm-server-")]
-                self.prepare(scope)
-                self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
-                self.assertEqual(self.downloads, [])
-                shutil.rmtree("release-plan")
+        self.metadata["assets"] = [a for a in self.metadata["assets"]
+                                   if a["name"] == release.MANIFEST or a["name"].startswith("agenterm-server-")]
+        self.prepare()
+        self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
+        self.assertEqual(self.downloads, [])
 
     def test_legacy_go_cli_forces_rust_rebuild(self):
         path = self.base / release.MANIFEST
@@ -159,53 +148,56 @@ class ReleaseTests(unittest.TestCase):
         manifest["components"]["gui"] = {"version": "0.2.26", "source_tag": "v0.2.26"}
         path.write_text(json.dumps(manifest))
         self.refresh_digests()
-        result = self.prepare("server")
+        result = self.prepare()
         self.assertEqual(set(result["components"]), {"cli", "server"})
         self.assertEqual(result["components"]["cli"]["implementation"], "rust")
         self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
         self.assertEqual(self.downloads, [])
 
-    def test_incompatible_base_falls_back_before_downloading_programs(self):
-        self.prepare("server", compatibility=False)
+    def test_changed_version_rebuilds_cli_before_downloading_programs(self):
+        manifest = self.prepare(cli_version="1.2.4")
+        self.assertEqual(manifest["components"]["cli"]["version"], "1.2.4")
         self.assertIn("cli=true\nserver=true", Path("outputs").read_text())
         self.assertEqual(self.downloads, [])
 
     def test_explicit_missing_or_unrelated_base_fails(self):
         for base, is_ancestor in [("v0.2.25", True), ("v0.2.26", False)]:
             with self.subTest(base=base), self.assertRaisesRegex(ValueError, "ancestor"):
-                self.prepare("server", base, is_ancestor=is_ancestor)
+                self.prepare(base, is_ancestor=is_ancestor)
 
     def test_existing_release_is_not_modified(self):
         self.releases.append({"tag_name": "v0.2.27"})
         with self.assertRaisesRegex(ValueError, "already exists"):
-            self.prepare("all")
+            self.prepare(cli_version="1.2.4")
 
     def test_tag_must_match_source_commit(self):
         self.tags, self.tag_commit = "v0.2.27", "other"
         with self.assertRaisesRegex(ValueError, "different commit"):
-            self.prepare("all")
+            self.prepare(cli_version="1.2.4")
 
     def test_push_tag_must_match_version(self):
         with patch.dict(os.environ, {"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v0.2.28"}):
             with self.assertRaisesRegex(ValueError, "must match"):
-                self.prepare("all")
+                self.prepare(cli_version="1.2.4")
 
     def test_missing_or_corrupt_reused_asset_fails(self):
         (self.base / release.assets("cli")[0]).write_text("corrupted")
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
-            self.prepare("server")
+            self.prepare()
 
     def test_missing_reused_asset_fails(self):
         (self.base / release.assets("cli")[0]).unlink()
         with self.assertRaises(FileNotFoundError):
-            self.prepare("server")
+            self.prepare()
 
     def test_transitive_reuse_preserves_original_versions(self):
-        components = {c: {"version": "0.2.24", "source_tag": "v0.2.24", **({"implementation": "rust"} if c == "cli" else {})} for c in release.COMPONENTS}
+        components = {c: {"source_tag": "v0.2.24", **(
+            {"implementation": "rust", "version": "1.2.3"}
+            if c == "cli" else {"version": "0.2.24"})} for c in release.COMPONENTS}
         (self.base / release.MANIFEST).write_text(json.dumps({
             "schema": 1, "release_tag": "v0.2.26", "components": components}))
         self.refresh_digests()
-        manifest = self.prepare("server")
+        manifest = self.prepare()
         self.assertEqual(manifest["components"]["cli"], components["cli"])
 
     def test_manifest_must_match_github_digest(self):
@@ -213,14 +205,14 @@ class ReleaseTests(unittest.TestCase):
         self.refresh_digests()
         (self.base / release.MANIFEST).write_text('{"changed": true}')
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
-            self.prepare("server")
+            self.prepare()
 
     def test_missing_github_digest_rejects_reuse(self):
         name = release.assets("cli")[0]
         asset = next(a for a in self.metadata["assets"] if a["name"] == name)
         asset["digest"] = None
         with self.assertRaisesRegex(ValueError, "Missing GitHub SHA256 digest"):
-            self.prepare("server")
+            self.prepare()
 
     def test_only_valid_github_sha256_digests_are_used(self):
         valid = "a" * 64
@@ -232,11 +224,11 @@ class ReleaseTests(unittest.TestCase):
     def test_legacy_checksum_file_is_not_downloaded(self):
         (self.base / "SHA256SUMS").write_text("obsolete checksum file")
         self.refresh_digests()
-        self.prepare("server")
+        self.prepare()
         self.assertEqual(set(self.downloads), set(release.assets("cli")))
 
     def test_full_build_needs_no_reused_files(self):
-        self.prepare("all")
+        self.prepare(cli_version="1.2.4")
         self.assertEqual(list(Path("release-plan/reused").iterdir()), [])
         directory = Path("artifacts")
         directory.mkdir()
@@ -247,7 +239,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(list(directory.iterdir())), 11)
 
     def test_obsolete_release_attachments_are_rejected(self):
-        self.prepare("all")
+        self.prepare(cli_version="1.2.4")
         directory = Path("artifacts")
         directory.mkdir()
         for component in release.COMPONENTS:
@@ -266,7 +258,7 @@ class ReleaseTests(unittest.TestCase):
                 (directory / name).unlink()
 
     def test_draft_repair_uses_original_server_inventory(self):
-        self.prepare("all")
+        self.prepare(cli_version="1.2.4")
         plan = Path("release-plan")
         manifest = json.loads((plan / release.MANIFEST).read_text())
         manifest["schema"] = 1
@@ -280,7 +272,7 @@ class ReleaseTests(unittest.TestCase):
         release.finalize(artifacts, plan)
 
     def test_complete_release_and_reused_digests(self):
-        self.prepare("server")
+        self.prepare()
         directory = Path("artifacts")
         shutil.copytree("release-plan/reused", directory)
         for name in release.assets("server"):
@@ -297,7 +289,7 @@ class ReleaseTests(unittest.TestCase):
             release.finalize(directory, Path("release-plan"))
 
     def test_incomplete_release_is_not_published(self):
-        self.prepare("all")
+        self.prepare(cli_version="1.2.4")
         Path("artifacts").mkdir()
         with self.assertRaisesRegex(ValueError, "Release assets differ"):
             release.finalize(Path("artifacts"), Path("release-plan"))

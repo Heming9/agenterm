@@ -22,7 +22,7 @@ func TestSingleDeviceResumeTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 	dial := func(resume string) (*websocket.Conn, *http.Response, error) {
-		headers := http.Header{"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current}, protocol.ClientAPIHeader: {terminal.APIVersion}}
+		headers := http.Header{"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Protocol}, protocol.ClientAPIHeader: {terminal.APIVersion}}
 		if resume != "" {
 			headers.Set(protocol.ResumeCredentialHeader, resume)
 		}

@@ -19,7 +19,7 @@ func TestClientAPICapability(t *testing.T) {
 			h := newMultiHarness(t, 0)
 			token := h.create(t, false)
 			decoded, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current}, protocol.ClientAPIHeader: {v}})
+			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Protocol}, protocol.ClientAPIHeader: {v}})
 			if err != nil {
 				t.Fatal(err)
 			}

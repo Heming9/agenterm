@@ -20,7 +20,7 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 	value := issued["invitation"].(string)
 	invitation, _ := protocol.Decode(value)
 	token, _ := protocol.Decode(issued["client_token"].(string))
-	for _, peer := range []string{"0.2.13-rc.1", "0.2.99-rc.1", "0.1.13", "0.2.28", "0.3.99", version.Current + "-rc.1", "1.2.13", "", "invalid"} {
+	for _, peer := range []string{"0.2.13-rc.1", "0.2.99-rc.1", "0.1.13", "0.2.28", "0.3.99", version.Protocol + "-rc.1", "1.2.13", "", "invalid"} {
 		for _, endpoint := range []string{"redeem", "probe", "connect"} {
 			r := httptest.NewRequest("GET", protocol.ClientPath, nil)
 			r.Header.Set(version.Header, peer)
@@ -39,7 +39,7 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 				r.URL.Path = protocol.ClientPath + "/" + token.Identifier
 				s.connect(w, r)
 			}
-			if w.Code != http.StatusUpgradeRequired || w.Header().Get(version.Header) != version.Current || !strings.Contains(w.Body.String(), version.Current) {
+			if w.Code != http.StatusUpgradeRequired || w.Header().Get(version.Header) != version.Protocol || !strings.Contains(w.Body.String(), version.Protocol) {
 				t.Fatalf("%s peer=%q: %d %s", endpoint, peer, w.Code, w.Body.String())
 			}
 			if len(s.clients) != 0 || len(s.invitations) != 1 {
@@ -51,11 +51,13 @@ func TestConnectionVersionMismatchPreservesInvitation(t *testing.T) {
 	// credentials. A client with a different patch number can still redeem it.
 	r := httptest.NewRequest("POST", "/agenterm/invite/redeem", nil)
 	r.Header.Set("Authorization", "Bearer "+invitation.Secret)
-	compatiblePeer := "v" + version.Current[:strings.LastIndex(version.Current, ".")+1] + "999+build"
+	compatiblePeer := "v" + version.Protocol[:strings.LastIndex(version.Protocol, ".")+1] + "999+build"
 	r.Header.Set(version.Header, compatiblePeer)
+	r.Header.Set(version.ReleaseHeader, "1.2.3")
 	w := httptest.NewRecorder()
 	s.redeemInvitation(w, r)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), issued["client_token"].(string)) {
+	if w.Code != 200 || w.Header().Get(version.ReleaseHeader) != version.Current ||
+		!strings.Contains(w.Body.String(), issued["client_token"].(string)) {
 		t.Fatalf("patch-compatible redemption: %d %s", w.Code, w.Body.String())
 	}
 }

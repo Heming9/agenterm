@@ -233,7 +233,7 @@ func TestShortLinkPage(t *testing.T) {
 			}
 			for i := 0; i < 10; i++ {
 				req, _ := http.NewRequest(http.MethodPost, origin+prefix+"/c/"+code, nil)
-				req.Header.Set(version.Header, version.Current)
+				req.Header.Set(version.Header, version.Protocol)
 				res, err := ts.Client().Do(req)
 				if err != nil {
 					t.Fatal(err)

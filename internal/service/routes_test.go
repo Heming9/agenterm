@@ -117,7 +117,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 			if res.StatusCode != 200 {
 				t.Fatalf("download status: %d", res.StatusCode)
 			}
-			probe, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + value}})
+			probe, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + value}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 				t.Fatalf("redeem with prefix: %v", err)
 			}
 			credential, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(credential.ConnectionURL(), http.Header{version.Header: {version.Current}, "Authorization": {"Bearer " + credential.Secret}})
+			ws, _, err := websocket.DefaultDialer.Dial(credential.ConnectionURL(), http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + credential.Secret}})
 			if err != nil {
 				t.Fatal(err)
 			}

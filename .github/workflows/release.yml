@@ -6,11 +6,6 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      scope:
-        description: 'Programs to rebuild (CLI also rebuilds Server)'
-        type: choice
-        default: all
-        options: [all, server, client, cli]
       base_tag:
         description: 'Reuse from this release; blank selects latest published ancestor'
         type: string
@@ -58,9 +53,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SCOPE: ${{ inputs.scope || 'all' }}
           BASE_TAG: ${{ inputs.base_tag }}
-        run: python3 scripts/release/release.py prepare --scope "$SCOPE" --base "$BASE_TAG"
+        run: |
+          if [ -f internal/version/client-wire.txt ]; then
+            python3 scripts/release/release.py prepare --base "$BASE_TAG"
+          else
+            python3 scripts/release/release.py prepare --scope all --base "$BASE_TAG"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: release-plan
@@ -147,7 +146,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          for asset in release-plan/reused/agenterm-client-cli-* release-plan/reused/agenterm-server-*; do
+          for asset in release-plan/reused/agenterm-client-cli-* release-plan/reused/agenterm-server-* release-plan/client-builds/*.build.json; do
             [ ! -f "$asset" ] || cp "$asset" dist/
           done
       - uses: actions/download-artifact@v4
@@ -170,9 +169,10 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._+-]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
           source_version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           [ "$RELEASE_TAG" = "v$source_version" ] || { echo 'Release tag must match internal/version.Current' >&2; exit 1; }
-          client_version=$(python3 -c 'import json; print(json.load(open("release-plan/release-manifest.json"))["components"]["cli"]["version"])')
-          python3 scripts/build_components.py --client-dir dist --client-version "$client_version" --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
-          python3 scripts/build_server.py --prepare-only
+          python3 scripts/build_components.py --client-dir dist --p2p-assets component-builds/p2p-assets --download-output "$RUNNER_TEMP/cli-downloads"
+          if [ -f internal/version/client-wire.txt ]; then
+            python3 scripts/build_server.py --verify-only
+          fi
           AGENTERM_RELEASE_DIR="$RUNNER_TEMP/cli-downloads" go test ./internal/installer -run TestEmbeddedReleaseDownloads -count=1
           # Use the inventory from the selected source ref, including for historical rebuilds.
           PYTHONPATH=scripts/release python3 - <<'PY'

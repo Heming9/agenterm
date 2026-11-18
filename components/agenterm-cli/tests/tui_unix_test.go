@@ -188,13 +188,13 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal 
 	mux.HandleFunc("/agenterm/invite/redeem", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
 		f.redemptions.Add(1)
-		w.Header().Set(version.Header, version.Current)
+		w.Header().Set(version.Header, version.Protocol)
 		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
 	})
 	mux.HandleFunc("/agenterm/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
 		f.redemptions.Add(1)
-		w.Header().Set(version.Header, version.Current)
+		w.Header().Set(version.Header, version.Protocol)
 		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
 	})
 	mux.HandleFunc("/agenterm/client/abc123", func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +202,7 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal 
 			http.Error(w, "unauthorized", 401)
 			return
 		}
-		headers := http.Header{version.Header: {version.Current}, protocol.ClientAPIHeader: {"1"}, protocol.ResumeCredentialHeader: {"tui-resume"}}
+		headers := http.Header{version.Header: {version.Protocol}, protocol.ClientAPIHeader: {"1"}, protocol.ResumeCredentialHeader: {"tui-resume"}}
 		peer, err := (&websocket.Upgrader{}).Upgrade(w, r, headers)
 		if err == nil {
 			f.peers <- peer

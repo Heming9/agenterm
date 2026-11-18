@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"agenterm/internal/protocol"
-	"agenterm/internal/version"
 	"github.com/gorilla/websocket"
 )
 
@@ -319,7 +318,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			Hostname: metadataHeader(r, protocol.HostnameHeader), Platform: metadataHeader(r, protocol.PlatformHeader),
 			Arch: metadataHeader(r, protocol.ArchHeader), Shell: metadataHeader(r, protocol.ShellHeader),
 			DefaultCwd:      metadataHeader(r, protocol.DefaultCwdHeader),
-			ClientVersion:   metadataHeader(r, version.Header),
+			ClientVersion:   clientReleaseVersion(r),
 			SessionControls: sessionControlsHeader(r),
 			TerminalAPI:     r.Header.Get(protocol.ClientAPIHeader) == terminal.APIVersion,
 			P2P:             r.Header.Get(protocol.P2PCapabilityHeader) == "1",

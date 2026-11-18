@@ -311,7 +311,7 @@ func serverMain(paths instancePaths, stdio bool, expected runtimeConfig) error {
 		return err
 	}
 	defer listener.Close()
-	srv := &http.Server{Handler: s.socketHandler(s.routes(downloadTag, assets.ClientCLI())), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: s.socketHandler(s.routes("v"+assets.ClientVersion, assets.ClientCLI())), ReadHeaderTimeout: 10 * time.Second}
 	activate := func() error {
 		ready, stop := context.WithTimeout(ctx, 10*time.Second)
 		defer stop()

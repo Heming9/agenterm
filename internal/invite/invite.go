@@ -42,7 +42,7 @@ func Redeem(ctx context.Context, value string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+secret)
-	req.Header.Set(version.Header, version.Current)
+	req.Header.Set(version.Header, version.Protocol)
 	hc := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := hc.Do(req)
 	if err != nil {
@@ -50,7 +50,7 @@ func Redeem(ctx context.Context, value string) (string, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUpgradeRequired || res.StatusCode == http.StatusOK {
-		if err := version.Check(version.Current, res.Header.Get(version.Header)); err != nil {
+		if err := version.Check(version.Protocol, res.Header.Get(version.Header)); err != nil {
 			return "", err
 		}
 	}

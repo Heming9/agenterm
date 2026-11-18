@@ -6,7 +6,6 @@ import (
 	"agenterm/internal/installer"
 	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
-	"agenterm/internal/version"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -19,9 +18,6 @@ import (
 	"time"
 	"unicode/utf16"
 )
-
-// Downloads are available in every build, using the program's own version.
-const downloadTag = "v" + version.Current
 
 var validDownloadTag = regexp.MustCompile(`^v[0-9A-Za-z._+-]+$`)
 var validInstallCredential = regexp.MustCompile(`^(?:[A-Za-z0-9]{6}|[A-Za-z0-9_-]{14})$`)
@@ -177,7 +173,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 	})
 }
 
-// Only this server's version and the release download filenames are public.
+// Only the bundled Client CLI version and its release download filenames are public.
 // Source executables, selected archive formats and their checksums are public.
 func downloadHandler(tag string, assets fs.FS) http.Handler {
 	assets = components.Downloads(assets, "agenterm-client-cli")

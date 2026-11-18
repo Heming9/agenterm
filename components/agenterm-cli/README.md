@@ -6,10 +6,11 @@ Networking and shell management use threads, with no asynchronous runtime.
 
 ## Build and run
 
-Requires a current stable Rust toolchain (tested with Rust 1.99.1). `build.rs`
-reads the wire version from `internal/version/version.go` and compiles the UI's
-translations from `internal/i18n/messages.json`, so build inside this repository.
-Dependencies are pinned in `Cargo.lock`.
+Requires a current stable Rust toolchain (tested with Rust 1.99.1). The CLI
+version comes from `Cargo.toml`. Build inside this repository so `build.rs` can
+read the shared connection protocol version in `internal/version/client-wire.txt`
+and UI translations in `internal/i18n/messages.json`. Dependencies are pinned
+in `Cargo.lock`.
 
 ```sh
 cargo build --release --locked --manifest-path components/agenterm-cli/Cargo.toml
@@ -198,7 +199,8 @@ python3 scripts/build_client.py --output dist
 The script preserves the public `agenterm-client-cli-<platform>-<arch>` filenames
 used by installers. Linux downloads require the OpenSSL and glibc versions of
 the build distribution (currently Ubuntu 24.04 in the release workflow). Windows
-builds statically link the CRT. Once all six native outputs are collected:
+builds statically link the CRT. Collect all six executables and their accompanying
+`.build.json` version and checksum files before packing:
 
 ```sh
 python3 scripts/build_components.py --client-dir dist
@@ -206,6 +208,11 @@ python3 scripts/build_components.py --client-dir dist
 
 This rebuilds the tracked server bundle while retaining its native P2P binaries.
 Pass `--p2p-assets` to replace those as well.
+
+Bump the CLI package version when shipping CLI changes. A Server release reuses
+the previous Rust CLI when its version matches `Cargo.toml` and the verified
+files are available. Server releases and CLI releases keep their own version
+numbers. The Server distributes the embedded CLI under `/downloads/v<cli-version>/`.
 
 ## Local cross builds
 

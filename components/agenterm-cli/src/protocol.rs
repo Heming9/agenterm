@@ -1,7 +1,8 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-pub const VERSION: &str = env!("AGENTERM_VERSION");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const WIRE_VERSION: &str = env!("AGENTERM_WIRE_VERSION");
 pub type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, Debug)]
@@ -313,14 +314,16 @@ pub fn check_version(peer: &str) -> Result<()> {
             Some(result)
         }
     }
-    let a = split(VERSION).ok_or("invalid local version")?;
-    let b = split(peer).ok_or("server did not supply a compatible version")?;
+    let a = split(WIRE_VERSION).ok_or("invalid local protocol version")?;
+    let b = split(peer).ok_or("server did not supply a compatible protocol version")?;
     if a.0 != b.0
         || (a.0 == 0 && a.1 != b.1)
         || (a.0 == 0 && a.1 == 0 && a.2 != b.2)
         || ((!a.3.is_empty() || !b.3.is_empty()) && (a != b))
     {
-        Err(format!("version mismatch: client {VERSION}, server {peer}"))
+        Err(format!(
+            "protocol version mismatch: client {WIRE_VERSION}, server {peer}"
+        ))
     } else {
         Ok(())
     }
@@ -372,7 +375,7 @@ mod tests {
     }
     #[test]
     fn versions() {
-        assert!(check_version(VERSION).is_ok());
+        assert!(check_version(WIRE_VERSION).is_ok());
         assert!(check_version("0.999.0").is_err());
     }
 }

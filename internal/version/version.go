@@ -3,12 +3,22 @@ package version
 
 import (
 	"agenterm/internal/i18n"
+	_ "embed"
 	"regexp"
 	"strings"
 )
 
 const Current = "0.20.7"
 const Header = "X-Agenterm-Version"
+const ReleaseHeader = "X-Agenterm-Release-Version"
+
+// Protocol uses the existing version header so deployed clients can continue
+// to connect. Release numbers are sent separately.
+//
+//go:embed client-wire.txt
+var clientWire string
+
+var Protocol = strings.TrimSpace(clientWire)
 
 // SemVer 2.0.0 grammar, including the prohibition on leading zeroes in numeric
 // prerelease identifiers. A leading v is accepted separately for release tags.

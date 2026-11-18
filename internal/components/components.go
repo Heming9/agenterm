@@ -34,13 +34,15 @@ type fileInfo struct {
 	SHA256 string `json:"sha256"`
 }
 type manifest struct {
-	Schema     int                 `json:"schema"`
-	P2PVersion string              `json:"p2p_version"`
-	Files      map[string]fileInfo `json:"files"`
+	Schema        int                 `json:"schema"`
+	ClientVersion string              `json:"client_version"`
+	P2PVersion    string              `json:"p2p_version"`
+	Files         map[string]fileInfo `json:"files"`
 }
 
 var rawName = regexp.MustCompile(`^(client-cli/agenterm-client-cli|p2p-cli/p2p-cli)-(macos|linux|windows)-(amd64|arm64)(\.exe)?$`)
 var versionPattern = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$`)
+var clientVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?$`)
 
 func describe(files map[string][]byte) map[string]fileInfo {
 	result := make(map[string]fileInfo, len(files))
@@ -51,7 +53,8 @@ func describe(files map[string][]byte) map[string]fileInfo {
 	return result
 }
 func validateManifest(m manifest) error {
-	if m.Schema != 2 || !versionPattern.MatchString(m.P2PVersion) || len(m.Files) != 12 {
+	if m.Schema != 3 || !clientVersionPattern.MatchString(m.ClientVersion) ||
+		!versionPattern.MatchString(m.P2PVersion) || len(m.Files) != 12 {
 		return errors.New("invalid components manifest")
 	}
 	var total int64
@@ -99,8 +102,9 @@ func sourceMetadata(m manifest) (map[string][]byte, error) {
 }
 
 // Pack stores raw executables in one solid tar.xz; no download archives are nested.
-func Pack(w io.Writer, raw map[string][]byte, version string) error {
-	m := manifest{Schema: 2, P2PVersion: version, Files: describe(raw)}
+func Pack(w io.Writer, raw map[string][]byte, p2pVersion, clientVersion string) error {
+	m := manifest{Schema: 3, P2PVersion: p2pVersion, ClientVersion: clientVersion,
+		Files: describe(raw)}
 	if err := validateManifest(m); err != nil {
 		return err
 	}
@@ -116,7 +120,10 @@ func Pack(w io.Writer, raw map[string][]byte, version string) error {
 	return xzarchive.Write(w, entries)
 }
 
-type Paths struct{ Root string }
+type Paths struct {
+	Root          string
+	ClientVersion string
+}
 
 func (p Paths) ClientCLI() fs.FS         { return os.DirFS(filepath.Join(p.Root, "client-cli")) }
 func (p Paths) P2PDirectory() string     { return filepath.Join(p.Root, "p2p-cli") }
@@ -244,7 +251,7 @@ func install(base string, data []byte) (Paths, error) {
 		if err = checkCache(destination, m); err != nil {
 			return Paths{}, fmt.Errorf("components cache: %w", err)
 		}
-		return Paths{Root: destination}, nil
+		return Paths{Root: destination, ClientVersion: m.ClientVersion}, nil
 	} else if !os.IsNotExist(err) {
 		return Paths{}, err
 	}
@@ -274,5 +281,5 @@ func install(base string, data []byte) (Paths, error) {
 			return Paths{}, err
 		}
 	}
-	return Paths{Root: destination}, nil
+	return Paths{Root: destination, ClientVersion: m.ClientVersion}, nil
 }

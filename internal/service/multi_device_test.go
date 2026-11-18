@@ -119,7 +119,7 @@ func (h *multiHarness) create(t *testing.T, multi bool) string {
 func (h *multiHarness) dial(token, hostname string) (*testDeviceConn, *http.Response, error) {
 	decoded, _ := protocol.Decode(token)
 	ws, resp, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
-		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
+		"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Protocol},
 		protocol.HostnameHeader: {base64.RawURLEncoding.EncodeToString([]byte(hostname))}, protocol.PlatformHeader: {"linux"},
 		protocol.SessionControlsHeader: {"interrupt,eof"}, protocol.ClientAPIHeader: {terminal.APIVersion},
 	})
@@ -359,7 +359,7 @@ func TestTokenIdentifierMatchesInvitationAndRoute(t *testing.T) {
 	if token.Identifier == other {
 		other = "bbbbbb"
 	}
-	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Current}}
+	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol}}
 	ws, response, err := websocket.DefaultDialer.Dial(token.URL+"/"+other, headers)
 	if ws != nil {
 		ws.Close()

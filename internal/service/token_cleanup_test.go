@@ -25,7 +25,7 @@ func TestUnusedTokenCleanupWithAndWithoutQuota(t *testing.T) {
 			if redeemed {
 				req := httptest.NewRequest(http.MethodPost, "/invite/redeem", nil)
 				req.Header.Set("Authorization", "Bearer "+invitation.Secret)
-				req.Header.Set(version.Header, version.Current)
+				req.Header.Set(version.Header, version.Protocol)
 				response := httptest.NewRecorder()
 				s.redeemInvitation(response, req)
 				if response.Code != http.StatusOK {

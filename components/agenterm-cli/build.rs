@@ -52,15 +52,10 @@ fn write_colors(out: &Path) {
 }
 
 fn main() {
-    let path = "../../internal/version/version.go";
+    let path = "../../internal/version/client-wire.txt";
     println!("cargo:rerun-if-changed={path}");
     let text = std::fs::read_to_string(path).expect("read Agenterm protocol version");
-    let version = text
-        .split("const Current = \"")
-        .nth(1)
-        .and_then(|s| s.split('"').next())
-        .expect("version constant");
-    println!("cargo:rustc-env=AGENTERM_VERSION={version}");
+    println!("cargo:rustc-env=AGENTERM_WIRE_VERSION={}", text.trim());
     println!("cargo:rustc-env=AGENTERM_COMMIT={}", build_revision());
 
     // Share UI wording with the server and installers without embedding

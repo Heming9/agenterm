@@ -78,7 +78,7 @@ jobs:
           import json, os, pathlib, subprocess
           manifest = json.loads(pathlib.Path('release-plan/release-manifest.json').read_text())
           tag = os.environ['RELEASE_TAG']
-          assert manifest['release_tag'] == tag and manifest['scope'] == 'all'
+          assert manifest['release_tag'] == tag and manifest['scope'] in ('all', 'auto')
           sha = subprocess.check_output(['git', 'rev-list', '-n', '1', tag], text=True).strip()
           assert manifest['commit'] == sha, 'Artifacts do not match the version tag'
           PY

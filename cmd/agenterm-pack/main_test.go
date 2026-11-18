@@ -13,7 +13,7 @@ func TestFailedPackPreservesExistingBundle(t *testing.T) {
 	if err := os.WriteFile(path, previous, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeBundle(path, map[string][]byte{"invalid": []byte("broken")}, "0.1.0"); err == nil {
+	if err := writeBundle(path, map[string][]byte{"invalid": []byte("broken")}, "0.1.0", "1.2.3"); err == nil {
 		t.Fatal("invalid component set was accepted")
 	}
 	data, err := os.ReadFile(path)

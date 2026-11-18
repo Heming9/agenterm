@@ -7,15 +7,14 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from client_bundle_provenance import CLIENT_MANIFEST, build_record, package_version
 
 
 COMPONENTS = ("cli", "server")
-SCOPES = {
-    "all": set(COMPONENTS),
-    "server": {"server"},
-    "client": {"cli", "server"},  # Server embeds the Rust CLI.
-    "cli": {"cli", "server"},  # Server embeds CLI binaries.
-}
 MANIFEST = "release-manifest.json"
 REUSED_DIGESTS = "reused-digests.json"
 MANIFEST_SCHEMA = 2
@@ -90,26 +89,6 @@ def base_components(directory, tag, hashes):
     return {component: components[component] for component in COMPONENTS}
 
 
-def compatible(left, right):
-    return subprocess.run(
-        ["go", "run", "./scripts/release/check-compat.go", left, right],
-        check=False,
-    ).returncode == 0
-
-
-def select_builds(scope, tag, previous):
-    selected = SCOPES[scope].copy()
-    if previous is None or previous["cli"].get("implementation") != "rust":
-        # Never carry a legacy Go CLI into a Rust-only release or server bundle.
-        return set(COMPONENTS)
-    # Check actual binary versions, including assets reused over multiple releases.
-    for component in set(COMPONENTS) - selected:
-        if not compatible(tag, previous[component]["version"]):
-            print(f"{component} is incompatible with {tag}; rebuilding all programs")
-            return set(COMPONENTS)
-    return selected
-
-
 def download(tag, directory, names):
     if not names:
         return
@@ -125,7 +104,8 @@ def ancestor(tag):
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
-def prepare(scope, requested_base):
+def prepare(requested_base):
+    cli_version = package_version(Path.cwd(), CLIENT_MANIFEST)
     source = Path("internal/version/version.go").read_text()
     tag = valid_tag("v" + re.search(r'^const Current = "([^"]+)"$', source, re.M)[1])
     sha = run("git", "rev-parse", "HEAD")
@@ -140,18 +120,17 @@ def prepare(scope, requested_base):
     if any(release["tag_name"] == tag for release in releases):
         raise ValueError(f"Release {tag} already exists (including drafts)")
     base = None
-    if SCOPES[scope] != set(COMPONENTS):
-        candidates = sorted((r for r in releases if not r["draft"] and r["tag_name"] != tag),
-                            key=lambda r: r["published_at"], reverse=True)
-        for release in candidates:
-            candidate = release["tag_name"]
-            if requested_base and candidate != requested_base:
-                continue
-            if re.fullmatch(r"v[0-9][0-9A-Za-z._+-]*", candidate) and ancestor(candidate):
-                base = release
-                break
-        if requested_base and base is None:
-            raise ValueError("Base must be a published release whose tag is an ancestor of HEAD")
+    candidates = sorted((r for r in releases if not r["draft"] and r["tag_name"] != tag),
+                        key=lambda r: r["published_at"], reverse=True)
+    for release in candidates:
+        candidate = release["tag_name"]
+        if requested_base and candidate != requested_base:
+            continue
+        if re.fullmatch(r"v[0-9][0-9A-Za-z._+-]*", candidate) and ancestor(candidate):
+            base = release
+            break
+    if requested_base and base is None:
+        raise ValueError("Base must be a published release whose tag is an ancestor of HEAD")
     previous = None
     cache, output = Path("release-base"), Path("release-plan")
     output.mkdir()
@@ -164,29 +143,30 @@ def prepare(scope, requested_base):
             names.append(MANIFEST)
         download(base["tag_name"], cache, names)
         previous = base_components(cache, base["tag_name"], hashes)
-    selected = select_builds(scope, tag, previous)
-    # Naming/layout migrations require rebuilding instead of reusing binaries
-    # whose names still follow the old release layout.
-    if base and any(name not in {asset["name"] for asset in base["assets"]}
-                    for component in set(COMPONENTS) - selected for name in assets(component)):
-        print("Base release uses a different asset layout; rebuilding all programs")
-        selected = set(COMPONENTS)
-    manifest = {"schema": MANIFEST_SCHEMA, "release_tag": tag, "commit": sha, "scope": scope,
+    cli = previous["cli"] if previous else {}
+    reuse_cli = cli.get("implementation") == "rust" and cli.get("version") == cli_version and set(assets("cli")) <= {
+        asset["name"] for asset in base["assets"]
+    }
+    selected = {"server"} if reuse_cli else set(COMPONENTS)
+    manifest = {"schema": MANIFEST_SCHEMA, "release_tag": tag, "commit": sha, "scope": "auto",
                 "base_release": base["tag_name"] if base else None, "components": {}}
     reused = []
     for component in COMPONENTS:
         if component in selected:
             manifest["components"][component] = {"version": tag[1:], "source_tag": tag}
             if component == "cli":
-                manifest["components"][component]["implementation"] = "rust"
+                manifest["components"][component].update(version=cli_version, implementation="rust")
         else:
             manifest["components"][component] = previous[component]
             reused.extend(assets(component))
     if reused:
         download(base["tag_name"], cache, reused)
         verify(cache, reused, hashes)
+        records = output / "client-builds"
+        records.mkdir()
         for name in reused:
             shutil.copyfile(cache / name, output / "reused" / name)
+            build_record(records / name).write_text(json.dumps(dict(version=cli_version, sha256=hashes[name])) + "\n")
     (output / MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n")
     # Retain GitHub's expected digests for the publish job, not as release assets.
     (output / REUSED_DIGESTS).write_text(json.dumps({name: hashes[name] for name in reused}) + "\n")
@@ -234,7 +214,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     planner = subparsers.add_parser("prepare")
-    planner.add_argument("--scope", choices=SCOPES, default="all")
     planner.add_argument("--base", default="")
     staging = subparsers.add_parser("stage")
     staging.add_argument("--directory", type=Path, default=Path("dist"))
@@ -245,7 +224,7 @@ if __name__ == "__main__":
     publisher.add_argument("--plan", type=Path, default=Path("release-plan"))
     args = parser.parse_args()
     if args.command == "prepare":
-        prepare(args.scope, args.base)
+        prepare(args.base)
     elif args.command == "stage":
         stage(args.directory, args.output, args.components)
     else:

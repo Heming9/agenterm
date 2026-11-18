@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -75,6 +76,17 @@ func TestExecutionShellAvailableBeforeFirstCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	binary, err := rustClientBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionCommand := exec.Command(binary, "-version")
+	versionCommand.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=1")
+	reportedVersion, err := versionCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientVersion := strings.TrimSpace(string(reportedVersion))
 	for _, wait := range []int{0, 20000} {
 		out := h.call(t, token, "list_client", map[string]any{"wait_ms": wait}, false).(map[string]any)
 		clients := out["clients"].([]any)
@@ -89,8 +101,8 @@ func TestExecutionShellAvailableBeforeFirstCommand(t *testing.T) {
 		if info["hostname"] != hostname || info["platform"] != runtime.GOOS || info["arch"] != runtime.GOARCH || info["default_cwd"] != cwd {
 			t.Fatalf("reported environment differs from client: %v", info)
 		}
-		if info["client_version"] != version.Current {
-			t.Fatalf("reported client version: %v, want %q", info, version.Current)
+		if info["client_version"] != clientVersion {
+			t.Fatalf("reported client version: %v, want %q", info, clientVersion)
 		}
 		if entry["client_id"] == "" || entry["connected_at"] == "" {
 			t.Fatalf("missing connection metadata: %v", entry)
@@ -131,7 +143,7 @@ func TestClientShellMetadataThroughMCP(t *testing.T) {
 			token := h.create(t, false)
 			decoded, _ := protocol.Decode(token)
 			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
-				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Current},
+				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Protocol},
 				protocol.PlatformHeader: {tc.platform}, protocol.ShellHeader: {tc.header},
 			})
 			if err != nil {
@@ -152,7 +164,7 @@ func TestClientShellMetadataThroughMCP(t *testing.T) {
 }
 
 func TestClientDefaultCwdMetadataThroughMCP(t *testing.T) {
-	peerVersion := "v" + version.Current
+	peerVersion := "1.2.3"
 	for _, tc := range []struct{ name, value, want string }{
 		{"unicode and spaces", `C:\用户\working directory`, `C:\用户\working directory`},
 		{"long path", "/" + strings.Repeat("working/", 40), "/" + strings.Repeat("working/", 40)},
@@ -165,7 +177,7 @@ func TestClientDefaultCwdMetadataThroughMCP(t *testing.T) {
 			token := h.create(t, false)
 			decoded, _ := protocol.Decode(token)
 			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{
-				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {peerVersion},
+				"Authorization": {"Bearer " + decoded.Secret}, version.Header: {version.Protocol}, version.ReleaseHeader: {peerVersion},
 				protocol.ArchHeader:       {"arm64"},
 				protocol.DefaultCwdHeader: {base64.RawURLEncoding.EncodeToString([]byte(tc.value))},
 			})
