@@ -161,6 +161,7 @@ jobs:
           path: .p2p-native-cache
           key: ${{ steps.native-key.outputs.key }}
       - name: Test server P2P signaling and bootstrap scripts
+        shell: bash
         run: go test ./internal/p2p ./internal/service -run 'TestP2P|TestManifest' -count=1
       - uses: actions/upload-artifact@v4
         with:
