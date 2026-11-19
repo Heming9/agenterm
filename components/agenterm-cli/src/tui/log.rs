@@ -1,29 +1,108 @@
 //! Go logview spacing, folding and selection coordinates, independent of rendering.
 pub(super) mod welcome;
 
-use super::text::Metrics;
-use crate::ui::{self, Event};
+use super::{colors, text::Metrics};
+use crate::ui;
 use std::collections::{HashMap, VecDeque};
 use unicode_segmentation::UnicodeSegmentation;
 
 pub const MAX_LOG: usize = 10 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    System,
-    Connection,
-    Command,
-    Output,
-    Error,
-    Welcome,
+pub struct LogOptions {
+    pub color: Option<u32>,
+    pub timestamp: bool,
+    pub prefix: &'static str,
+    pub prefix_color: Option<u32>,
+    pub foldable: bool,
+    /// Minimum number of newlines between this entry and the preceding text.
+    pub spacing: usize,
+    /// Allow adjacent entries with matching styles to share a fold.
+    pub merge: bool,
 }
+
+impl LogOptions {
+    pub const DEFAULT: Self = Self {
+        color: None,
+        timestamp: false,
+        prefix: "",
+        prefix_color: Some(colors::SECONDARY),
+        foldable: false,
+        spacing: 1,
+        merge: false,
+    };
+}
+
+/// A reusable set of options for writing entries to a log.
+pub struct Logger(LogOptions);
+
+impl Logger {
+    pub const fn new(options: LogOptions) -> Self {
+        Self(options)
+    }
+
+    pub fn append(&self, log: &mut Log, message: &str) {
+        if self.0.timestamp {
+            self.append_at(log, &ui::reporter_timestamp(), message);
+        } else {
+            self.append_at(log, "", message);
+        }
+    }
+
+    pub fn append_at(&self, log: &mut Log, time: &str, message: &str) {
+        let options = self.0;
+        let mut text = log.before(options.spacing);
+        if options.timestamp {
+            text.push_str(&clean(time));
+            text.push(' ');
+        }
+        text.push_str(&clean(options.prefix));
+        let prefix = if options.prefix_color == options.color {
+            0
+        } else {
+            text.len()
+        };
+        text.push_str(&clean(message));
+        text.push('\n');
+        log.push(
+            SpanStyle {
+                color: options.color,
+                prefix_color: options.prefix_color,
+                foldable: options.foldable,
+                merge: options.merge,
+                stream: None,
+            },
+            text,
+            prefix,
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct StreamOptions {
+    pub color: Option<u32>,
+    pub foldable: bool,
+    /// Minimum number of newlines when switching back to this stream.
+    pub spacing: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SpanStyle {
+    color: Option<u32>,
+    prefix_color: Option<u32>,
+    foldable: bool,
+    merge: bool,
+    stream: Option<u64>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Row {
     pub text: String,
-    pub kind: Kind,
-    pub prefix: usize,
-    pub marker: usize,
-    pub suffix: usize,
-    suffix_kind: Kind,
+    color: Option<u32>,
+    prefix: usize,
+    prefix_color: Option<u32>,
+    marker: usize,
+    suffix: usize,
+    suffix_color: Option<u32>,
     pub soft: bool,
     pub fold: Option<u64>,
 }
@@ -31,34 +110,40 @@ impl Row {
     fn blank() -> Self {
         Self {
             text: String::new(),
-            kind: Kind::System,
+            color: None,
             prefix: 0,
+            prefix_color: None,
             marker: 0,
             suffix: usize::MAX,
-            suffix_kind: Kind::System,
+            suffix_color: Some(colors::SECONDARY),
             soft: false,
             fold: None,
         }
     }
-    pub fn kind_at(&self, byte: usize) -> Kind {
+    pub fn color_at(&self, byte: usize) -> Option<u32> {
         if byte < self.marker {
-            Kind::Output
+            None
         } else if byte < self.prefix {
-            Kind::System
+            self.prefix_color
         } else if byte >= self.suffix {
-            self.suffix_kind
+            self.suffix_color
         } else {
-            self.kind
+            self.color
         }
     }
 }
 struct Span {
     id: u64,
-    kind: Kind,
+    style: SpanStyle,
     text: String,
     prefix: usize,
     expanded: bool,
     cached: Option<(usize, Metrics, Vec<Row>)>,
+}
+struct Stream {
+    id: u64,
+    decoder: Decoder,
+    options: StreamOptions,
 }
 #[derive(Default)]
 pub struct Decoder {
@@ -136,12 +221,11 @@ pub struct Log {
     spans: VecDeque<Span>,
     bytes: usize,
     next_id: u64,
-    decoders: HashMap<String, Decoder>,
-    last_id: String,
+    streams: HashMap<String, Stream>,
+    last_stream: String,
     pub rows: Vec<Row>,
     pub dirty: bool,
     pub evicted: bool,
-    pub completed: usize,
     pub welcome_height: Option<usize>,
     pub welcome_rows: usize,
     layout: Option<(usize, Metrics)>,
@@ -160,14 +244,14 @@ impl Log {
             .count();
         "\n".repeat(n.saturating_sub(tail))
     }
-    fn push(&mut self, kind: Kind, text: String, prefix: usize) {
+    fn push(&mut self, style: SpanStyle, text: String, prefix: usize) {
         if text.is_empty() {
             return;
         }
         self.bytes += text.len();
-        if kind != Kind::System
+        if style.merge
             && let Some(last) = self.spans.back_mut()
-            && last.kind == kind
+            && last.style == style
             && prefix == 0
         {
             last.text.push_str(&text);
@@ -176,7 +260,7 @@ impl Log {
             self.next_id += 1;
             self.spans.push_back(Span {
                 id: self.next_id,
-                kind,
+                style,
                 text,
                 prefix,
                 expanded: false,
@@ -203,56 +287,57 @@ impl Log {
         }
         self.dirty = true;
     }
-    pub fn message(&mut self, kind: Kind, text: &str) {
-        let text = format!("{}{}\n", self.before(2), clean(text));
-        self.push(kind, text, 0);
-    }
-    pub fn connection_line(&mut self, time: &str, message: &str) {
-        let prefix = format!("{}{time}  ", self.before(1));
-        self.push(
-            Kind::Connection,
-            format!("{prefix}{}\n", clean(message)),
-            prefix.len(),
+    pub fn open_stream(&mut self, id: String, options: StreamOptions) {
+        self.last_stream.clone_from(&id);
+        self.next_id += 1;
+        self.streams.insert(
+            id,
+            Stream {
+                id: self.next_id,
+                decoder: Decoder::default(),
+                options,
+            },
         );
     }
-    pub fn event(&mut self, event: Event) {
-        match event {
-            Event::Started { id, command, time } => {
-                let prefix = format!("{}{} $ ", self.before(2), clean(&time));
-                let n = prefix.len();
-                self.push(Kind::Command, format!("{prefix}{}\n", clean(&command)), n);
-                self.decoders.insert(id.clone(), Decoder::default());
-                self.last_id = id;
-            }
-            Event::Output { id, data } => {
-                if let Some(d) = self.decoders.get_mut(&id) {
-                    let mut text = d.output(&data);
-                    if self.last_id != id {
-                        while let Some((line, rest)) = text.split_once('\n') {
-                            if !line.trim_matches([' ', '\t']).is_empty() {
-                                break;
-                            }
-                            text = rest.into();
-                        }
-                    }
-                    if !text.is_empty() {
-                        if self.last_id != id {
-                            let space = self.before(2);
-                            self.push(Kind::System, space, 0);
-                            self.last_id = id;
-                        }
-                        self.push(Kind::Output, text, 0);
-                    }
+    pub fn append_stream(&mut self, id: &str, chunk: &str) {
+        let Some(stream) = self.streams.get_mut(id) else {
+            return;
+        };
+        let mut text = stream.decoder.output(chunk);
+        let options = stream.options;
+        let stream_id = stream.id;
+        let switching = self.last_stream != id;
+        if switching {
+            while let Some((line, rest)) = text.split_once('\n') {
+                if !line.trim_matches([' ', '\t']).is_empty() {
+                    break;
                 }
+                text = rest.into();
             }
-            Event::Finished { id, code } => {
-                if self.decoders.remove(&id).is_some() {
-                    self.completed += 1;
-                }
-                let _ = code; // Completion is reported in the counter.
-            }
-            _ => {}
         }
+        if text.is_empty() {
+            return;
+        }
+        if switching {
+            let spacing = self.before(options.spacing);
+            self.push(SpanStyle::default(), spacing, 0);
+            self.last_stream.clear();
+            self.last_stream.push_str(id);
+        }
+        self.push(
+            SpanStyle {
+                color: options.color,
+                foldable: options.foldable,
+                merge: true,
+                stream: Some(stream_id),
+                ..SpanStyle::default()
+            },
+            text,
+            0,
+        );
+    }
+    pub fn close_stream(&mut self, id: &str) -> bool {
+        self.streams.remove(id).is_some()
     }
     pub fn refresh(
         &mut self,
@@ -325,7 +410,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
     let mut offset = leading;
     for line in body.split('\n') {
         let mut row = Row {
-            kind: span.kind,
+            color: span.style.color,
+            prefix_color: span.style.prefix_color,
             ..Row::blank()
         };
         let mut col = 0;
@@ -340,7 +426,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
                 row.soft = true;
                 body_rows.push(row);
                 row = Row {
-                    kind: span.kind,
+                    color: span.style.color,
+                    prefix_color: span.style.prefix_color,
                     ..Row::blank()
                 };
                 col = 0;
@@ -354,8 +441,7 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
         body_rows.push(row);
         offset += line.len() + 1;
     }
-    let fold =
-        matches!(span.kind, Kind::Command | Kind::Output | Kind::Error) && body_rows.len() > 1;
+    let fold = span.style.foldable && body_rows.len() > 1;
     if fold && !span.expanded {
         let mut suffix = ui::tr("tui.fold.lines").replace("%d", &body_rows.len().to_string());
         suffix.insert(0, ' ');
@@ -370,7 +456,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
         let suffix_start = marker.len() + preview.len();
         body_rows = vec![Row {
             text: format!("{marker}{preview}{suffix}"),
-            kind: span.kind,
+            color: span.style.color,
+            prefix_color: span.style.prefix_color,
             prefix,
             marker: marker.len(),
             suffix: suffix_start,
@@ -381,7 +468,10 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
         // Reserve the marker before wrapping so no text is lost at the right edge.
         let marked = Span {
             id: span.id,
-            kind: span.kind,
+            style: SpanStyle {
+                foldable: false,
+                ..span.style
+            },
             text: format!("▾ {body}"),
             prefix: span.prefix.saturating_sub(leading) + "▾ ".len(),
             expanded: true,
@@ -399,21 +489,11 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
     rows
 }
 fn wrap_expanded(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
-    // System disables folding while using the same hard-wrapping implementation.
-    let plain = Span {
-        id: span.id,
-        kind: Kind::System,
-        text: span.text.clone(),
-        prefix: span.prefix,
-        expanded: false,
-        cached: None,
-    };
-    let mut rows = layout(&plain, width, metrics);
+    let mut rows = layout(span, width, metrics);
     let mut marker = "▾ ".len();
     for row in &mut rows {
         row.marker = marker.min(row.text.len());
         marker = marker.saturating_sub(row.text.len());
-        row.kind = span.kind;
     }
     rows
 }

@@ -1,4 +1,4 @@
-use super::{Kind, Metrics, Row};
+use super::{Metrics, Row};
 use crate::{deeplink::hash_reader, protocol::VERSION, tui::colors, ui::tr};
 use std::{env, fs::File, sync::OnceLock};
 
@@ -31,46 +31,50 @@ pub(super) fn rows(width: usize, height: usize, metrics: Metrics) -> Vec<Row> {
         let hash = format!("sha256: {}", executable_hash());
         if metrics.width(&welcome) + 9 <= width && PROJECT_URL.len() + 11 <= width && height >= 3 {
             let [top, middle, bottom] = colors::TERMINAL_LOGO;
-            rows.push(line(format!("  {top}  {welcome}"), "", Kind::Welcome));
+            rows.push(line(
+                format!("  {top}  {welcome}"),
+                "",
+                Some(colors::PRIMARY),
+            ));
             rows.push(line(
                 format!("  {middle}"),
                 &format!("   - {hash}"),
-                Kind::Welcome,
+                Some(colors::PRIMARY),
             ));
             rows.push(line(
                 format!("  {bottom}"),
                 &format!("  - {PROJECT_URL}"),
-                Kind::Welcome,
+                Some(colors::PRIMARY),
             ));
         } else {
             let title = [welcome, format!("{greeting} {release}"), title]
                 .into_iter()
                 .find(|title| metrics.width(title) <= width)
                 .unwrap_or_else(|| metrics.truncate(&release, width, ""));
-            rows.push(line(format!(" {title}"), "", Kind::Welcome));
+            rows.push(line(format!(" {title}"), "", Some(colors::PRIMARY)));
             if height >= 2 && metrics.width(&hash) <= width {
-                rows.push(line(format!(" {hash}"), "", Kind::Output));
+                rows.push(line(format!(" {hash}"), "", None));
             } else if height >= 3
                 && width >= 16
                 && let Some((head, tail)) = executable_hash().split_once(HASH_SEPARATOR)
             {
-                rows.push(line(format!(" sha256: {head}"), "", Kind::Output));
-                rows.push(line(format!(" {HASH_SEPARATOR}{tail}"), "", Kind::Output));
+                rows.push(line(format!(" sha256: {head}"), "", None));
+                rows.push(line(format!(" {HASH_SEPARATOR}{tail}"), "", None));
             }
             if rows.len() < height && PROJECT_URL.len() <= width {
-                rows.push(line(format!(" {PROJECT_URL}"), "", Kind::Output));
+                rows.push(line(format!(" {PROJECT_URL}"), "", None));
             }
         }
     }
     rows
 }
 
-fn line(mark: String, rest: &str, kind: Kind) -> Row {
+fn line(mark: String, rest: &str, color: Option<u32>) -> Row {
     Row {
         suffix: mark.len(),
         text: mark + rest,
-        kind,
-        suffix_kind: Kind::Output,
+        color,
+        suffix_color: None,
         ..Row::blank()
     }
 }

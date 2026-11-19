@@ -23,7 +23,7 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use input::Input;
-use log::{Kind, Log, clean};
+use log::{Log, LogOptions, Logger, StreamOptions, clean};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     io::{self, Write},
@@ -41,6 +41,42 @@ use text::Metrics;
 mod colors {
     include!(concat!(env!("OUT_DIR"), "/theme_colors.rs"));
 }
+
+const CONNECTION_LOG: Logger = Logger::new(LogOptions {
+    timestamp: true,
+    ..LogOptions::DEFAULT
+});
+
+const COMMAND_LOG: Logger = Logger::new(LogOptions {
+    color: Some(colors::PRIMARY),
+    timestamp: true,
+    prefix: "$ ",
+    foldable: true,
+    spacing: 2,
+    ..LogOptions::DEFAULT
+});
+
+const RETRY_LOG: Logger = Logger::new(LogOptions {
+    color: Some(colors::ERROR),
+    timestamp: true,
+    prefix_color: Some(colors::ERROR),
+    foldable: true,
+    spacing: 2,
+    merge: true,
+    ..LogOptions::DEFAULT
+});
+
+const SYSTEM_LOG: Logger = Logger::new(LogOptions {
+    color: Some(colors::SECONDARY),
+    spacing: 2,
+    ..LogOptions::DEFAULT
+});
+
+const COMMAND_OUTPUT: StreamOptions = StreamOptions {
+    color: None,
+    foldable: true,
+    spacing: 2,
+};
 
 static TERMINAL_MODE: AtomicU8 = AtomicU8::new(0);
 struct TerminalGuard;
@@ -207,6 +243,7 @@ struct App {
     ever_connected: bool,
     show_welcome: bool,
     log: Log,
+    completed_commands: usize,
     scroll: usize,
     follow: bool,
     width: u16,
@@ -252,6 +289,7 @@ impl App {
             ever_connected: false,
             show_welcome: true,
             log: Log::default(),
+            completed_commands: 0,
             scroll: 0,
             follow: true,
             width: 80,
@@ -370,6 +408,7 @@ impl App {
         self.ever_connected = false;
         self.show_welcome = true;
         self.log = Log::default();
+        self.completed_commands = 0;
         self.scroll = 0;
         self.follow = true;
         self.selection = None;
@@ -409,8 +448,8 @@ impl App {
                     || tr("tui.connection.unknown_version").into(),
                     |version| format!("v{}", version.strip_prefix('v').unwrap_or(&version)),
                 );
-                self.log.connection_line(
-                    &ui::reporter_timestamp(),
+                CONNECTION_LOG.append(
+                    &mut self.log,
                     &format!(
                         "{} · {} {release} · {} {} ms",
                         tr("tui.connection.token_validated"),
@@ -425,16 +464,16 @@ impl App {
                     self.state = State::Connecting;
                     self.address = clean(&address);
                     self.latency = None;
-                    self.log.connection_line(
-                        &ui::reporter_timestamp(),
+                    CONNECTION_LOG.append(
+                        &mut self.log,
                         &format!("{} {}", tr("tui.connection.connecting"), self.address),
                     );
                 }
             }
             ClientEvent::WebSocketUpgraded(status) => {
                 if self.state != State::Disconnecting {
-                    self.log.connection_line(
-                        &ui::reporter_timestamp(),
+                    CONNECTION_LOG.append(
+                        &mut self.log,
                         &format!("{} · HTTP {status}", tr("tui.connection.handshake")),
                     );
                 }
@@ -448,9 +487,10 @@ impl App {
                 self.show_welcome = !self.ever_connected;
                 let time = ui::reporter_timestamp();
                 if self.ever_connected {
-                    self.log.connection_line(&time, tr("connection.restored"));
+                    CONNECTION_LOG.append_at(&mut self.log, &time, tr("connection.restored"));
                 } else {
-                    self.log.connection_line(
+                    CONNECTION_LOG.append_at(
+                        &mut self.log,
                         &time,
                         &format!(
                             "{} · {} {} ms",
@@ -459,7 +499,7 @@ impl App {
                             elapsed.as_millis()
                         ),
                     );
-                    self.log.connection_line(&time, tr("tui.welcome.waiting"));
+                    CONNECTION_LOG.append_at(&mut self.log, &time, tr("tui.welcome.waiting"));
                 }
                 self.ever_connected = true;
             }
@@ -468,10 +508,7 @@ impl App {
                     self.state = State::Reconnecting(delay);
                     self.latency = None;
                 }
-                self.log.message(
-                    Kind::Error,
-                    &format!("{} {message}", ui::reporter_timestamp()),
-                );
+                RETRY_LOG.append(&mut self.log, &message);
             }
             ClientEvent::Latency(ms) => {
                 if self.state == State::Connected && ms <= 60_000 {
@@ -480,13 +517,18 @@ impl App {
             }
             ClientEvent::Message(message) => {
                 self.ended_message = Some(clean(&message));
-                self.log.message(Kind::System, &message);
+                SYSTEM_LOG.append(&mut self.log, &message);
             }
-            event => {
-                if matches!(event, ClientEvent::Started { .. }) {
-                    self.show_welcome = false;
+            ClientEvent::Started { id, command, time } => {
+                self.show_welcome = false;
+                COMMAND_LOG.append_at(&mut self.log, &time, &command);
+                self.log.open_stream(id, COMMAND_OUTPUT);
+            }
+            ClientEvent::Output { id, data } => self.log.append_stream(&id, &data),
+            ClientEvent::Finished { id, .. } => {
+                if self.log.close_stream(&id) {
+                    self.completed_commands += 1;
                 }
-                self.log.event(event);
             }
         }
     }
@@ -519,6 +561,7 @@ impl App {
             self.latency = None;
             self.selection = None;
             self.log = Log::default();
+            self.completed_commands = 0;
             self.menu = Menu::Input;
             self.message = self.ended_message.take().unwrap_or_else(|| match result {
                 Ok(()) => tr("disconnected.2").into(),

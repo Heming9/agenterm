@@ -163,7 +163,6 @@ fn screens_match_reference() {
                     b'0'..=b'9',
                     b'0'..=b'9',
                     b' ',
-                    b' ',
                     ..
                 ]
             ) {
@@ -342,6 +341,26 @@ fn concurrent_streams_keep_go_spacing_and_decoders_survive_reconnect() {
     );
     assert!(text.contains("  after reconnect"));
     assert!(!text.contains("Finished"));
+}
+
+#[test]
+fn streams_with_the_same_style_have_separate_folds_without_command_headers() {
+    let mut log = Log::default();
+    let options = StreamOptions {
+        spacing: 0,
+        ..COMMAND_OUTPUT
+    };
+    log.open_stream("one".into(), options);
+    log.append_stream("one", "first stream\n");
+    log.append_stream("one", "continues\n");
+    assert!(log.close_stream("one"));
+    log.open_stream("two".into(), options);
+    log.append_stream("two", "second stream\ncontinues\n");
+    log.refresh(80, Metrics { legacy: false }, false, None);
+
+    let folds: Vec<_> = log.rows.iter().filter_map(|row| row.fold).collect();
+    assert_eq!(folds.len(), 2);
+    assert_ne!(folds[0], folds[1]);
 }
 
 #[test]

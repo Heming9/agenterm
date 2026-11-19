@@ -1,4 +1,4 @@
-use super::{App, Kind, Menu, State, clean, colors};
+use super::{App, Menu, State, clean, colors};
 use crate::{protocol::VERSION, ui::tr};
 use ratatui::{
     Frame,
@@ -21,14 +21,6 @@ impl Palette {
             Style::default().fg(Color::from_u32(role))
         } else {
             Style::default()
-        }
-    }
-    fn kind(self, kind: Kind) -> Style {
-        match kind {
-            Kind::System => self.text(colors::SECONDARY),
-            Kind::Command | Kind::Welcome => self.text(colors::PRIMARY),
-            Kind::Error => self.text(colors::ERROR),
-            Kind::Connection | Kind::Output => Style::default(),
         }
     }
     fn status(self, state: State) -> Style {
@@ -128,7 +120,7 @@ impl App {
                 .metrics
                 .truncate(&left, usize::from(self.width.saturating_sub(1)), "");
         }
-        let mut right = tr("tui.command.count").replace("%d", &self.log.completed.to_string());
+        let mut right = tr("tui.command.count").replace("%d", &self.completed_commands.to_string());
         if self.state == State::Connected
             && let Some(ms) = self.latency
         {
@@ -229,7 +221,8 @@ impl App {
                 let style = if selected {
                     palette.selection()
                 } else {
-                    palette.kind(row.kind_at(byte))
+                    row.color_at(byte)
+                        .map_or(default, |color| palette.text(color))
                 };
                 self.metrics
                     .draw(frame.buffer_mut(), x as u16, y, width as u16, g, style);
@@ -258,7 +251,7 @@ impl App {
                     .chars()
                     .take(available + 1)
                     .collect::<String>(),
-                palette.kind(Kind::System),
+                palette.text(colors::SECONDARY),
             )
         } else {
             (visible, default)
@@ -301,7 +294,9 @@ impl App {
                 let styles: Vec<Style> = (0..2)
                     .map(|i| {
                         if i == selected {
-                            palette.kind(Kind::Command).add_modifier(Modifier::REVERSED)
+                            palette
+                                .text(colors::PRIMARY)
+                                .add_modifier(Modifier::REVERSED)
                         } else {
                             default
                         }
@@ -346,7 +341,7 @@ impl App {
             form.blank();
             form.line(vec![
                 (" ".into(), default),
-                (self.message.clone(), palette.kind(Kind::Error)),
+                (self.message.clone(), palette.text(colors::ERROR)),
             ]);
         }
         form
