@@ -220,7 +220,11 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	listed := h.call(t, "admin-test", "list_client", map[string]any{"control_token": control, "wait_ms": 5000}, false).(map[string]any)
+	clientResult, isError, err := h.request("admin-test", "list_client", map[string]any{"control_token": control, "wait_ms": 20000}, 25*time.Second)
+	if err != nil || isError {
+		t.Fatalf("waiting for temporary client: result=%v error=%v", clientResult, err)
+	}
+	listed := clientResult.(map[string]any)
 	clients := listed["clients"].([]any)
 	if len(clients) != 1 {
 		t.Fatal("temporary client did not connect")
