@@ -131,6 +131,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	root, home, temp := t.TempDir(), t.TempDir(), t.TempDir()
+	profile := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	runInstaller := func(input string, interactive bool) (*exec.Cmd, *bytes.Buffer) {
@@ -148,7 +149,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 				cmd.Env = append(cmd.Env, entry)
 			}
 		}
-		cmd.Env = append(cmd.Env, "HOME="+home, "USERPROFILE="+home, "APPDATA="+home, "LOCALAPPDATA="+home,
+		cmd.Env = append(cmd.Env, "HOME="+home, "USERPROFILE="+profile, "APPDATA="+home, "LOCALAPPDATA="+home,
 			"XDG_CACHE_HOME="+home, "XDG_CONFIG_HOME="+home, "TMPDIR="+temp, "TEMP="+temp, "TMP="+temp, "AGENTERM_LANG=en",
 			"TERM=xterm", "SHELL=/bin/bash", "HISTFILE="+filepath.Join(home, "shell-history"))
 		var output bytes.Buffer
