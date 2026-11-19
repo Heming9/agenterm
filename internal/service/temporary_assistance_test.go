@@ -35,7 +35,11 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 	get := func(path string) string {
 		t.Helper()
 		w := httptest.NewRecorder()
-		h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if len(strings.TrimPrefix(path, "/c/")) == shortCodeLength {
+			req.Header.Set("Accept", "text/html")
+		}
+		h.s.installWrapper(installerTestTag).ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s returned %d", path, w.Code)
 		}
@@ -45,8 +49,18 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 	if !strings.Contains(page, "system temporary directory") || strings.Contains(page, "agenterm-cli://") {
 		t.Fatal("temporary invitation must direct the recipient to the installer")
 	}
-	for _, suffix := range []string{"", ".ps1"} {
-		if !strings.Contains(get("/c/"+token.Secret+suffix), "'token' 'temporary-assistance'") {
+	for _, suffix := range []string{".sh", ".ps1"} {
+		r := httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string)+suffix, nil)
+		w := httptest.NewRecorder()
+		h.s.installWrapper(installerTestTag).ServeHTTP(w, r)
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "'token' 'temporary-assistance'") {
+			t.Fatalf("short-code installer %q did not preserve temporary policy: %d", suffix, w.Code)
+		}
+		tokenSuffix := suffix
+		if suffix == ".sh" {
+			tokenSuffix = ""
+		}
+		if !strings.Contains(get("/c/"+token.Secret+tokenSuffix), "'token' 'temporary-assistance'") {
 			t.Fatalf("installer %q did not receive the invitation policy", suffix)
 		}
 	}

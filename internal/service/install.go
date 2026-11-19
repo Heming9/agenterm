@@ -81,8 +81,7 @@ func installCommands(token string) (string, string) {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// A short code serves the invitation page on GET and redeems on POST.
-// Installer scripts require a connection-token secret.
+// A short code serves an invitation page or installer on GET and redeems on POST.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -97,16 +96,16 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		credential, powershell := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/c/"), ".ps1")
-		if !validInstallCredential.MatchString(credential) || (r.Method == http.MethodPost && (powershell || len(credential) != shortCodeLength)) {
+		credential := strings.TrimPrefix(r.URL.Path, "/c/")
+		var powershell, shell bool
+		if credential, powershell = strings.CutSuffix(credential, ".ps1"); !powershell {
+			credential, shell = strings.CutSuffix(credential, ".sh")
+		}
+		if !validInstallCredential.MatchString(credential) || (shell && len(credential) != shortCodeLength) || (r.Method == http.MethodPost && (powershell || shell || len(credential) != shortCodeLength)) {
 			http.NotFound(w, r)
 			return
 		}
-		if len(credential) == shortCodeLength && r.Method != http.MethodPost {
-			if powershell {
-				http.NotFound(w, r)
-				return
-			}
+		if len(credential) == shortCodeLength && !powershell && !shell && r.Method != http.MethodPost {
 			s.shortLink(w, r)
 			return
 		}
@@ -130,7 +129,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			writeControlError(w, err)
 			return
 		}
-		if !entry.DeviceToken {
+		if !entry.DeviceToken && len(credential) != shortCodeLength {
 			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusUnauthorized)
 			return
 		}

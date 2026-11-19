@@ -71,10 +71,10 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 				t.Fatalf("expiry cleanup: retained before=%v remaining at deadline=%d", retained, remaining)
 			}
 			if code, ok := created["short_code"].(string); ok {
-				for _, suffix := range []string{"", ".ps1"} {
+				for _, suffix := range []string{"", ".sh", ".ps1"} {
 					w := httptest.NewRecorder()
 					h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil))
-					if (suffix == "" && w.Code != http.StatusUnauthorized) || (suffix == ".ps1" && w.Code != http.StatusNotFound) || strings.Contains(w.Body.String(), created["invitation"].(string)) {
+					if w.Code != http.StatusUnauthorized || strings.Contains(w.Body.String(), created["invitation"].(string)) {
 						t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
 					}
 				}

@@ -81,7 +81,9 @@ func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
 		status            int
 	}{
 		{"GET", "v1.2.3", path, 200},
-		{"GET", "v1.2.3", path + ".ps1", 404},
+		{"GET", "v1.2.3", path + ".ps1", 200},
+		{"GET", "v1.2.3", path + ".sh", 200},
+		{"POST", "v1.2.3", path + ".sh", 404},
 		{"GET", "v1.2.3", "/c/" + decoded.Secret, 401},
 		{"GET", "v1.2.3", "/c/unknown", 404},
 		{"GET", "v1.2.3", path + "/install.sh", 404},
@@ -134,7 +136,7 @@ func TestShortLinkAfterRuntimeRestart(t *testing.T) {
 	for _, tc := range []struct {
 		suffix string
 		want   int
-	}{{"", http.StatusUnauthorized}, {".ps1", http.StatusNotFound}} {
+	}{{"", http.StatusUnauthorized}, {".sh", http.StatusUnauthorized}, {".ps1", http.StatusUnauthorized}} {
 		w := httptest.NewRecorder()
 		fresh.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string)+tc.suffix, nil))
 		if w.Code != tc.want {

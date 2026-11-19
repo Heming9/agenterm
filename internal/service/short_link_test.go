@@ -56,6 +56,7 @@ func TestShortLinkPage(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				req.Header.Set("Accept", "text/html")
 				req.Header.Set("Accept-Encoding", tc.encoding)
 				req.Header.Set("Accept-Language", "zh-CN")
 				res, err := ts.Client().Do(req)
@@ -105,6 +106,7 @@ func TestShortLinkPage(t *testing.T) {
 				}
 			}
 			reqHead, _ := http.NewRequest(http.MethodHead, link, nil)
+			reqHead.Header.Set("Accept", "text/html")
 			reqHead.Header.Set("Accept-Encoding", "gzip")
 			headRes, err := ts.Client().Do(reqHead)
 			if err != nil {
@@ -128,6 +130,7 @@ func TestShortLinkPage(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				req.Header.Set("Accept", "text/html")
 				req.Header.Set("Accept-Language", tc.browserLanguage)
 				res, err := ts.Client().Do(req)
 				if err != nil {
@@ -149,6 +152,7 @@ func TestShortLinkPage(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				req.Header.Set("Accept", "text/html")
 				req.Header.Set("Accept-Language", languageHeader)
 				res, err := ts.Client().Do(req)
 				if err != nil {
@@ -164,7 +168,7 @@ func TestShortLinkPage(t *testing.T) {
 				if !strings.Contains(english, "Server: ") || !strings.Contains(english, "<strong>"+origin+prefix+"</strong>") || !strings.Contains(english, "accessing or modifying files") {
 					t.Fatal("missing English authorization details")
 				}
-				if res.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="en">`) || !strings.Contains(body, "Request to connect to this computer") || !strings.Contains(body, "How to use?") || !strings.Contains(body, "Expires in ") || strings.Contains(body, "如何使用") || !strings.Contains(res.Header.Get("Vary"), "Accept-Language") {
+				if res.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="en">`) || !strings.Contains(body, "Request to connect to this computer") || !strings.Contains(body, "How to use?") || !strings.Contains(body, "Expires in ") || strings.Contains(body, "如何使用") || !strings.Contains(strings.Join(res.Header.Values("Vary"), ","), "Accept-Language") {
 					t.Fatalf("language %q: status=%d body=%s", languageHeader, res.StatusCode, body)
 				}
 			}
@@ -327,34 +331,41 @@ func TestShortLinkRouteIsRedacted(t *testing.T) {
 	}
 }
 
-func TestShortCodeGetNeverServesInstaller(t *testing.T) {
+func TestShortCodeExplicitFormats(t *testing.T) {
 	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/client"}
 	issued, err := s.createClient("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	code := issued["short_code"].(string)
-	handler := s.installWrapper("v1.2.3")
-	for _, accept := range []string{"", "text/html", "*/*", "text/html;q=0"} {
+	for _, tc := range []struct{ name, accept, agent, suffix, content string }{
+		{"browser", "text/html", "Mozilla/5.0", "", "text/html"},
+		{"curl page", "*/*", "curl/8.0", "", "text/html"},
+		{"powershell page", "*/*", "WindowsPowerShell/5.1", "", "text/html"},
+		{"shell", "text/html", "Mozilla/5.0", ".sh", "text/plain"},
+		{"powershell", "text/html", "Mozilla/5.0", ".ps1", "text/plain"},
+	} {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
-			r := httptest.NewRequest(method, "/c/"+code, nil)
-			if accept != "" {
-				r.Header.Set("Accept", accept)
-			}
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, r)
-			if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
-				t.Fatalf("%s %q: status=%d type=%q", method, accept, w.Code, w.Header().Get("Content-Type"))
-			}
-			if strings.Contains(w.Body.String(), "#!/bin/sh") {
-				t.Fatal("short code served installer")
-			}
+			t.Run(tc.name+method, func(t *testing.T) {
+				r := httptest.NewRequest(method, "/c/"+code+tc.suffix, nil)
+				r.Header.Set("Accept", tc.accept)
+				r.Header.Set("User-Agent", tc.agent)
+				w := httptest.NewRecorder()
+				s.installWrapper("v1.2.3").ServeHTTP(w, r)
+				if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), tc.content) {
+					t.Fatalf("status=%d type=%q", w.Code, w.Header().Get("Content-Type"))
+				}
+				if method == http.MethodGet && tc.content == "text/plain" {
+					if !strings.Contains(w.Body.String(), issued["client_token"].(string)) {
+						t.Fatal("installer missing token")
+					}
+					isPS := tc.name == "powershell"
+					if strings.HasPrefix(w.Body.String(), "#!/bin/sh") == isPS {
+						t.Fatal("wrong installer format")
+					}
+				}
+			})
 		}
-	}
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code+".ps1", nil))
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("short PowerShell script: %d", w.Code)
 	}
 }
 
