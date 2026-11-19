@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const Current = "0.20.8"
+const Current = "0.20.9"
 const Header = "X-Agenterm-Version"
 const ReleaseHeader = "X-Agenterm-Release-Version"
 
