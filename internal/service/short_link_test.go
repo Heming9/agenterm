@@ -360,49 +360,63 @@ func TestInvitationFormats(t *testing.T) {
 				t.Fatal("unexpected short-code availability")
 			}
 			handler := s.installWrapper("v1.2.3")
-			request := func(method, path string) *httptest.ResponseRecorder {
+			request := func(method, path, userAgent string) *httptest.ResponseRecorder {
 				t.Helper()
 				r := httptest.NewRequest(method, path, nil)
 				r.Header.Set("Accept", "*/*")
-				r.Header.Set("User-Agent", "curl/8.0")
+				r.Header.Set("User-Agent", userAgent)
 				r.Header.Set(version.Header, version.Protocol)
 				w := httptest.NewRecorder()
 				handler.ServeHTTP(w, r)
 				return w
 			}
-			for _, format := range []struct{ suffix, content, prefix string }{
-				{"", "text/html", "<!doctype html>"},
-				{".sh", "text/plain", "#!/bin/sh"},
-				{".ps1", "text/plain", "& {"},
+			powershell := "Mozilla/5.0 (Windows NT 10.0; en-US) PowerShell/7.4.0"
+			for _, format := range []struct{ suffix, userAgent, content, prefix string }{
+				{"", "Mozilla/5.0 Safari/605.1.15", "text/html", "<!doctype html>"},
+				{"", "", "text/html", "<!doctype html>"},
+				{"", "Wget/1.25.0", "text/html", "<!doctype html>"},
+				{"", "curl/8.0", "text/plain", "#!/bin/sh"},
+				{"", powershell, "text/plain", "& {"},
+				{"", "Mozilla/5.0 (Windows NT 10.0) WindowsPowerShell/5.1", "text/plain", "& {"},
+				{".sh", powershell, "text/plain", "#!/bin/sh"},
+				{".ps1", "curl/8.0", "text/plain", "& {"},
 			} {
 				path := tokenPath + format.suffix
-				get, head := request(http.MethodGet, path), request(http.MethodHead, path)
+				get := request(http.MethodGet, path, format.userAgent)
+				head := request(http.MethodHead, path, format.userAgent)
 				if get.Code != http.StatusOK || !strings.HasPrefix(get.Header().Get("Content-Type"), format.content) ||
 					!strings.HasPrefix(get.Body.String(), format.prefix) || !strings.Contains(get.Body.String(), token) ||
 					head.Code != http.StatusOK || head.Header().Get("Content-Type") != get.Header().Get("Content-Type") || head.Body.Len() != 0 {
-					t.Fatalf("invalid %q response: GET=%d, HEAD=%d", format.suffix, get.Code, head.Code)
+					t.Fatalf("invalid %q response for %q: GET=%d, HEAD=%d", format.suffix, format.userAgent, get.Code, head.Code)
 				}
-				if format.suffix == "" && !strings.Contains(get.Body.String(), "Expires in ") {
+				for _, response := range []*httptest.ResponseRecorder{get, head} {
+					varyUA := strings.Contains(strings.Join(response.Header().Values("Vary"), ","), "User-Agent")
+					if response.Header().Get("Cache-Control") != "no-store" || varyUA != (format.suffix == "") {
+						t.Fatalf("incorrect cache headers for %q: %v", format.suffix, response.Header())
+					}
+				}
+				if format.content == "text/html" && !strings.Contains(get.Body.String(), "Expires in ") {
 					t.Fatal("token-backed invitation is missing its countdown")
 				}
 				if code != "" {
-					alias := request(http.MethodGet, "/c/"+code+format.suffix)
+					alias := request(http.MethodGet, "/c/"+code+format.suffix, format.userAgent)
 					if alias.Code != http.StatusOK || !strings.HasPrefix(alias.Body.String(), format.prefix) ||
-						(format.suffix != "" && alias.Body.String() != get.Body.String()) {
+						(format.content == "text/plain" && alias.Body.String() != get.Body.String()) {
 						t.Fatalf("unexpected %q alias response: %d", format.suffix, alias.Code)
 					}
-				} else if !mode.shortCodes && request(http.MethodGet, "/c/abcdef"+format.suffix).Code != http.StatusNotFound {
+				} else if !mode.shortCodes && request(http.MethodGet, "/c/abcdef"+format.suffix, format.userAgent).Code != http.StatusNotFound {
 					t.Fatalf("short-code route %q is enabled", format.suffix)
 				}
 			}
-			if result := request(http.MethodPost, tokenPath); result.Code != http.StatusOK || !strings.Contains(result.Body.String(), token) {
+			if result := request(http.MethodPost, tokenPath, "curl/8.0"); result.Code != http.StatusOK ||
+				result.Header().Get("Content-Type") != "application/json" || !strings.Contains(result.Body.String(), token) {
 				t.Fatalf("installed client could not resolve the token link: %d", result.Code)
 			}
 			invitation, err := protocol.Decode(issued["invitation"].(string))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result := request(http.MethodPost, "/c/"+invitation.Secret); result.Code != http.StatusUnauthorized {
+			if result := request(http.MethodPost, "/c/"+invitation.Secret, "curl/8.0"); result.Code != http.StatusUnauthorized {
 				t.Fatalf("one-time invitation secret accepted by the connection URL route: %d", result.Code)
 			}
 		})

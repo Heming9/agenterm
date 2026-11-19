@@ -106,6 +106,19 @@ func installCommandsForURL(u *url.URL) (string, string) {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
+func installerExtension(userAgent string) string {
+	userAgent = strings.ToLower(strings.TrimSpace(userAgent))
+	if strings.HasPrefix(userAgent, "curl/") {
+		return ".sh"
+	}
+	for product := range strings.FieldsSeq(userAgent) {
+		if strings.HasPrefix(product, "powershell/") || strings.HasPrefix(product, "windowspowershell/") {
+			return ".ps1"
+		}
+	}
+	return ""
+}
+
 // Device credentials and short-code aliases share the invitation routes.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +165,10 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
 			return
+		}
+		if extension == "" {
+			w.Header().Add("Vary", "User-Agent")
+			extension = installerExtension(r.UserAgent())
 		}
 		if extension == "" {
 			serveInvitationPage(w, r, entry, code)
