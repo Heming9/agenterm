@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-0891b2" alt="Supports MCP Streamable HTTP">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="Apache 2.0 license"></a>
   </p>
-  <p>🔗 Multiple devices · ⚡ One-click connection · 🪶 Lightweight · 🔓 No SSH required · 🤖 Agent-first</p>
+  <p>🔗 Multiple devices · ⚡ One-click connection · 🪶 Lightweight CLI, just 1 MB · 🔓 No SSH required · 🤖 Agent-first</p>
   <p>
     <a href="#-quick-start">🚀 Quick start</a> ·
     <a href="https://github.com/Heming9/agenterm/releases">📥 Download client</a> ·
