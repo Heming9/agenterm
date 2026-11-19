@@ -49,7 +49,9 @@
 <details>
 <summary>邀请创建与展示</summary>
 
-`create_client` 的 MCP 文本内容直接返回固定的英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致，不受服务器语言设置影响；凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。模板依次包含 Windows 命令、macOS / Linux 命令、连接令牌、启用时的短码和浏览器邀请文案、使用方法和邀请有效期；多设备模式会追加复用提示。
+`create_client` 的 MCP 文本内容直接返回英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致。凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。普通邀请会展示连接令牌及启用时的短码。多设备模式会追加复用提示。
+
+传入 `{"temporary_assistance": true}` 可生成临时协助邀请，默认值为 `false`。受助者通过页面上的命令或收到的一键命令授权并启动临时客户端。临时协助支持终端操作，P2P 文件传输只在普通邀请中提供。
 
 单设备邀请启用短码时，`short_code_url` 是可在浏览器查看连接信息的私密链接（例如 `example.com/c/abcdef`）。设备在线期间短链接和短码不可使用，断线后仍在有效期内时可重新使用。它与短码共用有效期，并在第 10 次成功兑换后失效；查看页面不计入兑换次数。
 

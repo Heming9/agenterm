@@ -161,17 +161,19 @@ type createRequest struct {
 }
 
 type invitationRequest struct {
-	Identity requestIdentity
-	Secret   string
-	Consume  bool
+	Identity           requestIdentity
+	Secret             string
+	Consume            bool
+	TemporaryInstaller bool
 }
 
 type installerInvitation struct {
-	Token          string
-	Secret         string
-	DeviceToken    bool
-	TokenExpiresAt string
-	TokenState     string
+	Token               string
+	Secret              string
+	DeviceToken         bool
+	TokenExpiresAt      string
+	TokenState          string
+	TemporaryAssistance bool
 }
 
 func registerControl[I, O any](mux *http.ServeMux, method string, f func(context.Context, I) (O, error)) {
@@ -263,7 +265,14 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		return "", nil
 	})
 	registerControl(mux, "create", func(_ context.Context, in createRequest) (map[string]any, error) {
-		return s.createClientMode(in.IP, in.Args.MultiDevice, in.Args.TimeoutSeconds)
+		in.Args.TemporaryAssistance = false
+		return s.createClientMode(in.IP, in.Args)
+	})
+	// A separate private route prevents a retained older runtime from silently
+	// ignoring temporary_assistance and issuing an ordinary invitation.
+	registerControl(mux, "create/temporary", func(_ context.Context, in createRequest) (map[string]any, error) {
+		in.Args.TemporaryAssistance = true
+		return s.createClientMode(in.IP, in.Args)
 	})
 	registerControl(mux, "clients", func(ctx context.Context, in toolRequest[listClientsArgs]) ([]clientInfo, error) {
 		return s.waitForClients(ctx, in.Secret, time.Duration(in.Args.WaitMS)*time.Millisecond)
@@ -322,12 +331,20 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		// An online single-device credential cannot be used to start another
 		// client or disclose its token. Keep it for reconnect after disconnect.
 		candidate := s.tokens[entry.Token]
+		owner := s.clientOwners[candidate]
+		entry.TemporaryAssistance = owner != nil && owner.temporaryAssistance
+		// Older frontends reading a device token cannot serve the temporary
+		// installer. Refuse the lookup before they can render a cached install.
+		if entry.TemporaryAssistance && (in.Consume || (entry.DeviceToken && !in.TemporaryInstaller)) {
+			s.mu.Unlock()
+			return installerInvitation{}, &controlError{Status: http.StatusForbidden, Message: serverText("temporary.assistance.requires.installer")}
+		}
 		if !s.multiDevice[candidate] && (s.connecting[candidate] > 0 || s.hasClientLocked(candidate)) {
 			s.mu.Unlock()
 			return installerInvitation{}, &controlError{Status: http.StatusUnauthorized, Message: i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used")}
 		}
 		if len(secret) == shortCodeLength && !in.Consume {
-			if owner := s.clientOwners[s.tokens[entry.Token]]; owner != nil {
+			if owner != nil {
 				if !owner.expires.IsZero() {
 					entry.TokenExpiresAt = owner.expires.UTC().Format(time.RFC3339)
 				}

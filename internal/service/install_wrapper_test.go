@@ -24,7 +24,7 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
-	issued, err := s.createClientMode("", multi, defaultInvitationTimeoutSeconds)
+	issued, err := s.createClientMode("", createClientArgs{TimeoutSeconds: defaultInvitationTimeoutSeconds, MultiDevice: multi})
 	if err != nil {
 		t.Fatal(err)
 	}

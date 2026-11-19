@@ -127,7 +127,7 @@ fn command(setup: Option<&Setup>) -> Command {
 }
 
 #[cfg(unix)]
-pub fn spawn(marker: &[u8], setup: Option<&Setup>) -> Result<Spawned> {
+pub fn spawn(marker: &[u8], setup: Option<&Setup>, temporary_assistance: bool) -> Result<Spawned> {
     use std::{
         fs::File,
         os::{
@@ -167,6 +167,11 @@ pub fn spawn(marker: &[u8], setup: Option<&Setup>) -> Result<Spawned> {
         }
     }
     let mut cmd = command(setup);
+    if temporary_assistance {
+        // The session's shell is owned by Agenterm. Its interactive history
+        // must not update any history file belonging to the user's shell.
+        cmd.env("HISTFILE", "");
+    }
     let path = shell();
     let name = Path::new(&path).file_name().unwrap().to_string_lossy();
     match name.as_ref() {
@@ -375,7 +380,7 @@ impl Job {
 }
 
 #[cfg(windows)]
-pub fn spawn(marker: &[u8], setup: Option<&Setup>) -> Result<Spawned> {
+pub fn spawn(marker: &[u8], setup: Option<&Setup>, _temporary_assistance: bool) -> Result<Spawned> {
     use std::os::windows::process::CommandExt;
     let mut cmd = command(setup);
     let marker = quote(&String::from_utf8_lossy(marker));

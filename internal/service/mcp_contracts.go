@@ -42,6 +42,7 @@ type invitationResult struct {
 	ControlToken             string `json:"control_token"`
 	TokenIdentifier          string `json:"token_identifier,omitempty"`
 	MultiDevice              bool   `json:"multi_device"`
+	TemporaryAssistance      bool   `json:"temporary_assistance,omitempty"`
 	Invitation               string `json:"invitation"`
 	ExpiresAt                string `json:"expires_at"`
 	ShortCode                string `json:"short_code,omitempty"`

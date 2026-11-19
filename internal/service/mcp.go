@@ -86,8 +86,9 @@ type sessionActionArgs struct {
 	terminal.ControlRequest
 }
 type createClientArgs struct {
-	MultiDevice    bool  `json:"multi_device,omitempty"`
-	TimeoutSeconds int64 `json:"timeout_seconds,omitempty"`
+	MultiDevice         bool  `json:"multi_device,omitempty"`
+	TimeoutSeconds      int64 `json:"timeout_seconds,omitempty"`
+	TemporaryAssistance bool  `json:"temporary_assistance,omitempty"`
 }
 
 func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, ms *mcp.Server, admin bool, name, description string, handle func(context.Context, string, In) (*mcp.CallToolResult, Out, error)) {
@@ -257,6 +258,9 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			panic(err)
 		}
 		input.Properties["multi_device"].Description = serverText("mcp.result.multi_device")
+		temporaryAssistance := input.Properties["temporary_assistance"]
+		temporaryAssistance.Description = serverText("mcp.result.temporary_assistance")
+		temporaryAssistance.Default = json.RawMessage("false")
 		timeout := input.Properties["timeout_seconds"]
 		timeout.Description = serverText("mcp.invitation.timeout.seconds")
 		timeout.Minimum = new(float64(1))
@@ -267,7 +271,11 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if a.TimeoutSeconds == 0 {
 				a.TimeoutSeconds = defaultInvitationTimeoutSeconds
 			}
-			out, err := controlCall[map[string]any](ctx, s.control, "create", createRequest{IP: principal.IP, Args: a})
+			method := "create"
+			if a.TemporaryAssistance {
+				method = "create/temporary"
+			}
+			out, err := controlCall[map[string]any](ctx, s.control, method, createRequest{IP: principal.IP, Args: a})
 			if err != nil {
 				return nil, nil, err
 			}
@@ -286,7 +294,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			shell, powershell := installCommands(deviceToken)
 			out["macos_linux_command"] = shell
 			out["windows_powershell_command"] = powershell
-			out["display_text"] = connectionDisplayText(deviceToken, out["macos_linux_command"].(string), out["windows_powershell_command"].(string), code, a.TimeoutSeconds, expires, out["multi_device"].(bool))
+			out["display_text"] = connectionDisplayText(deviceToken, shell, powershell, code, a, expires)
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
 		})
 	}

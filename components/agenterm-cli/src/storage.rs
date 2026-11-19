@@ -16,6 +16,22 @@ pub fn directory() -> Result<PathBuf> {
     private_dir(&p)?;
     Ok(p)
 }
+pub fn assistance_workspace() -> Result<PathBuf> {
+    let error = || crate::ui::tr("temporary.assistance.requires.installer").to_string();
+    let root = std::env::temp_dir().canonicalize().map_err(|_| error())?;
+    let executable = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|_| error())?;
+    let workspace = executable.parent().ok_or_else(error)?;
+    if workspace.parent() != Some(root.as_path())
+        || !workspace
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("agenterm-assistance."))
+    {
+        return Err(error());
+    }
+    Ok(workspace.to_owned())
+}
 pub fn private_dir(p: &std::path::Path) -> Result<()> {
     fs::create_dir_all(p).map_err(|e| e.to_string())?;
     #[cfg(unix)]

@@ -37,7 +37,7 @@ func TestShortCodeStore(t *testing.T) {
 func TestShortCodeLifetimeMatchesToken(t *testing.T) {
 	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	for _, seconds := range []int64{1, 300, 3600} {
-		issued, err := s.createClientMode("", false, seconds)
+		issued, err := s.createClientMode("", createClientArgs{TimeoutSeconds: seconds})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestShortCodeLookupEndpoint(t *testing.T) {
 
 func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
-	issued, err := s.createClientMode("", true, defaultInvitationTimeoutSeconds)
+	issued, err := s.createClientMode("", createClientArgs{TimeoutSeconds: defaultInvitationTimeoutSeconds, MultiDevice: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 
 func TestShortCodesDisabled(t *testing.T) {
 	s := &runtimeState{clientURL: "wss://example.com/agenterm/client"}
-	issued, err := s.createClientMode("", false, 1)
+	issued, err := s.createClientMode("", createClientArgs{TimeoutSeconds: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

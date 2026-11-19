@@ -49,7 +49,9 @@ To transfer a file, call `p2p_transfer_start` for the connected device. The resu
 <details>
 <summary>Invitations and display</summary>
 
-The MCP text content of `create_client` directly returns a fixed English connection template with Markdown code blocks around the commands, identical to `structuredContent.display_text`, regardless of the server language setting. Credentials, expiry and platform commands remain available in `structuredContent` for programmatic use. The template contains the Windows command, macOS / Linux command, connection token with the short code and browser invitation message when enabled, usage steps and invitation validity in that order. Multi-device mode appends an invitation reuse notice.
+The MCP text content of `create_client` returns English connection instructions with Markdown code blocks around commands, identical to `structuredContent.display_text`. Credentials, expiry and platform commands remain available in `structuredContent` for programmatic use. Standard invitations display the connection token and, when enabled, the short code. Multi-device mode appends a reuse notice.
+
+Pass `{"temporary_assistance": true}` to create a temporary assistance invitation. The default is `false`. The recipient authorizes and starts the temporary client by running the command supplied with the invitation. Temporary assistance supports terminal operations. P2P file transfer is available with standard invitations.
 
 When short codes are enabled for a single-device invitation, `short_code_url` is a private browser link (for example, `example.com/c/abcdef`) to the connection instructions. The link and code are unavailable while the device is online and become usable again after disconnection while still valid. The link follows the short code’s lifetime and becomes invalid after the tenth successful redemption. Viewing it does not count as a redemption.
 

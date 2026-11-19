@@ -12,7 +12,8 @@ import (
 const defaultInvitationTimeoutSeconds int64 = 900
 const maxInvitationTimeoutSeconds int64 = (1<<63 - 1) / int64(time.Second)
 
-func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutSeconds int64) (map[string]any, error) {
+func (s *runtimeState) createClientMode(owner string, args createClientArgs) (map[string]any, error) {
+	multiDevice, timeoutSeconds := args.MultiDevice, args.TimeoutSeconds
 	if timeoutSeconds < 1 || timeoutSeconds > maxInvitationTimeoutSeconds {
 		return nil, i18n.NewError("invitation.timeout.invalid", maxInvitationTimeoutSeconds)
 	}
@@ -85,8 +86,11 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 		s.clientOwners = make(map[string]*clientOwner)
 	}
 	s.nextClientOrder++
-	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires}
+	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires, temporaryAssistance: args.TemporaryAssistance}
 	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": valueExpires.UTC().Format(time.RFC3339), "token_initial_expires_at": expires.UTC().Format(time.RFC3339)}
+	if args.TemporaryAssistance {
+		result["temporary_assistance"] = true
+	}
 	if code != "" {
 		result["short_code"] = code
 		result["short_code_url"] = shortCodeURL(token, code)
@@ -95,24 +99,34 @@ func (s *runtimeState) createClientMode(owner string, multiDevice bool, timeoutS
 	shell, powershell := installCommands(token)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
-	result["display_text"] = connectionDisplayText(token, shell, powershell, code, timeoutSeconds, valueExpires, multiDevice)
+	result["display_text"] = connectionDisplayText(token, shell, powershell, code, args, valueExpires)
 	return result, nil
 }
 
 // Presentation belongs to the replaceable frontend too: a retained runtime may
 // still return an older display_text while its credentials and commands remain
 // valid. Never reconstruct or change those credentials when updating the prose.
-func connectionDisplayText(token, shell, powershell, code string, timeoutSeconds int64, expires time.Time, multiDevice bool) string {
-	connectionSection := "Connection token:\n```\n" + token + "\n```"
-	firstStep := "run the command above for your system."
-	tokenAlternative := ""
-	if code != "" {
-		connectionSection = "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + shortCodeURL(token, code)
-		firstStep = "open the browser invitation link above or run the command for your system."
-		tokenAlternative = " or short code above"
+func connectionDisplayText(token, shell, powershell, code string, args createClientArgs, expires time.Time) string {
+	expiry := expires.UTC().Format("2006-01-02 15:04:05")
+	var text string
+	if args.TemporaryAssistance {
+		browser := ""
+		if code != "" {
+			browser = "\n\nBrowser invitation link:\n" + shortCodeURL(token, code)
+		}
+		text = fmt.Sprintf(i18n.Text("en", "connection.display.temporary.assistance"), powershell, shell, browser, args.TimeoutSeconds, expiry)
+	} else {
+		connectionSection := "Connection token:\n```\n" + token + "\n```"
+		firstStep := "run the command above for your system."
+		tokenAlternative := ""
+		if code != "" {
+			connectionSection = "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + shortCodeURL(token, code)
+			firstStep = "open the browser invitation link above or run the command for your system."
+			tokenAlternative = " or short code above"
+		}
+		text = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, firstStep, tokenAlternative, args.TimeoutSeconds, expiry)
 	}
-	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, firstStep, tokenAlternative, timeoutSeconds, expires.UTC().Format("2006-01-02 15:04:05"))
-	if multiDevice {
+	if args.MultiDevice {
 		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
 	}
 	return text

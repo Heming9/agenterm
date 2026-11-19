@@ -122,7 +122,8 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 		CountdownLabel, CountdownFallback      string
 		Remaining                              int64
 		CLIURL                                 template.URL
-	}{windows, shell, entry.Token, version.Current, serverAddress, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL)}); err != nil {
+		TemporaryAssistance                    bool
+	}{windows, shell, entry.Token, version.Current, serverAddress, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL), entry.TemporaryAssistance}); err != nil {
 		http.Error(w, "Unable to render invitation page", http.StatusInternalServerError)
 		return
 	}

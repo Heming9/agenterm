@@ -2,7 +2,7 @@
 # Project: https://github.com/Heming9/agenterm
 # SPDX-License-Identifier: Apache-2.0
 # License: https://www.apache.org/licenses/LICENSE-2.0
-param([AllowEmptyString()][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base, [string]$CredentialKind = "invitation")
+param([AllowEmptyString()][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base, [string]$CredentialKind = "invitation", [string]$InstallMode = "cached")
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
@@ -55,8 +55,15 @@ Write-Host (Text 'installer.server.s' @($origin))
 Say 'installer.the.server.can.control.this.computer.with'
 Write-Host ''
 Say 'installer.consent.menu'
-$choices = @((Text 'installer.consent.temporary'), (Text 'installer.consent.persistent'), (Text 'installer.consent.no'))
 $choice = 0
+$numberPrompt = 'installer.consent.number'
+if ($InstallMode -eq 'temporary-assistance') {
+  $choices = @((Text 'installer.consent.allow'), (Text 'installer.consent.no'))
+  $numberPrompt = 'installer.consent.binary.number'
+} else {
+  $choices = @((Text 'installer.consent.temporary'), (Text 'installer.consent.persistent'), (Text 'installer.consent.no'))
+}
+$lastChoice = $choices.Count - 1
 if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
   $previousLines = 0
   while ($true) {
@@ -70,41 +77,47 @@ if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
       [Console]::SetCursorPosition(0, $top)
     }
     Write-Host "`r" -NoNewline
-    for ($i = 0; $i -lt 3; $i++) {
+    for ($i = 0; $i -lt $choices.Count; $i++) {
       if ($i -eq $choice) {
         if ($useColor) { Write-Host (" ▶ " + $choices[$i] + " ") -ForegroundColor Black -BackgroundColor White -NoNewline }
         else { Write-Host (" ▶ " + $choices[$i] + " ") -NoNewline }
       } else { Write-Host ("   " + $choices[$i] + " ") -NoNewline }
-      if ($vertical -and $i -lt 2) { Write-Host '   ' } else { Write-Host '   ' -NoNewline }
+      if ($vertical -and $i -lt $lastChoice) { Write-Host '   ' } else { Write-Host '   ' -NoNewline }
     }
-    $previousLines = if ($vertical) { 3 } else { 1 }
+    $previousLines = if ($vertical) { $choices.Count } else { 1 }
     $key = [Console]::ReadKey($true)
     if ($key.Key -eq 'Enter') { break }
     if (($key.Key -eq 'LeftArrow' -or $key.Key -eq 'UpArrow') -and $choice -gt 0) { $choice-- }
-    if (($key.Key -eq 'RightArrow' -or $key.Key -eq 'DownArrow') -and $choice -lt 2) { $choice++ }
+    if (($key.Key -eq 'RightArrow' -or $key.Key -eq 'DownArrow') -and $choice -lt $lastChoice) { $choice++ }
   }
   Write-Host ''
 } else {
-  Write-Host ("1. {0}    2. {1}    3. {2}" -f $choices)
-  Write-Host (Text 'installer.consent.number') -NoNewline
+  $numberedChoices = for ($i = 0; $i -lt $choices.Count; $i++) { "{0}. {1}" -f ($i + 1), $choices[$i] }
+  Write-Host ($numberedChoices -join '    ')
+  Write-Host (Text $numberPrompt) -NoNewline
   $answer = [Console]::ReadLine()
-  if ($answer -eq '1') { $choice = 0 } elseif ($answer -eq '2') { $choice = 1 } else { $choice = 2 }
+  if ($answer -eq '1') { $choice = 0 } elseif ($answer -eq '2') { $choice = 1 } else { $choice = $lastChoice }
 }
-if ($choice -eq 2) { Say 'installer.connection.cancelled'; return }
+if ($choice -eq $lastChoice) { Say 'installer.connection.cancelled'; return }
 $clientOptions = @()
 if ($choice -eq 0) { $clientOptions += '-connection-mode=temporary' } else { $clientOptions += '-connection-mode=persistent' }
 Say 'installer.connection.progress'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
 Say 'installer.2.4.preparing.client'
-if (-not $env:LOCALAPPDATA) { throw (Text 'installer.localappdata.is.not.set') }
-$cache = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
-New-Item -ItemType Directory -Path $cache -Force | Out-Null
-$work = Join-Path $cache ('.tmp-' + [System.Guid]::NewGuid())
+if ($InstallMode -eq 'temporary-assistance') {
+  $work = Join-Path ([IO.Path]::GetTempPath()) ('agenterm-assistance.' + [System.Guid]::NewGuid())
+  $destination = $work
+} else {
+  if (-not $env:LOCALAPPDATA) { throw (Text 'installer.localappdata.is.not.set') }
+  $destination = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
+  New-Item -ItemType Directory -Path $destination -Force | Out-Null
+  $work = Join-Path $destination ('.tmp-' + [System.Guid]::NewGuid())
+}
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
   $binary = "agenterm-client-cli-windows-$arch.exe"
-  $program = Join-Path $cache $binary
+  $program = Join-Path $destination $binary
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 "$base/SHA256SUMS" -OutFile (Join-Path $work 'SHA256SUMS')
   $manifest = Get-Content (Join-Path $work 'SHA256SUMS')
   function Get-ExpectedHash([string]$Name) {
@@ -156,26 +169,38 @@ try {
     $staged = Join-Path $work $binary
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $staged).Hash -ne $expectedBinary) { throw (Text 'installer.client.checksum.mismatch') }
     if (Test-Path -LiteralPath $program -PathType Container) { throw (Text 'installer.client.cache.path.is.a.directory') }
-    try {
-      Move-Item -LiteralPath $staged -Destination $program -Force -ErrorAction Stop
-    } catch {
-      # Another running instance can keep the cached executable locked on Windows.
-      # The independently verified staged client remains usable for this session.
-      $program = $staged
+    if ($work -ne $destination) {
+      try {
+        Move-Item -LiteralPath $staged -Destination $program -Force -ErrorAction Stop
+      } catch {
+        # Another running instance can keep the cached executable locked on Windows.
+        # The independently verified staged client remains usable for this session.
+        $program = $staged
+      }
     }
     Say 'installer.client.verified'
   }
   # Keep the client in the language used for the authorization prompt, even
   # when Windows display language and regional format are different.
   $previousLanguage = $env:AGENTERM_LANG
+  $previousLinkRegistration = $env:AGENTERM_SKIP_LINK_REGISTRATION
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
-    if ($Invitation) {
+    if ($InstallMode -eq 'temporary-assistance') {
+      $env:AGENTERM_SKIP_LINK_REGISTRATION = '1'
+      & $program -token $Invitation -temporary-assistance
+    } elseif ($Invitation) {
       if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program -token $Invitation @clientOptions } else { & $program -invite $Invitation -consent-confirmed @clientOptions }
     } else {
       & $program -token= @clientOptions
     }
     $clientExitCode = $LASTEXITCODE
-  } finally { $env:AGENTERM_LANG = $previousLanguage }
-} finally { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }
+  } finally {
+    $env:AGENTERM_LANG = $previousLanguage
+    $env:AGENTERM_SKIP_LINK_REGISTRATION = $previousLinkRegistration
+  }
+} finally {
+  if ($InstallMode -eq 'temporary-assistance') { Remove-Item -Recurse -Force -LiteralPath $work }
+  else { Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue }
+}
 if ($clientExitCode -ne 0) { exit $clientExitCode }

@@ -21,16 +21,27 @@ fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let link_launch = deeplink::is_launch(&args);
     let args = deeplink::arguments(args)?;
+    let options = ui::Options::parse(args)?;
     if !link_launch
+        && !options
+            .as_ref()
+            .is_some_and(|options| options.temporary_assistance)
         && std::env::var_os("AGENTERM_SKIP_LINK_REGISTRATION").as_deref()
             != Some(std::ffi::OsStr::new("1"))
         && let Err(error) = deeplink::register()
     {
         eprintln!("Agenterm link registration: {error}");
     }
-    let Some(mut options) = ui::Options::parse(args)? else {
+    let Some(mut options) = options else {
         return Ok(());
     };
+    let workspace = options
+        .temporary_assistance
+        .then(storage::assistance_workspace)
+        .transpose()?;
+    if workspace.is_some() {
+        Token::decode(&options.token)?;
+    }
     if !options.invite.is_empty() {
         let invitation = Token::decode(&options.invite)?;
         if !options.consent {
@@ -50,7 +61,7 @@ fn run() -> Result<()> {
     let stopped = Arc::new(AtomicBool::new(false));
     if !options.plain && io::stdin().is_terminal() && io::stdout().is_terminal() {
         install_signal(stopped.clone())?;
-        return tui::run(options, stopped);
+        return tui::run(options, stopped, workspace);
     }
     ui::heading();
     let invited = !options.invite.is_empty();
@@ -92,6 +103,7 @@ fn run() -> Result<()> {
         options.temporary,
         stopped,
         ui::Reporter::default(),
+        workspace,
     )
 }
 

@@ -8,6 +8,7 @@ version='@RELEASE_TAG@'
 invitation=${1:-}
 base=${2:-}
 credential_kind=${3:-invitation}
+install_mode=${4:-cached}
 origin=${base%/downloads/*}
 locale=${AGENTERM_LANG:-}
 if [ -z "$locale" ] || [ "$locale" = auto ]; then
@@ -51,9 +52,21 @@ printf '\n%s%s%s\n' "$warning" "$(text installer.remote.control.authorization)" 
 say installer.server.s "$origin"
 say installer.the.server.can.control.this.computer.with
 printf '\n'
-say installer.consent.menu
 choice=1
 choose_consent() {
+  allow_label=$(text installer.consent.temporary)
+  persistent_label=$(text installer.consent.persistent)
+  deny_label=$(text installer.consent.no)
+  number_prompt=$(text installer.consent.number)
+  if [ "$install_mode" = temporary-assistance ]; then
+    allow_label=$(text installer.consent.allow)
+    number_prompt=$(text installer.consent.binary.number)
+    set -- "$allow_label" "$deny_label"
+  else
+    set -- "$allow_label" "$persistent_label" "$deny_label"
+  fi
+  last_choice=$#
+say installer.consent.menu
 if [ -t 0 ] && [ -t 1 ] && command -v stty >/dev/null 2>&1; then
   old_tty=$(stty -g)
   stty -echo -icanon min 1 time 0
@@ -66,34 +79,39 @@ if [ -t 0 ] && [ -t 1 ] && command -v stty >/dev/null 2>&1; then
     if [ "$previous_lines" -gt 1 ]; then printf '\033[%sA' "$((previous_lines - 1))"; fi
     printf '\r\033[J'
     index=0
-    for label in "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$(text installer.consent.no)"; do
+    for label do
       index=$((index + 1))
       if [ "$index" -eq "$choice" ]; then
         if [ -n "$reset" ]; then printf '\033[7m ▶ %s \033[0m' "$label"; else printf ' ▶ %s ' "$label"; fi
       else
         printf '   %s ' "$label"
       fi
-      if [ "$vertical" -eq 1 ] && [ "$index" -lt 3 ]; then printf '\n'; else printf '   '; fi
+      if [ "$vertical" -eq 1 ] && [ "$index" -lt "$last_choice" ]; then printf '\n'; else printf '   '; fi
     done
-    if [ "$vertical" -eq 1 ]; then previous_lines=3; else previous_lines=1; fi
+    if [ "$vertical" -eq 1 ]; then previous_lines=$last_choice; else previous_lines=1; fi
     key=$(dd bs=1 count=1 2>/dev/null || true; printf '.')
     case "$key" in
-      .) choice=3; break ;;
+      .) choice=$last_choice; break ;;
       "$(printf '\n.')"|"$(printf '\r.')") break ;;
-      "$(printf '\003.')"|"$(printf '\004.')") choice=3; break ;;
+      "$(printf '\003.')"|"$(printf '\004.')") choice=$last_choice; break ;;
       "$(printf '\033.')")
         sequence=$(dd bs=1 count=2 2>/dev/null || true)
-        case "$sequence" in '[C'|'[B') [ "$choice" -ge 3 ] || choice=$((choice + 1));; '[D'|'[A') [ "$choice" -le 1 ] || choice=$((choice - 1));; esac ;;
-      1.|2.|3.) choice=${key%.} ;;
+        case "$sequence" in '[C'|'[B') [ "$choice" -ge "$last_choice" ] || choice=$((choice + 1));; '[D'|'[A') [ "$choice" -le 1 ] || choice=$((choice - 1));; esac ;;
+      1.|2.|3.) [ "${key%.}" -gt "$last_choice" ] || choice=${key%.} ;;
     esac
   done
   stty "$old_tty"
   trap - HUP INT TERM
   printf '\n'
 else
-  printf '1. %s    2. %s    3. %s\n' "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$(text installer.consent.no)"
-  printf '%s' "$(text installer.consent.number)"
-  read -r choice || choice=3
+  index=0
+  for label do
+    index=$((index + 1))
+    if [ "$index" -gt 1 ]; then printf '    '; fi
+    printf '%s. %s' "$index" "$label"
+  done
+  printf '\n%s' "$number_prompt"
+  read -r choice || choice=$last_choice
 fi
 }
 terminal_input=0
@@ -103,23 +121,38 @@ if [ ! -t 0 ] && [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
 else
   choose_consent
 fi
+if [ "$install_mode" = temporary-assistance ] && [ "$choice" != 1 ]; then
+  choice=3
+fi
 case "$choice" in 1) connection_mode=temporary;; 2) connection_mode=persistent;; *) say installer.connection.cancelled; exit 0;; esac
 say installer.connection.progress
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) say installer.unsupported.system >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) say installer.unsupported.architecture >&2; exit 1;; esac
-[ -n "${HOME:-}" ] || { say installer.missing.home >&2; exit 1; }
-case "$os" in
-  macos) cache_root="${HOME}/Library/Caches/Agenterm" ;;
-  linux) case "${XDG_CACHE_HOME:-}" in /*) cache_root="$XDG_CACHE_HOME/agenterm";; *) cache_root="${HOME}/.cache/agenterm";; esac ;;
-esac
 umask 077
-cache="$cache_root/$version/$os-$arch"
-mkdir -p "$cache"
-work=$(mktemp -d "$cache/.tmp.XXXXXXXX")
-trap 'rm -rf "$work"' EXIT HUP INT TERM
+if [ "$install_mode" = temporary-assistance ]; then
+  temp_root=${TMPDIR:-}
+  if [ -z "$temp_root" ] && [ "$os" = macos ]; then
+    temp_root=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)
+  fi
+  temp_root=${temp_root:-/tmp}
+  case "$temp_root" in /*) ;; *) say installer.invalid.temp.directory >&2; exit 1;; esac
+  work=$(mktemp -d "$temp_root/agenterm-assistance.XXXXXXXX")
+  destination=$work
+else
+  [ -n "${HOME:-}" ] || { say installer.missing.home >&2; exit 1; }
+  case "$os" in
+    macos) cache_root="${HOME}/Library/Caches/Agenterm" ;;
+    linux) case "${XDG_CACHE_HOME:-}" in /*) cache_root="$XDG_CACHE_HOME/agenterm";; *) cache_root="${HOME}/.cache/agenterm";; esac ;;
+  esac
+  destination="$cache_root/$version/$os-$arch"
+  mkdir -p "$destination"
+  work=$(mktemp -d "$destination/.tmp.XXXXXXXX")
+fi
+trap 'rm -rf "$work"' EXIT
+trap 'exit 130' HUP INT TERM
 say installer.2.4.preparing.client
 name="agenterm-client-cli-$os-$arch"
-binary="$cache/$name"
+binary="$destination/$name"
 download_asset() {
   timeout=$1
   shift
@@ -170,10 +203,14 @@ else
   [ "$(checksum "$work/$name")" = "$expected_binary" ] || { say installer.client.checksum.mismatch >&2; exit 1; }
   chmod 700 "$work/$name"
   [ ! -d "$binary" ] || { say installer.client.cache.path.is.a.directory >&2; exit 1; }
-  mv -f "$work/$name" "$binary"
+  if [ "$work" != "$destination" ]; then mv -f "$work/$name" "$binary"; fi
   say installer.client.verified
 fi
 run_client() {
+if [ "$install_mode" = temporary-assistance ]; then
+  TMPDIR="$temp_root" AGENTERM_SKIP_LINK_REGISTRATION=1 "$binary" -token "$invitation" -temporary-assistance
+  return
+fi
 if [ -n "$invitation" ]; then
   case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" -token "$invitation" "-connection-mode=$connection_mode";; *) "$binary" -invite "$invitation" -consent-confirmed "-connection-mode=$connection_mode";; esac
 else

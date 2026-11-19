@@ -115,20 +115,25 @@ func TestCreateClientTimeoutSchema(t *testing.T) {
 		var schema struct {
 			Required   []string
 			Properties map[string]struct {
-				Type, Description         string
-				Default, Minimum, Maximum int64
+				Type, Description string
+				Default           json.RawMessage
+				Minimum, Maximum  int64
 			}
 		}
 		if err := json.Unmarshal(data, &schema); err != nil {
 			t.Fatal(err)
 		}
 		timeout := schema.Properties["timeout_seconds"]
-		if timeout.Type != "integer" || timeout.Description == "" || timeout.Default != 900 || timeout.Minimum != 1 || timeout.Maximum != maxInvitationTimeoutSeconds {
+		if timeout.Type != "integer" || timeout.Description == "" || string(timeout.Default) != "900" || timeout.Minimum != 1 || timeout.Maximum != maxInvitationTimeoutSeconds {
 			t.Fatalf("incorrect timeout schema: %s", data)
 		}
+		temporary := schema.Properties["temporary_assistance"]
+		if temporary.Type != "boolean" || temporary.Description == "" || string(temporary.Default) != "false" {
+			t.Fatalf("incorrect temporary assistance schema: %s", data)
+		}
 		for _, required := range schema.Required {
-			if required == "timeout_seconds" {
-				t.Fatal("timeout_seconds must be optional")
+			if required == "timeout_seconds" || required == "temporary_assistance" {
+				t.Fatalf("%s must be optional", required)
 			}
 		}
 		return

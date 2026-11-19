@@ -27,6 +27,7 @@ use log::{Kind, Log, clean};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     io::{self, Write},
+    path::PathBuf,
     sync::{
         Arc, Once,
         atomic::{AtomicBool, AtomicU8, Ordering},
@@ -212,6 +213,8 @@ struct App {
     clipboard: Clipboard,
     worker: Option<Worker>,
     exiting: bool,
+    workspace: Option<PathBuf>,
+    exit_result: Option<Result<()>>,
 }
 impl App {
     fn new(options: Options) -> Self {
@@ -257,6 +260,8 @@ impl App {
             clipboard: Clipboard::default(),
             worker: None,
             exiting: false,
+            workspace: None,
+            exit_result: None,
         }
     }
     fn body_height(&self) -> usize {
@@ -351,8 +356,10 @@ impl App {
         let (tx, events) = mpsc::sync_channel(256);
         let reporter = Reporter::channel(tx, stop.clone());
         let temporary = self.temporary;
-        let thread =
-            std::thread::spawn(move || connection::run(&value, invited, temporary, stop, reporter));
+        let workspace = self.workspace.clone();
+        let thread = std::thread::spawn(move || {
+            connection::run(&value, invited, temporary, stop, reporter, workspace)
+        });
         self.worker = Some(Worker {
             stopped,
             events,
@@ -443,6 +450,11 @@ impl App {
                 .thread
                 .join()
                 .unwrap_or_else(|_| Err("connection worker failed".into()));
+            if self.workspace.is_some() {
+                self.exiting = true;
+                self.exit_result = Some(result);
+                return true;
+            }
             self.state = State::Disconnected;
             self.latency = None;
             self.selection = None;
@@ -793,13 +805,14 @@ impl App {
     }
 }
 
-pub fn run(options: Options, shutdown: Arc<AtomicBool>) -> Result<()> {
+pub fn run(options: Options, shutdown: Arc<AtomicBool>, workspace: Option<PathBuf>) -> Result<()> {
     let auto_connect =
         !options.token.is_empty() || !options.invite.is_empty() || options.token_provided;
     let guard = TerminalGuard::enter(true).map_err(|e| e.to_string())?;
     let mut terminal =
         Terminal::new(CrosstermBackend::new(io::stdout())).map_err(|e| e.to_string())?;
     let mut app = App::new(options);
+    app.workspace = workspace;
     if let Ok((w, h)) = terminal::size() {
         app.resize(w, h);
     }
@@ -848,5 +861,6 @@ pub fn run(options: Options, shutdown: Arc<AtomicBool>) -> Result<()> {
     drop(terminal);
     drop(guard);
     app.shutdown();
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| e.to_string())?;
+    app.exit_result.unwrap_or(Ok(()))
 }

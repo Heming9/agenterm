@@ -68,6 +68,10 @@ The one-command connection stores a client in a local cache. You can delete it a
 | Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
 | Windows | `%LOCALAPPDATA%\Agenterm\cache` |
 
+### Temporary assistance invitations
+
+Run the command supplied with the invitation and approve the connection. The installer downloads and runs the client in the system temporary directory. Agenterm streams terminal output without creating a local session log. It can write temporary scripts to run commands. On normal exit the installer removes the downloaded client and its temporary files. Changes made by the assistance task are preserved. If the installer and client are both forcibly stopped, or the device loses power, temporary files can remain.
+
 ## ❓ Troubleshooting
 
 ### Connection failures or expired invitations

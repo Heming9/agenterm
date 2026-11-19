@@ -6,9 +6,12 @@ use crate::{
     transport,
     ui::{Event, Reporter},
 };
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 pub fn short_target(address: &Address) -> Address {
@@ -32,13 +35,23 @@ pub fn run(
     temporary: bool,
     stopped: Arc<AtomicBool>,
     reporter: Reporter,
+    workspace: Option<PathBuf>,
 ) -> Result<()> {
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
+    // A temporary installer launches a single connection and the server
+    // already arbitrates token admission. The reusable CLI also reserves a
+    // per-server lock across its local instances.
+    let reserve = |address: &Address| {
+        workspace
+            .is_none()
+            .then(|| storage::lock(address))
+            .transpose()
+    };
     let (token, reservation) = if invited {
         let invitation = Token::decode(value)?;
-        let reservation = storage::lock(&invitation.address)?;
+        let reservation = reserve(&invitation.address)?;
         if stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -50,12 +63,12 @@ pub fn run(
         (token, reservation)
     } else if value.starts_with("Agenterm_") {
         let token = Token::decode(value)?;
-        let reservation = storage::lock(&token.address)?;
+        let reservation = reserve(&token.address)?;
         (token, reservation)
     } else {
         let address = protocol::short_address(value)?;
         let target = short_target(&address);
-        let reservation = storage::lock(&target)?;
+        let reservation = reserve(&target)?;
         if stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -69,7 +82,7 @@ pub fn run(
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
-    let manager = Manager::with_reporter(stopped.clone(), reporter);
+    let manager = Manager::with_reporter(stopped.clone(), reporter, workspace);
     let result = transport::run(&token, &manager, &stopped, temporary, invited);
     manager.close();
     drop(reservation);

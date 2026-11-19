@@ -87,6 +87,14 @@
     "en": "MCP endpoint: %s/mcp\n",
     "zh-CN": "MCP 接口：%s/mcp\n"
   },
+  "connection.display.temporary.assistance": {
+    "en": "Windows one-click connection command:\n```\n%s\n```\n\nmacOS / Linux one-click connection command:\n```\n%s\n```%s\n\nRun the command for your system and approve temporary assistance. The installer removes the client and temporary files when the session ends normally.\n\nInvitation validity: %d seconds.\nExpires at (UTC): %s",
+    "zh-CN": "Windows 一键连接命令：\n```\n%s\n```\n\nmacOS / Linux 一键连接命令：\n```\n%s\n```%s\n\n运行对应系统的命令并确认临时协助授权。会话正常结束后，安装器会移除客户端和临时文件。\n\n邀请有效期：%d 秒。\n到期时间（UTC）：%s"
+  },
+  "temporary.assistance.requires.installer": {
+    "en": "Use the one-click installer supplied with this temporary assistance invitation.",
+    "zh-CN": "请使用本次临时协助邀请提供的一键安装命令。"
+  },
   "connection.display.text": {
     "en": "Windows one-click connection command:\n```\n%s\n```\n\nmacOS / Linux one-click connection command:\n```\n%s\n```\n\n%s\n\nHow to connect:\n1. On the computer that needs help, %s\n2. Follow the on-screen instructions and allow the connection.\n3. Keep the client running while connected. To end the session, click Disconnect or close the client.\n\nIf Agenterm is already installed, open the client and enter the connection token%s.\n\nInvitation validity: %d seconds (expires at %s UTC).",
     "zh-CN": "Windows 一键连接命令：\n```\n%s\n```\n\nmacOS / Linux 一键连接命令：\n```\n%s\n```\n\n%s\n\n使用方法：\n1. 在需要协助的电脑上，%s\n2. 根据页面或屏幕提示，同意连接。\n3. 连接后请保持客户端运行。需要结束协助时，点击“断开连接”或关闭客户端。\n\n如果电脑已安装 Agenterm，打开客户端，输入上方的连接令牌%s。\n\n邀请有效期：%d 秒（截止时间：%s UTC）。"
@@ -843,6 +851,10 @@
     "en": "Device connection credential; it cannot authorize MCP control. Use the separate control_token for control access.",
     "zh-CN": "设备连接凭证，不能用于 MCP 控制。控制访问须使用单独的 control_token。"
   },
+  "mcp.result.temporary_assistance": {
+    "en": "Use a temporary installation for terminal assistance and remove it after disconnecting. Defaults to false. Run the invitation's one-click installer on the target device. P2P is unavailable for this mode.",
+    "zh-CN": "使用临时安装进行终端协助，断开后移除本次安装。默认 false。请在受助设备上运行邀请提供的一键安装命令。此模式不支持 P2P。"
+  },
   "mcp.result.multi_device": {
     "en": "True permits multiple simultaneous devices and reuses the invitation until expiry. False allows one device and a single-use invitation.",
     "zh-CN": "true 允许多台设备同时连接，邀请在过期前可复用；false 仅允许一台设备和单次使用邀请。"
@@ -1063,9 +1075,21 @@
     "en": "Whether this device supports the terminal client API.",
     "zh-CN": "此设备是否支持终端 client API。"
   },
+  "installer.invalid.temp.directory": {
+    "en": "The temporary directory must have an absolute path.",
+    "zh-CN": "系统临时目录必须使用绝对路径。"
+  },
   "installer.consent.menu": {
     "en": "Choose authorization (↑/↓/←/→, Enter):",
     "zh-CN": "选择授权方式（↑/↓/←/→，回车确认）："
+  },
+  "installer.consent.allow": {
+    "en": "Agree to authorization",
+    "zh-CN": "同意授权"
+  },
+  "installer.consent.binary.number": {
+    "en": "Enter 1 or 2: ",
+    "zh-CN": "请输入 1 或 2："
   },
   "installer.consent.no": {
     "en": "Deny authorization",

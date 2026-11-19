@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agenterm-cli"
-version = "0.20.7"
+version = "0.20.8"
 dependencies = [
  "base64",
  "crossterm",

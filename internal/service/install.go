@@ -113,7 +113,10 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		if r.Method == http.MethodPost && !acceptClientVersion(w, r) {
 			return
 		}
-		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential, Consume: r.Method == http.MethodPost})
+		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{
+			Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential,
+			Consume: r.Method == http.MethodPost, TemporaryInstaller: true,
+		})
 		if r.Method == http.MethodPost {
 			if err != nil {
 				writeControlError(w, err)
@@ -160,11 +163,14 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		body := strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)
-		kind := "token"
+		args := " 'token'"
+		if entry.TemporaryAssistance {
+			args += " 'temporary-assistance'"
+		}
 		if powershell {
-			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + " " + psQuote(kind) + "\n"
+			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + args + "\n"
 		} else {
-			body = "#!/bin/sh\n{\nset -- " + shQuote(value) + " " + shQuote(base) + " " + shQuote(kind) + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n") + "\n}\n"
+			body = "#!/bin/sh\n{\nset -- " + shQuote(value) + " " + shQuote(base) + args + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n") + "\n}\n"
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if r.Method == http.MethodGet {

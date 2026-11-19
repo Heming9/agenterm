@@ -58,7 +58,7 @@ jobs:
           cargo +1.99.1 build --locked --manifest-path components/agenterm-cli/Cargo.toml
           printf 'AGENTERM_RUST_CLI=%s/components/agenterm-cli/target/debug/agenterm-cli.exe\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Test Windows installer and connection probes
-        run: go test ./internal/service -run 'TestPowerShellInvitationInstaller|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
+        run: go test ./internal/service -run 'TestPowerShellInvitationInstaller|TestTemporaryAssistance|TestProbe|TestReleaseDownloads|TestInstallWrapper|TestConnectionVersion|TestHeartbeat'
       - name: Test MCP execution and session lifecycle on Windows
         run: go test ./internal/service -run 'TestExecution|TestMCPExecution|TestMultiDevice|TestMCPToolDiscovery|TestSession|TestConcurrentSessionControls|TestAllToolResultsMatchPublishedContracts'
       - name: Test deterministic download archives on Windows

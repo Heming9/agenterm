@@ -10,7 +10,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Child,
     sync::{
         Arc, Condvar, Mutex,
@@ -43,6 +43,7 @@ struct ManagerInner {
     closed: AtomicBool,
     activity: Arc<Mutex<Instant>>,
     reporter: ui::Reporter,
+    workspace: Option<PathBuf>,
 }
 struct Terminal {
     id: String,
@@ -160,17 +161,25 @@ fn wait_ms(n: u64) -> Result<Duration> {
 impl Manager {
     #[cfg(test)]
     pub fn new(stopped: Arc<AtomicBool>) -> Self {
-        Self::with_reporter(stopped, ui::Reporter::default())
+        Self::with_reporter(stopped, ui::Reporter::default(), None)
     }
     pub fn reporter(&self) -> &ui::Reporter {
         &self.inner.reporter
     }
-    pub fn with_reporter(stopped: Arc<AtomicBool>, reporter: ui::Reporter) -> Self {
+    pub fn temporary_assistance(&self) -> bool {
+        self.inner.workspace.is_some()
+    }
+    pub fn with_reporter(
+        stopped: Arc<AtomicBool>,
+        reporter: ui::Reporter,
+        workspace: Option<PathBuf>,
+    ) -> Self {
         Self {
             inner: Arc::new(ManagerInner {
                 sessions: Mutex::new(BTreeMap::new()),
                 stopped,
                 reporter,
+                workspace,
                 closed: AtomicBool::new(false),
                 activity: Arc::new(Mutex::new(Instant::now())),
             }),
@@ -301,6 +310,7 @@ impl Manager {
                 deadline,
                 self.inner.activity.clone(),
                 self.inner.reporter.clone(),
+                self.inner.workspace.as_deref(),
             )?;
             sessions.insert(id.clone(), t.clone());
             t
@@ -522,15 +532,17 @@ impl Terminal {
         deadline: Instant,
         activity: Arc<Mutex<Instant>>,
         reporter: ui::Reporter,
+        workspace: Option<&Path>,
     ) -> Result<Arc<Self>> {
-        let directory = std::env::temp_dir().join(format!(
+        let default_root = std::env::temp_dir();
+        let directory = workspace.unwrap_or(&default_root).join(format!(
             "agenterm-rust-{}-{}",
             std::process::id(),
             random(12)?
         ));
         crate::storage::private_dir(&directory)?;
         let marker = format!("\x1eagenterm:{}:", random(24)?).into_bytes();
-        let spawned = match platform::spawn(&marker, setup) {
+        let spawned = match platform::spawn(&marker, setup, workspace.is_some()) {
             Ok(p) => p,
             Err(e) => {
                 let _ = fs::remove_dir_all(&directory);

@@ -102,6 +102,7 @@ pub struct Options {
     pub plain: bool,
     pub token_provided: bool,
     pub mode_provided: bool,
+    pub temporary_assistance: bool,
 }
 impl Options {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Self>> {
@@ -131,6 +132,9 @@ impl Options {
                 }
                 "plain" => {
                     o.plain = boolean(inline.as_deref())?;
+                }
+                "temporary-assistance" => {
+                    o.temporary_assistance = boolean(inline.as_deref())?;
                 }
                 "consent-confirmed" => {
                     o.consent = match inline.as_deref() {
@@ -171,6 +175,9 @@ impl Options {
         }
         if o.consent && o.invite.is_empty() {
             return Err("-consent-confirmed requires -invite".into());
+        }
+        if o.temporary_assistance && (!o.temporary || !o.token.starts_with("Agenterm_")) {
+            return Err(tr("temporary.assistance.requires.installer").into());
         }
         Ok(Some(o))
     }

@@ -68,6 +68,10 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 | Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
 | Windows | `%LOCALAPPDATA%\Agenterm\cache` |
 
+### 临时协助邀请
+
+如果发起方创建了临时协助邀请，请运行邀请中的一键连接命令并确认授权。安装器只在系统临时目录下载和运行客户端。Agenterm 不把会话输出保存为本地日志，待执行命令可写入临时脚本。正常结束后，安装器移除这次下载的客户端和临时文件，协助任务对本机文件和配置的改动会保留。如果安装器与客户端同时被强制关闭或设备断电，临时文件可能残留。
+
 ## ❓ 常见问题
 
 ### 连接失败或邀请过期

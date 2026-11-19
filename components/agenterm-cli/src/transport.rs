@@ -290,6 +290,7 @@ fn once(
     invited: bool,
     resume: &mut String,
 ) -> Attempt {
+    let temporary_assistance = manager.temporary_assistance();
     let mut request = t
         .connection_url()
         .into_client_request()
@@ -337,7 +338,10 @@ fn once(
         "x-agenterm-session-controls",
         if cfg!(unix) { "interrupt,eof" } else { "eof" },
     )?;
-    if p2p::SUPPORTED {
+    if temporary_assistance {
+        add("x-agenterm-temporary-assistance", "1")?;
+    }
+    if p2p::SUPPORTED && !temporary_assistance {
         add("x-agenterm-p2p", "1")?;
     }
     if !resume.is_empty() {
@@ -355,7 +359,14 @@ fn once(
             if let tungstenite::HandshakeError::Failure(tungstenite::Error::Http(r)) = &e {
                 let status = r.status().as_u16();
                 return Failure {
-                    message: format!("server rejected connection (HTTP {status})"),
+                    message: if status == 403
+                        && (temporary_assistance
+                            || r.headers().contains_key("x-agenterm-temporary-assistance"))
+                    {
+                        ui::tr("temporary.assistance.requires.installer").into()
+                    } else {
+                        format!("server rejected connection (HTTP {status})")
+                    },
                     permanent: !(status == 408 || status == 429 || status >= 500),
                     online: Duration::ZERO,
                     retry_after: r
@@ -393,6 +404,14 @@ fn once(
             online: Duration::ZERO,
         });
     }
+    if temporary_assistance != (header("x-agenterm-temporary-assistance") == "1") {
+        return Err(Failure {
+            message: ui::tr("temporary.assistance.requires.installer").into(),
+            permanent: true,
+            retry_after: 0,
+            online: Duration::ZERO,
+        });
+    }
     *resume = header("x-agenterm-resume-credential").into();
     let heartbeat = header("x-agenterm-heartbeat") == "1";
     match ws.get_mut() {
@@ -403,7 +422,9 @@ fn once(
         _ => unreachable!(),
     }
     .map_err(|e| e.to_string())?;
-    let _ = crate::storage::remember(&t.address);
+    if !temporary_assistance {
+        let _ = crate::storage::remember(&t.address);
+    }
     manager.reporter().connected(invited);
     let (sender, receiver) = mpsc::sync_channel::<(String, Value)>(32);
     let mut pending: HashMap<String, Arc<AtomicBool>> = HashMap::new();
@@ -478,7 +499,11 @@ fn once(
                                         c.store(true, Ordering::SeqCst);
                                     }
                                 }
-                                "p2p_start" if p2p::SUPPORTED && !id.is_empty() => {
+                                "p2p_start"
+                                    if p2p::SUPPORTED
+                                        && !temporary_assistance
+                                        && !id.is_empty() =>
+                                {
                                     if bootstraps.contains_key(&id) {
                                         continue;
                                     }
@@ -514,7 +539,12 @@ fn once(
                         Message::Close(frame) => {
                             let code = frame.as_ref().map(|f| u16::from(f.code)).unwrap_or(1000);
                             let _ = ws.flush();
-                            if code == 1000 || code == 1001 {
+                            if code == 1000
+                                || code == 1001
+                                || (temporary_assistance
+                                    && code == 1008
+                                    && frame.is_some_and(|f| f.reason == "closed by server"))
+                            {
                                 return Ok(());
                             }
                             return Err(Failure {
