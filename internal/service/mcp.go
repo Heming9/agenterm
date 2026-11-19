@@ -259,6 +259,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			panic(err)
 		}
 		input.Properties["multi_device"].Description = serverText("mcp.result.multi_device")
+		input.Properties["multi_device"].Default = json.RawMessage("false")
 		temporaryAssistance := input.Properties["temporary_assistance"]
 		temporaryAssistance.Description = serverText("mcp.result.temporary_assistance")
 		temporaryAssistance.Default = json.RawMessage("false")

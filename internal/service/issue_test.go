@@ -131,8 +131,12 @@ func TestCreateClientTimeoutSchema(t *testing.T) {
 		if temporary.Type != "boolean" || temporary.Description == "" || string(temporary.Default) != "false" {
 			t.Fatalf("incorrect temporary assistance schema: %s", data)
 		}
+		multiDevice := schema.Properties["multi_device"]
+		if multiDevice.Type != "boolean" || multiDevice.Description == "" || string(multiDevice.Default) != "false" {
+			t.Fatalf("incorrect multi-device schema: %s", data)
+		}
 		for _, required := range schema.Required {
-			if required == "timeout_seconds" || required == "temporary_assistance" {
+			if required == "timeout_seconds" || required == "temporary_assistance" || required == "multi_device" {
 				t.Fatalf("%s must be optional", required)
 			}
 		}
