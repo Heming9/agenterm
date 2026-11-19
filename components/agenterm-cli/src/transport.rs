@@ -64,7 +64,7 @@ fn stream(a: &Address) -> Result<MaybeTlsStream<TcpStream>> {
     }
 }
 
-pub fn redeem(a: &Address, secret: Option<&str>) -> Result<Token> {
+pub fn redeem(a: &Address, secret: Option<&str>) -> Result<(Token, Option<String>)> {
     let mut stream = stream(a)?;
     let auth = secret
         .map(|s| format!("Authorization: Bearer {s}\r\n"))
@@ -105,6 +105,7 @@ pub fn redeem(a: &Address, secret: Option<&str>) -> Result<Token> {
     if status != 200 {
         return Err(format!("invitation or short code rejected (HTTP {status})"));
     }
+    let release = header("X-Agenterm-Release-Version").trim();
     let body = if header("Transfer-Encoding").eq_ignore_ascii_case("chunked") {
         unchunk(&bytes[start..])?
     } else {
@@ -120,7 +121,8 @@ pub fn redeem(a: &Address, secret: Option<&str>) -> Result<Token> {
         return Err("token response too large".into());
     }
     let value: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
-    Token::decode(value["token"].as_str().ok_or("missing connection token")?)
+    let token = Token::decode(value["token"].as_str().ok_or("missing connection token")?)?;
+    Ok((token, (!release.is_empty()).then(|| release.to_owned())))
 }
 fn unchunk(mut data: &[u8]) -> Result<Vec<u8>> {
     let mut out = vec![];
@@ -240,6 +242,7 @@ pub fn run(
     stopped: &Arc<AtomicBool>,
     temporary: bool,
     invited: bool,
+    started: Instant,
 ) -> Result<()> {
     let idle = IdleTracker::new(
         manager,
@@ -249,9 +252,9 @@ pub fn run(
     let mut resume = String::new();
     let mut delay = 1;
     let mut attempt = 0;
+    let mut started = started;
     while !stopped.load(Ordering::SeqCst) {
-        manager.reporter().connecting();
-        match once(t, manager, stopped, &idle, invited, &mut resume) {
+        match once(t, manager, stopped, &idle, invited, &mut resume, started) {
             Ok(()) => return Ok(()),
             Err(e) if stopped.load(Ordering::SeqCst) => {
                 let _ = e;
@@ -276,7 +279,13 @@ pub fn run(
                 while Instant::now() < deadline && !stopped.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_millis(50));
                 }
+                if !e.online.is_zero() {
+                    started = Instant::now();
+                }
                 delay = (delay * 2).min(30);
+                if !stopped.load(Ordering::SeqCst) {
+                    manager.reporter().connecting(t);
+                }
             }
         }
     }
@@ -289,6 +298,7 @@ fn once(
     idle: &IdleTracker,
     invited: bool,
     resume: &mut String,
+    started: Instant,
 ) -> Attempt {
     let temporary_assistance = manager.temporary_assistance();
     let mut request = t
@@ -383,6 +393,9 @@ fn once(
         let _ = ws.close(None);
         return Ok(());
     }
+    manager
+        .reporter()
+        .send(ui::Event::WebSocketUpgraded(response.status().as_u16()));
     let header = |name: &str| {
         response
             .headers()
@@ -425,7 +438,7 @@ fn once(
     if !temporary_assistance {
         let _ = crate::storage::remember(&t.address);
     }
-    manager.reporter().connected(invited);
+    manager.reporter().connected(invited, started.elapsed());
     let (sender, receiver) = mpsc::sync_channel::<(String, Value)>(32);
     let mut pending: HashMap<String, Arc<AtomicBool>> = HashMap::new();
     let mut bootstraps: HashMap<String, Bootstrap> = HashMap::new();

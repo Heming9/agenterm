@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -173,7 +174,10 @@ type liveTUI struct {
 	done        chan error
 	redemptions atomic.Int32
 	token       string
+	address     string
 }
+
+const tuiServerRelease = "0.20.42"
 
 func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal bool) *liveTUI {
 	t.Helper()
@@ -189,12 +193,14 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal 
 		<-tokenReady
 		f.redemptions.Add(1)
 		w.Header().Set(version.Header, version.Protocol)
+		w.Header().Set(version.ReleaseHeader, tuiServerRelease)
 		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
 	})
 	mux.HandleFunc("/agenterm/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
 		f.redemptions.Add(1)
 		w.Header().Set(version.Header, version.Protocol)
+		w.Header().Set(version.ReleaseHeader, tuiServerRelease)
 		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
 	})
 	mux.HandleFunc("/agenterm/client/abc123", func(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +217,9 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal 
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	var err error
-	f.token, err = protocol.Encode(protocol.Token{URL: "ws" + strings.TrimPrefix(server.URL, "http") + "/agenterm/client", Secret: secret, Identifier: "abc123"})
+	token := protocol.Token{URL: "ws" + strings.TrimPrefix(server.URL, "http") + "/agenterm/client", Secret: secret, Identifier: "abc123"}
+	f.address = token.ConnectionURL()
+	f.token, err = protocol.Encode(token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,11 +299,28 @@ func (f *liveTUI) execute(t *testing.T, command string) {
 	}
 }
 
+func (f *liveTUI) checkConnectionLog(t *testing.T, redeemed bool) {
+	t.Helper()
+	const timestamp = `[0-9]{2}:[0-9]{2}:[0-9]{2}  `
+	const waiting = "Client connected. Waiting for remote operations..."
+	screen := f.capture.wait(t, waiting)
+	pattern := `(?m)^` + timestamp + `Connecting to server ` + regexp.QuoteMeta(f.address) + `\n`
+	if redeemed {
+		pattern += timestamp + `Token validated · Server version v` + regexp.QuoteMeta(tuiServerRelease) + ` · Elapsed [0-9]+ ms\n`
+	}
+	pattern += timestamp + `WebSocket handshake successful · HTTP 101\n` +
+		timestamp + `Connected to server · Total time [0-9]+ ms\n` +
+		timestamp + regexp.QuoteMeta(waiting) + `$`
+	if !regexp.MustCompile(pattern).MatchString(screen) {
+		t.Fatalf("missing contiguous connection log:\n%s", screen)
+	}
+}
+
 func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 	f := newLiveTUI(t, false, "", false)
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (persistent)")
-	f.capture.wait(t, "Client connected. Waiting for remote operations...")
+	f.checkConnectionLog(t, false)
 	binary, err := os.Open(f.command.Path)
 	if err != nil {
 		t.Fatal(err)
@@ -333,11 +358,11 @@ func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 	if strings.Contains(screen, "\nsecond line\n") {
 		t.Fatal("multiline log should initially be folded:\n" + screen)
 	}
-	// Row 3 contains the folded command; row 4 contains its output.
-	f.write(t, "\x1b[<0;1;4M\x1b[<0;1;4m")
+	outputRow := strings.Count(screen[:strings.Index(screen, "[3 lines]")], "\n") + 1
+	f.write(t, fmt.Sprintf("\x1b[<0;1;%dM\x1b[<0;1;%dm", outputRow, outputRow))
 	f.capture.wait(t, "\nsecond line\n")
 	// Drag a selection across two lines. SSH forces OSC 52, preserving the user's clipboard.
-	f.write(t, "\x1b[<0;3;4M\x1b[<32;5;5M\x1b[<0;5;5m")
+	f.write(t, fmt.Sprintf("\x1b[<0;3;%dM\x1b[<32;5;%dM\x1b[<0;5;%dm", outputRow, outputRow+1, outputRow+1))
 	f.capture.wait(t, "Clipboard request sent")
 	f.capture.Lock()
 	copied := strings.Contains(f.capture.data, "\x1b]52;c;")
@@ -382,7 +407,7 @@ func TestRustTUIInvitationAndReusableCredential(t *testing.T) {
 	f.write(t, "\x1b[C\r")
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (persistent)")
-	f.capture.wait(t, "[4/4] Connected")
+	f.checkConnectionLog(t, true)
 	if f.redemptions.Load() != 1 {
 		t.Fatal("invitation redemption missing")
 	}
@@ -455,6 +480,7 @@ func TestRustTUIProtocolLinkModes(t *testing.T) {
 				expected = "temporary"
 			}
 			f.capture.wait(t, "Connected ("+expected+")")
+			f.checkConnectionLog(t, true)
 			if f.redemptions.Load() != 1 {
 				t.Fatal("short code was not redeemed exactly once")
 			}

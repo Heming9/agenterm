@@ -10,9 +10,16 @@ use std::time::Duration;
 
 #[derive(Debug)]
 pub enum Event {
-    Connecting,
-    Connected,
-    Redeemed(Token),
+    Connecting(String),
+    WebSocketUpgraded(u16),
+    Connected {
+        elapsed: Duration,
+    },
+    Redeemed {
+        token: Token,
+        server_version: Option<String>,
+        elapsed: Duration,
+    },
     Retry {
         message: String,
         delay: u64,
@@ -112,12 +119,14 @@ impl Reporter {
             line(en, cn);
         }
     }
-    pub fn connecting(&self) {
-        self.send(Event::Connecting);
-    }
-    pub fn connected(&self, invited: bool) {
+    pub fn connecting(&self, token: &Token) {
         if self.sink.is_some() {
-            self.send(Event::Connected);
+            self.send(Event::Connecting(token.connection_url()));
+        }
+    }
+    pub fn connected(&self, invited: bool, elapsed: Duration) {
+        if self.sink.is_some() {
+            self.send(Event::Connected { elapsed });
         } else if invited {
             line(
                 "[4/4] Connected. Close the client to disconnect.",
@@ -205,7 +214,9 @@ mod tests {
         let stopped = Arc::new(AtomicBool::new(false));
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let reporter = Reporter::channel(tx, stopped.clone());
-        reporter.send(Event::Connecting);
+        reporter.send(Event::Connecting(
+            "wss://example.com/agenterm/client".into(),
+        ));
         let worker = std::thread::spawn(move || reporter.output("one", b"bounded output"));
         std::thread::sleep(Duration::from_millis(20));
         stopped.store(true, Ordering::SeqCst);

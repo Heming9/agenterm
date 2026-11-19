@@ -53,15 +53,17 @@ fn run() -> Result<()> {
                 }
             }
         }
-        ui::line(
-            "[3/4] Verifying invitation and connecting…",
-            "[3/4] 正在验证邀请并连接服务器…",
-        );
     }
     let stopped = Arc::new(AtomicBool::new(false));
     if !options.plain && io::stdin().is_terminal() && io::stdout().is_terminal() {
         install_signal(stopped.clone())?;
         return tui::run(options, stopped, workspace);
+    }
+    if !options.invite.is_empty() {
+        ui::line(
+            "[3/4] Verifying invitation and connecting…",
+            "[3/4] 正在验证邀请并连接服务器…",
+        );
     }
     ui::heading();
     let invited = !options.invite.is_empty();

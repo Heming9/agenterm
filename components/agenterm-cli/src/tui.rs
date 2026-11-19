@@ -38,6 +38,10 @@ use std::{
 };
 use text::Metrics;
 
+mod colors {
+    include!(concat!(env!("OUT_DIR"), "/theme_colors.rs"));
+}
+
 static TERMINAL_MODE: AtomicU8 = AtomicU8::new(0);
 struct TerminalGuard;
 impl TerminalGuard {
@@ -246,7 +250,7 @@ impl App {
             ended_message: None,
             latency: None,
             ever_connected: false,
-            show_welcome: false,
+            show_welcome: true,
             log: Log::default(),
             scroll: 0,
             follow: true,
@@ -270,20 +274,36 @@ impl App {
     fn body_width(&self) -> usize {
         usize::from(self.width.saturating_sub(2).max(1))
     }
-    fn welcome_start(&self) -> Option<usize> {
-        // The log's trailing empty row is the first free row below connection messages.
-        (self.state == State::Connected && self.show_welcome)
-            .then(|| self.log.rows.len().saturating_sub(1))
+    fn log_height(&self) -> usize {
+        if self.state == State::Disconnected {
+            self.log.welcome_rows
+        } else {
+            self.body_height()
+        }
     }
     fn max_scroll(&self) -> usize {
         self.log.rows.len().saturating_sub(self.body_height())
     }
     fn refresh(&mut self) {
-        if self.log.evicted {
+        let height = self.body_height();
+        let welcome = match self.state {
+            State::Disconnected => {
+                let space = height.saturating_sub(self.connection_form().height());
+                (space > 0).then_some(space)
+            }
+            State::Connecting if self.show_welcome && !self.ever_connected => Some(height),
+            State::Connected if self.show_welcome => Some(height),
+            _ => None,
+        };
+        if self.log.evicted || self.log.welcome_height != welcome {
             self.selection = None;
         }
-        self.log
-            .refresh(self.body_width(), self.metrics, self.selection.is_some());
+        self.log.refresh(
+            self.body_width(),
+            self.metrics,
+            self.selection.is_some(),
+            welcome,
+        );
         if self.follow {
             self.scroll = self.max_scroll();
         } else {
@@ -347,6 +367,7 @@ impl App {
         self.ended_message = None;
         self.latency = None;
         self.ever_connected = false;
+        self.show_welcome = true;
         self.log = Log::default();
         self.scroll = 0;
         self.follow = true;
@@ -371,35 +392,80 @@ impl App {
             worker.stopped.store(true, Ordering::SeqCst);
             self.state = State::Disconnecting;
             self.latency = None;
+            self.log.clear_waiting();
         }
     }
     fn client_event(&mut self, event: ClientEvent) {
         match event {
-            ClientEvent::Redeemed(token) => {
+            ClientEvent::Redeemed {
+                token,
+                server_version,
+                elapsed,
+            } => {
                 self.address = clean(&token.connection_url());
                 self.input.set(token.encoded);
                 self.invitation.clear();
+                let release = server_version.map_or_else(
+                    || tr("tui.connection.unknown_version").into(),
+                    |version| format!("v{}", version.strip_prefix('v').unwrap_or(&version)),
+                );
+                self.log.connection_line(
+                    Kind::System,
+                    &ui::reporter_timestamp(),
+                    &format!(
+                        "{} · {} {release} · {} {} ms",
+                        tr("tui.connection.token_validated"),
+                        tr("tui.connection.server_version"),
+                        tr("tui.connection.elapsed"),
+                        elapsed.as_millis()
+                    ),
+                );
             }
-            ClientEvent::Connecting => {
+            ClientEvent::Connecting(address) => {
                 if self.state != State::Disconnecting {
                     self.state = State::Connecting;
+                    self.address = clean(&address);
                     self.latency = None;
+                    self.log.connection_line(
+                        Kind::System,
+                        &ui::reporter_timestamp(),
+                        &format!("{} {}", tr("tui.connection.connecting"), self.address),
+                    );
                 }
             }
-            ClientEvent::Connected => {
+            ClientEvent::WebSocketUpgraded(status) => {
+                if self.state != State::Disconnecting {
+                    self.log.connection_line(
+                        Kind::System,
+                        &ui::reporter_timestamp(),
+                        &format!("{} · HTTP {status}", tr("tui.connection.handshake")),
+                    );
+                }
+            }
+            ClientEvent::Connected { elapsed } => {
                 if self.state == State::Disconnecting {
                     return;
                 }
                 self.state = State::Connected;
                 self.latency = None;
                 self.show_welcome = !self.ever_connected;
+                let time = ui::reporter_timestamp();
                 if self.ever_connected {
-                    self.log.message(
+                    self.log
+                        .connection_line(Kind::System, &time, tr("connection.restored"));
+                } else {
+                    self.log.connection_line(
                         Kind::System,
-                        &format!("{} {}", ui::reporter_timestamp(), tr("connection.restored")),
+                        &time,
+                        &format!(
+                            "{} · {} {} ms",
+                            tr("tui.connection.connected"),
+                            tr("tui.connection.total_elapsed"),
+                            elapsed.as_millis()
+                        ),
                     );
-                } else if self.progress {
-                    self.log.message(Kind::System, tr("4.4.connected"));
+                    self.log
+                        .connection_line(Kind::Ready, &time, tr("tui.welcome.waiting"));
                 }
                 self.ever_connected = true;
             }
@@ -407,6 +473,7 @@ impl App {
                 if self.state != State::Disconnecting {
                     self.state = State::Reconnecting(delay);
                     self.latency = None;
+                    self.log.clear_waiting();
                 }
                 self.log.message(
                     Kind::Error,
@@ -425,6 +492,7 @@ impl App {
             event => {
                 if matches!(event, ClientEvent::Started { .. }) {
                     self.show_welcome = false;
+                    self.log.clear_waiting();
                 }
                 self.log.event(event);
             }
@@ -458,6 +526,7 @@ impl App {
             self.state = State::Disconnected;
             self.latency = None;
             self.selection = None;
+            self.log = Log::default();
             self.menu = Menu::Input;
             self.message = self.ended_message.take().unwrap_or_else(|| match result {
                 Ok(()) => tr("disconnected.2").into(),
@@ -625,20 +694,18 @@ impl App {
         }
     }
     fn inside(&self, x: u16, y: u16) -> bool {
-        self.state != State::Disconnected
-            && usize::from(x) < self.body_width()
-            && y >= 2
-            && usize::from(y) < 2 + self.body_height()
+        x < self.width && y >= 2 && usize::from(y) < 2 + self.log_height()
     }
     fn point(&self, x: u16, y: u16) -> Point {
         Point {
-            row: (self.scroll + usize::from(y.saturating_sub(2)).min(self.body_height() - 1))
-                .min(self.log.rows.len().saturating_sub(1)),
-            col: usize::from(x).min(self.body_width() - 1),
+            row: (self.scroll
+                + usize::from(y.saturating_sub(2)).min(self.log_height().saturating_sub(1)))
+            .min(self.log.rows.len().saturating_sub(1)),
+            col: usize::from(x.min(self.width.saturating_sub(1))),
         }
     }
     fn mouse(&mut self, mouse: MouseEvent) {
-        if self.state == State::Disconnected {
+        if self.log_height() == 0 {
             return;
         }
         match mouse.kind {
@@ -661,9 +728,7 @@ impl App {
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                let row = self.scroll + usize::from(mouse.row.saturating_sub(2));
-                let on_welcome = self.welcome_start().is_some_and(|start| row >= start);
-                if !self.inside(mouse.column, mouse.row) || self.log.rows.is_empty() || on_welcome {
+                if !self.inside(mouse.column, mouse.row) || self.log.rows.is_empty() {
                     self.clear_selection();
                     return;
                 }
@@ -820,7 +885,9 @@ pub fn run(options: Options, shutdown: Arc<AtomicBool>, workspace: Option<PathBu
         app.begin(false);
     }
     let result = (|| -> io::Result<()> {
-        let mut dirty = true;
+        app.refresh();
+        terminal.draw(|frame| app.render(frame))?;
+        let mut dirty = false;
         let mut tick = Instant::now();
         loop {
             if shutdown.load(Ordering::SeqCst) {

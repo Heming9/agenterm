@@ -1,37 +1,10 @@
-use super::{App, Kind, Menu, State, clean};
-use crate::{deeplink::hash_reader, protocol::VERSION, ui::tr};
+use super::{App, Kind, Menu, State, clean, colors};
+use crate::{protocol::VERSION, ui::tr};
 use ratatui::{
     Frame,
-    layout::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{self, Paragraph},
 };
-use std::{env, fs::File, sync::OnceLock};
 use unicode_segmentation::UnicodeSegmentation;
-
-pub(super) mod colors {
-    include!(concat!(env!("OUT_DIR"), "/theme_colors.rs"));
-}
-
-pub(super) const COMMIT: &str = env!("AGENTERM_COMMIT");
-pub(super) const HASH_SEPARATOR: &str = "......";
-const PROJECT_URL: &str = "https://github.com/Heming9/agenterm";
-
-pub(super) fn executable_hash() -> &'static str {
-    static HASH: OnceLock<Option<String>> = OnceLock::new();
-    HASH.get_or_init(|| {
-        let mut file = File::open(env::current_exe().ok()?).ok()?;
-        let digest = hash_reader(&mut file).ok()?;
-        Some(format!(
-            "{}{HASH_SEPARATOR}{}",
-            &digest[..8],
-            &digest[digest.len() - 8..]
-        ))
-    })
-    .as_deref()
-    .unwrap_or("unavailable")
-}
 
 #[derive(Clone, Copy)]
 pub(super) struct Palette {
@@ -53,9 +26,9 @@ impl Palette {
     fn kind(self, kind: Kind) -> Style {
         match kind {
             Kind::System => self.text(colors::SECONDARY),
-            Kind::Command => self.text(colors::PRIMARY),
+            Kind::Command | Kind::Welcome => self.text(colors::PRIMARY),
             Kind::Error => self.text(colors::ERROR),
-            Kind::Output => Style::default(),
+            Kind::Output | Kind::Ready => Style::default(),
         }
     }
     fn status(self, state: State) -> Style {
@@ -233,120 +206,42 @@ impl App {
                 default,
             );
         }
-        if self.state == State::Disconnected {
-            self.render_form(frame, palette);
-        } else {
-            if let Some(start) = self.welcome_start() {
-                let occupied = start.saturating_sub(self.scroll);
-                let top = 2 + occupied.min(self.body_height()) as u16;
-                self.render_welcome(
-                    frame,
-                    Rect::new(
-                        1,
-                        top,
-                        area.width.saturating_sub(2),
-                        area.height.saturating_sub(3).saturating_sub(top),
-                    ),
-                );
+        for (i, row) in self
+            .log
+            .rows
+            .iter()
+            .skip(self.scroll)
+            .take(self.log_height())
+            .enumerate()
+        {
+            let y = 2 + i as u16;
+            if y >= area.height.saturating_sub(3) {
+                break;
             }
-            for (i, row) in self
-                .log
-                .rows
-                .iter()
-                .skip(self.scroll)
-                .take(self.body_height())
-                .enumerate()
-            {
-                let y = 2 + i as u16;
-                if y >= area.height.saturating_sub(3) {
+            let columns = self.columns(self.scroll + i);
+            let mut x = 0;
+            for (byte, g) in row.text.grapheme_indices(true) {
+                let width = self.metrics.cluster(g);
+                if x + width > usize::from(area.width) {
                     break;
                 }
-                let columns = self.columns(self.scroll + i);
-                let mut x = 0;
-                for (byte, g) in row.text.grapheme_indices(true) {
-                    let width = self.metrics.cluster(g);
-                    if x + width > self.body_width() {
-                        break;
-                    }
-                    let selected =
-                        columns.is_some_and(|(left, right)| x >= left && x + width <= right);
-                    let style = if selected {
-                        palette.selection()
-                    } else {
-                        palette.kind(row.kind_at(byte))
-                    };
-                    self.metrics
-                        .draw(frame.buffer_mut(), x as u16, y, width as u16, g, style);
-                    x += width;
-                }
+                let selected = columns.is_some_and(|(left, right)| x >= left && x + width <= right);
+                let style = if selected {
+                    palette.selection()
+                } else {
+                    palette.kind(row.kind_at(byte))
+                };
+                self.metrics
+                    .draw(frame.buffer_mut(), x as u16, y, width as u16, g, style);
+                x += width;
             }
+        }
+        if self.state == State::Disconnected && self.height >= 6 {
+            self.render_form(frame);
         }
     }
-    fn render_welcome(&self, frame: &mut Frame<'_>, area: Rect) {
-        if area.is_empty() {
-            return;
-        }
-        let primary = self.palette.text(colors::PRIMARY);
-        let hint = Paragraph::new(Line::from(vec![
-            Span::styled("● ", self.palette.status(State::Connected)),
-            Span::raw(tr("tui.welcome.waiting")),
-        ]))
-        .wrap(widgets::Wrap { trim: true });
-        let hint_height = hint.line_count(area.width) as u16;
-        let metadata_rows = usize::from(area.height.saturating_sub(hint_height));
-        let title = format!("Agenterm v{VERSION}.{COMMIT}");
-        let hash = format!("sha256: {}", executable_hash());
-        let width = usize::from(area.width);
-        let lines = if self.metrics.width(&title) + 9 <= width
-            && PROJECT_URL.len() + 11 <= width
-            && metadata_rows >= 3
-        {
-            let [top, middle, bottom] = colors::TERMINAL_LOGO;
-            vec![
-                Line::styled(format!(" {top}  {title}"), primary),
-                Line::from(vec![
-                    Span::styled(format!(" {middle}"), primary),
-                    Span::raw(format!("   - {hash}")),
-                ]),
-                Line::from(vec![
-                    Span::styled(format!(" {bottom}"), primary),
-                    Span::raw(format!("  - {PROJECT_URL}")),
-                ]),
-            ]
-        } else if metadata_rows > 0 {
-            let title = if self.metrics.width(&title) <= width {
-                title
-            } else {
-                format!("Agenterm v{VERSION}")
-            };
-            let mut lines = vec![Line::styled(title, primary)];
-            if metadata_rows >= 2 && self.metrics.width(&hash) <= width {
-                lines.push(Line::raw(hash));
-            } else if metadata_rows >= 3
-                && width >= 16
-                && let Some((head, tail)) = executable_hash().split_once(HASH_SEPARATOR)
-            {
-                lines.push(Line::raw(format!("sha256: {head}")));
-                lines.push(Line::raw(format!("{HASH_SEPARATOR}{tail}")));
-            }
-            if lines.len() < metadata_rows && PROJECT_URL.len() <= width {
-                lines.push(Line::raw(PROJECT_URL));
-            }
-            lines
-        } else {
-            Vec::new()
-        };
-        let height = lines.len() as u16;
-        frame.render_widget(Paragraph::new(lines), Rect { height, ..area });
-        frame.render_widget(
-            hint,
-            Rect::new(area.x, area.y + height, area.width, area.height - height),
-        );
-    }
-    fn render_form(&self, frame: &mut Frame<'_>, palette: Palette) {
-        if self.height < 6 {
-            return;
-        }
+    pub(super) fn connection_form(&self) -> Form {
+        let palette = self.palette;
         let default = Style::default();
         let mut form = Form::new(self.body_width(), self.metrics);
         form.line(vec![(format!(" {}", tr("connection.token")), default)]);
@@ -454,16 +349,28 @@ impl App {
                 (self.message.clone(), palette.kind(Kind::Error)),
             ]);
         }
-        for (y, row) in form.rows.iter().take(self.body_height()).enumerate() {
+        form
+    }
+    fn render_form(&self, frame: &mut Frame<'_>) {
+        let top = self.log_height();
+        let available = self.body_height().saturating_sub(top);
+        for (row, atoms) in self
+            .connection_form()
+            .rows
+            .into_iter()
+            .take(available)
+            .enumerate()
+        {
+            let y = 2 + (top + row) as u16;
             let mut x = 0;
-            for atom in row {
+            for atom in atoms {
                 if atom.cursor && self.menu == Menu::Input && self.width > 1 {
-                    frame.set_cursor_position((x as u16, 2 + y as u16));
+                    frame.set_cursor_position((x as u16, y));
                 }
                 self.metrics.draw(
                     frame.buffer_mut(),
                     x as u16,
-                    2 + y as u16,
+                    y,
                     atom.width as u16,
                     &atom.text,
                     atom.style,
@@ -480,12 +387,15 @@ struct Atom {
     width: usize,
     cursor: bool,
 }
-struct Form {
+pub(super) struct Form {
     rows: Vec<Vec<Atom>>,
     width: usize,
     metrics: super::Metrics,
 }
 impl Form {
+    pub(super) fn height(&self) -> usize {
+        self.rows.len()
+    }
     fn new(width: usize, metrics: super::Metrics) -> Self {
         Self {
             rows: vec![],

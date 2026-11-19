@@ -275,9 +275,45 @@
     "en": "%d commands",
     "zh-CN": "%d 条"
   },
+  "tui.connection.connecting": {
+    "en": "Connecting to server",
+    "zh-CN": "正在连接服务器"
+  },
+  "tui.connection.connected": {
+    "en": "Connected to server",
+    "zh-CN": "已连接服务器"
+  },
+  "tui.connection.token_validated": {
+    "en": "Token validated",
+    "zh-CN": "令牌验证成功"
+  },
+  "tui.connection.server_version": {
+    "en": "Server version",
+    "zh-CN": "服务端版本"
+  },
+  "tui.connection.unknown_version": {
+    "en": "unknown",
+    "zh-CN": "未知"
+  },
+  "tui.connection.elapsed": {
+    "en": "Elapsed",
+    "zh-CN": "耗时"
+  },
+  "tui.connection.handshake": {
+    "en": "WebSocket handshake successful",
+    "zh-CN": "WebSocket 握手成功"
+  },
+  "tui.connection.total_elapsed": {
+    "en": "Total time",
+    "zh-CN": "总耗时"
+  },
+  "tui.welcome.greeting": {
+    "en": "Welcome to",
+    "zh-CN": "欢迎使用"
+  },
   "tui.welcome.waiting": {
     "en": "Client connected. Waiting for remote operations...",
-    "zh-CN": "客户端已连接成功，等待远程操作..."
+    "zh-CN": "客户端连接成功，等待远程操作..."
   },
   "tui.selection.help": {
     "en": "Esc clear selection",

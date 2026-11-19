@@ -1,4 +1,6 @@
 //! Go logview spacing, folding and selection coordinates, independent of rendering.
+pub(super) mod welcome;
+
 use super::text::Metrics;
 use crate::ui::{self, Event};
 use std::collections::{HashMap, VecDeque};
@@ -11,6 +13,8 @@ pub enum Kind {
     Command,
     Output,
     Error,
+    Welcome,
+    Ready,
 }
 #[derive(Clone, Debug)]
 pub struct Row {
@@ -19,6 +23,7 @@ pub struct Row {
     pub prefix: usize,
     pub marker: usize,
     pub suffix: usize,
+    suffix_kind: Kind,
     pub soft: bool,
     pub fold: Option<u64>,
 }
@@ -30,6 +35,7 @@ impl Row {
             prefix: 0,
             marker: 0,
             suffix: usize::MAX,
+            suffix_kind: Kind::System,
             soft: false,
             fold: None,
         }
@@ -37,8 +43,10 @@ impl Row {
     pub fn kind_at(&self, byte: usize) -> Kind {
         if byte < self.marker {
             Kind::Output
-        } else if byte < self.prefix || byte >= self.suffix {
+        } else if byte < self.prefix {
             Kind::System
+        } else if byte >= self.suffix {
+            self.suffix_kind
         } else {
             self.kind
         }
@@ -134,6 +142,8 @@ pub struct Log {
     pub dirty: bool,
     pub evicted: bool,
     pub completed: usize,
+    pub welcome_height: Option<usize>,
+    pub welcome_rows: usize,
     layout: Option<(usize, Metrics)>,
 }
 impl Log {
@@ -197,6 +207,18 @@ impl Log {
         let text = format!("{}{}\n", self.before(2), clean(text));
         self.push(kind, text, 0);
     }
+    pub fn connection_line(&mut self, kind: Kind, time: &str, message: &str) {
+        let prefix = format!("{}{time}  ", self.before(1));
+        self.push(kind, format!("{prefix}{}\n", clean(message)), prefix.len());
+    }
+    pub fn clear_waiting(&mut self) {
+        if let Some(index) = self.spans.iter().rposition(|span| span.kind == Kind::Ready)
+            && let Some(span) = self.spans.remove(index)
+        {
+            self.bytes -= span.text.len();
+            self.dirty = true;
+        }
+    }
     pub fn event(&mut self, event: Event) {
         match event {
             Event::Started { id, command, time } => {
@@ -236,16 +258,26 @@ impl Log {
             _ => {}
         }
     }
-    pub fn refresh(&mut self, width: usize, metrics: Metrics, frozen: bool) {
+    pub fn refresh(
+        &mut self,
+        width: usize,
+        metrics: Metrics,
+        frozen: bool,
+        welcome_height: Option<usize>,
+    ) {
         let width = width.max(1);
         let resized = self.layout != Some((width, metrics));
+        let welcome_changed = self.welcome_height != welcome_height;
         if frozen && !self.evicted && !resized {
             return;
         }
-        if !self.dirty && !resized {
+        if !self.dirty && !resized && !welcome_changed {
             return;
         }
-        self.rows = vec![Row::blank()];
+        self.rows =
+            welcome_height.map_or_else(Vec::new, |height| welcome::rows(width, height, metrics));
+        self.welcome_rows = self.rows.len();
+        self.rows.push(Row::blank());
         for span in &mut self.spans {
             if resized || span.cached.is_none() {
                 span.cached = Some((width, metrics, layout(span, width, metrics)));
@@ -261,6 +293,7 @@ impl Log {
             }
             self.rows.extend(rows);
         }
+        self.welcome_height = welcome_height;
         self.layout = Some((width, metrics));
         self.dirty = false;
         self.evicted = false;
@@ -296,13 +329,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
     let mut offset = leading;
     for line in body.split('\n') {
         let mut row = Row {
-            text: String::new(),
             kind: span.kind,
-            prefix: 0,
-            marker: 0,
-            suffix: usize::MAX,
-            soft: false,
-            fold: None,
+            ..Row::blank()
         };
         let mut col = 0;
         for (byte, g) in line.grapheme_indices(true) {
@@ -316,13 +344,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
                 row.soft = true;
                 body_rows.push(row);
                 row = Row {
-                    text: String::new(),
                     kind: span.kind,
-                    prefix: 0,
-                    marker: 0,
-                    suffix: usize::MAX,
-                    soft: false,
-                    fold: None,
+                    ..Row::blank()
                 };
                 col = 0;
             }
@@ -335,7 +358,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
         body_rows.push(row);
         offset += line.len() + 1;
     }
-    let fold = span.kind != Kind::System && body_rows.len() > 1;
+    let fold =
+        matches!(span.kind, Kind::Command | Kind::Output | Kind::Error) && body_rows.len() > 1;
     if fold && !span.expanded {
         let mut suffix = ui::tr("tui.fold.lines").replace("%d", &body_rows.len().to_string());
         suffix.insert(0, ' ');
@@ -354,8 +378,8 @@ fn layout(span: &Span, width: usize, metrics: Metrics) -> Vec<Row> {
             prefix,
             marker: marker.len(),
             suffix: suffix_start,
-            soft: false,
             fold: Some(span.id),
+            ..Row::blank()
         }];
     } else if fold {
         // Reserve the marker before wrapping so no text is lost at the right edge.

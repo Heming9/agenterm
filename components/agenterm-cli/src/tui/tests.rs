@@ -1,4 +1,4 @@
-use super::*;
+use super::{log::welcome, *};
 use ratatui::{backend::TestBackend, buffer::Buffer};
 use serde::Deserialize;
 use unicode_width::UnicodeWidthStr;
@@ -47,6 +47,11 @@ fn output(id: &str, data: &str) -> ClientEvent {
         data: data.into(),
     }
 }
+fn connected() -> ClientEvent {
+    ClientEvent::Connected {
+        elapsed: Duration::from_millis(241),
+    }
+}
 
 #[test]
 fn screens_match_reference() {
@@ -65,8 +70,8 @@ fn screens_match_reference() {
     }
     let reference: Reference =
         serde_json::from_str(include_str!("../../tests/fixtures/tui.json")).unwrap();
-    let (hash_head, hash_tail) = view::executable_hash()
-        .split_once(view::HASH_SEPARATOR)
+    let (hash_head, hash_tail) = welcome::executable_hash()
+        .split_once(welcome::HASH_SEPARATOR)
         .unwrap();
     for expected in reference.screens {
         if (expected.language == "zh-CN") != ui::zh() {
@@ -96,21 +101,33 @@ fn screens_match_reference() {
                 app.address = "ws://127.0.0.1:18743/agenterm/client/abc123".into();
                 app.state = State::Connected;
                 app.latency = Some(42);
-                if scenario == "connected" {
-                    app.client_event(ClientEvent::Connected);
-                    app.latency = Some(42);
+                if matches!(scenario, "connecting" | "connected" | "invitation") {
+                    app.client_event(ClientEvent::Connecting(app.address.clone()));
                 }
-                if scenario == "connecting" {
-                    app.state = State::Connecting;
-                    app.latency = None;
+                if scenario == "invitation" {
+                    app.progress = true;
+                    app.client_event(ClientEvent::Redeemed {
+                        token: protocol::Token {
+                            encoded: "test-token".into(),
+                            address: protocol::Address::parse(
+                                "ws://127.0.0.1:18743/agenterm/client",
+                            )
+                            .unwrap(),
+                            secret: "test-secret".into(),
+                            identifier: "abc123".into(),
+                        },
+                        server_version: Some("0.20.8".into()),
+                        elapsed: Duration::from_millis(86),
+                    });
+                }
+                if matches!(scenario, "connected" | "invitation") {
+                    app.client_event(ClientEvent::WebSocketUpgraded(101));
+                    app.client_event(connected());
+                    app.latency = (scenario == "connected").then_some(42);
                 }
                 if scenario == "reconnecting" {
                     app.state = State::Reconnecting(3);
                     app.latency = None;
-                }
-                if scenario == "invitation" {
-                    app.progress = true;
-                    app.client_event(ClientEvent::Connected);
                 }
                 if scenario == "log" || scenario == "expanded" {
                     app.client_event(started("one", "printf '你好 world\\n'"));
@@ -132,7 +149,27 @@ fn screens_match_reference() {
             }
         }
         app.refresh();
-        let actual = screen(&app);
+        let mut actual = screen(&app);
+        for row in &mut actual {
+            if matches!(
+                row.as_bytes(),
+                [
+                    b'0'..=b'9',
+                    b'0'..=b'9',
+                    b':',
+                    b'0'..=b'9',
+                    b'0'..=b'9',
+                    b':',
+                    b'0'..=b'9',
+                    b'0'..=b'9',
+                    b' ',
+                    b' ',
+                    ..
+                ]
+            ) {
+                row.replace_range(..8, "12:34:56");
+            }
+        }
         let expected_rows: Vec<String> = expected
             .rows
             .iter()
@@ -141,12 +178,12 @@ fn screens_match_reference() {
                     &format!("Agenterm v{}", reference.version),
                     &format!("Agenterm v{}", crate::protocol::VERSION),
                 )
-                .replace(".0000000", &format!(".{}", view::COMMIT))
-                .replace("########......########", view::executable_hash())
+                .replace(".0000000", &format!(".{}", welcome::COMMIT))
+                .replace("########......########", welcome::executable_hash())
                 .replace("sha256: ########", &format!("sha256: {hash_head}"))
                 .replace(
                     "......########",
-                    &format!("{}{hash_tail}", view::HASH_SEPARATOR),
+                    &format!("{}{hash_tail}", welcome::HASH_SEPARATOR),
                 )
             })
             .collect();
@@ -163,7 +200,7 @@ fn long_identity_fits_the_footer_divider() {
     let mut app = app();
     app.identity = "用户@工作站-abcdefghijklmnopqrstuvwxyz".into();
     app.resize(28, 16);
-    app.client_event(ClientEvent::Connected);
+    app.client_event(connected());
     app.latency = Some(42);
 
     let rows = screen(&app);
@@ -174,18 +211,61 @@ fn long_identity_fits_the_footer_divider() {
 #[test]
 fn idle_reconnect_does_not_repeat_welcome() {
     let mut app = app();
-    app.client_event(ClientEvent::Connected);
+    app.client_event(connected());
     app.refresh();
     assert!(screen(&app).join("\n").contains(tr("tui.welcome.waiting")));
     app.client_event(ClientEvent::Retry {
         message: "EOF".into(),
         delay: 1,
     });
-    app.client_event(ClientEvent::Connected);
+    let address = "wss://example.com/agenterm/client/abc123";
+    app.client_event(ClientEvent::Connecting(address.into()));
+    app.refresh();
+    assert_eq!(app.log.welcome_rows, 0);
+    assert!(app.log.rows.iter().any(|row| row.text.ends_with(address)));
+    app.client_event(connected());
     app.refresh();
     let restored = screen(&app).join("\n");
     assert!(restored.contains(tr("connection.restored")));
     assert!(!restored.contains(tr("tui.welcome.waiting")));
+}
+
+#[test]
+fn startup_banner_is_selectable_in_the_log() {
+    let mut app = app();
+    app.resize(80, 16);
+    assert_eq!(app.state, State::Disconnected);
+    let [top, middle, bottom] = colors::TERMINAL_LOGO;
+    let rows = screen(&app);
+    assert!(rows[2].starts_with(&format!("  {top}")));
+    assert!(rows[5].contains(tr("connection.token")));
+    assert!(!rows.join("\n").contains(tr("tui.welcome.waiting")));
+
+    for (kind, column, row) in [
+        (MouseEventKind::Down(MouseButton::Left), 2, 2),
+        (MouseEventKind::Drag(MouseButton::Left), 7, 4),
+    ] {
+        app.mouse(MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        });
+    }
+    let selected = app.selected_text();
+    assert!(selected.starts_with(top));
+    assert!(selected.contains(middle));
+    assert!(selected.ends_with(bottom));
+
+    app.client_event(connected());
+    app.refresh();
+    assert!(app.selection.is_none());
+    assert!(screen(&app).join("\n").contains(tr("tui.welcome.waiting")));
+
+    app.client_event(started("one", "pwd"));
+    app.refresh();
+    assert!(app.log.rows.iter().all(|row| !row.text.contains(top)));
+    assert!(!screen(&app).join("\n").contains(tr("tui.welcome.waiting")));
 }
 
 #[test]
@@ -238,7 +318,7 @@ fn concurrent_streams_keep_go_spacing_and_decoders_survive_reconnect() {
         message: "EOF".into(),
         delay: 1,
     });
-    app.client_event(ClientEvent::Connected);
+    app.client_event(connected());
     app.client_event(output("one", "\n  after reconnect\n\n"));
     app.refresh();
     // Expand all output/command blocks and assert stream-edge blank lines were removed.
@@ -412,16 +492,16 @@ fn osc52_handles_plain_tmux_and_screen_terminals() {
 #[test]
 fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     use ratatui::style::{Color, Modifier};
-    use view::colors;
 
     let mut app = app();
-    app.client_event(ClientEvent::Connected);
+    app.client_event(connected());
     app.refresh();
     app.palette = view::Palette { color: true };
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
     let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 5)].fg, Color::from_u32(colors::SUCCESS));
+    assert_eq!(buffer[(0, 6)].fg, Color::from_u32(colors::SECONDARY));
+    assert_eq!(buffer[(10, 6)].fg, Color::Reset);
     for position in [(2, 2), (10, 2), (2, 3), (2, 4)] {
         assert_eq!(buffer[position].fg, Color::from_u32(colors::PRIMARY));
     }
@@ -436,12 +516,12 @@ fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     app.scroll = 0;
     app.follow = false;
     app.selection = Some(Selection {
-        anchor: Point { row: 1, col: 0 },
-        cursor: Point { row: 1, col: 2 },
+        anchor: Point { row: 2, col: 0 },
+        cursor: Point { row: 2, col: 2 },
         down: false,
         dragged: true,
         mouse_x: 0,
-        mouse_y: 3,
+        mouse_y: 4,
         id: 1,
         request: 0,
         notice: "",
@@ -449,7 +529,7 @@ fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
     assert!(
-        terminal.backend().buffer()[(0, 3)]
+        terminal.backend().buffer()[(0, 4)]
             .modifier
             .contains(Modifier::REVERSED)
     );
@@ -583,7 +663,7 @@ fn folded_markers_keep_default_color_while_timestamps_and_counts_are_dimmed() {
         assert_eq!(buffer[(0, 2)].fg, ratatui::style::Color::Reset);
         assert_eq!(
             buffer[(2, 2)].fg,
-            ratatui::style::Color::from_u32(view::colors::SECONDARY)
+            ratatui::style::Color::from_u32(colors::SECONDARY)
         );
     }
 }

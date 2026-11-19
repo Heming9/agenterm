@@ -12,6 +12,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Instant,
 };
 
 pub fn short_target(address: &Address) -> Address {
@@ -37,6 +38,7 @@ pub fn run(
     reporter: Reporter,
     workspace: Option<PathBuf>,
 ) -> Result<()> {
+    let started = Instant::now();
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
@@ -49,22 +51,27 @@ pub fn run(
             .then(|| storage::lock(address))
             .transpose()
     };
-    let (token, reservation) = if invited {
+    let (token, reservation, validation) = if invited {
         let invitation = Token::decode(value)?;
         let reservation = reserve(&invitation.address)?;
         if stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let token = transport::redeem(&invitation.invitation_url(), Some(&invitation.secret))?;
+        let validation_started = Instant::now();
+        let (token, server_version) =
+            transport::redeem(&invitation.invitation_url(), Some(&invitation.secret))?;
         if token.address.url() != invitation.address.url() {
             return Err("invitation resolved to a different server".into());
         }
-        reporter.send(Event::Redeemed(token.clone()));
-        (token, reservation)
+        (
+            token,
+            reservation,
+            Some((server_version, validation_started.elapsed())),
+        )
     } else if value.starts_with("Agenterm_") {
         let token = Token::decode(value)?;
         let reservation = reserve(&token.address)?;
-        (token, reservation)
+        (token, reservation, None)
     } else {
         let address = protocol::short_address(value)?;
         let target = short_target(&address);
@@ -72,18 +79,32 @@ pub fn run(
         if stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let token = transport::redeem(&address, None)?;
+        let validation_started = Instant::now();
+        let (token, server_version) = transport::redeem(&address, None)?;
         if token.address.url() != target.url() {
             return Err("short code resolved to a different server".into());
         }
-        reporter.send(Event::Redeemed(token.clone()));
-        (token, reservation)
+        (
+            token,
+            reservation,
+            Some((server_version, validation_started.elapsed())),
+        )
     };
+    if !stopped.load(Ordering::SeqCst) {
+        reporter.connecting(&token);
+    }
+    if let Some((server_version, elapsed)) = validation {
+        reporter.send(Event::Redeemed {
+            token: token.clone(),
+            server_version,
+            elapsed,
+        });
+    }
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
     let manager = Manager::with_reporter(stopped.clone(), reporter, workspace);
-    let result = transport::run(&token, &manager, &stopped, temporary, invited);
+    let result = transport::run(&token, &manager, &stopped, temporary, invited, started);
     manager.close();
     drop(reservation);
     result
