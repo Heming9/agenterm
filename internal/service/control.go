@@ -169,7 +169,6 @@ type invitationRequest struct {
 
 type installerInvitation struct {
 	Token               string
-	Secret              string
 	DeviceToken         bool
 	TokenExpiresAt      string
 	TokenState          string
@@ -288,13 +287,15 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 	registerControl(mux, "terminal/control", s.controlSession)
 	registerControl(mux, "invitation", func(_ context.Context, in invitationRequest) (installerInvitation, error) {
 		secret := in.Secret
-		if len(secret) == shortCodeLength && !s.enableShortCode {
+		shortCode := len(secret) == shortCodeLength
+		if shortCode && !s.enableShortCode {
 			return installerInvitation{}, &controlError{Status: http.StatusNotFound, Message: http.StatusText(http.StatusNotFound)}
 		}
 		s.mu.Lock()
+		defer s.mu.Unlock()
 		var entry installerInvitation
 		var exists bool
-		if len(secret) == shortCodeLength {
+		if shortCode {
 			entry.Token, exists = s.shortCodes.lookup(secret)
 			if exists {
 				candidate, ok := s.tokens[entry.Token]
@@ -308,21 +309,15 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 					break
 				}
 			}
-			if !exists {
-				invitation, ok := s.invitations[secret]
-				exists = ok && time.Now().Before(invitation.expires)
-				entry = installerInvitation{Token: invitation.token, Secret: secret}
-			}
 		}
 		var status int
 		var err error
-		if len(secret) == shortCodeLength {
+		if shortCode {
 			status, err = s.authorizeShortCode(in.Identity.request(), exists, in.Consume)
 		} else {
 			status, err = s.authorize(in.Identity.request(), exists)
 		}
 		if err != nil {
-			s.mu.Unlock()
 			if status == http.StatusUnauthorized {
 				err = i18n.NewError("invitation.invalid.expired.or.already.used")
 			}
@@ -333,30 +328,23 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		candidate := s.tokens[entry.Token]
 		owner := s.clientOwners[candidate]
 		entry.TemporaryAssistance = owner != nil && owner.temporaryAssistance
-		// Older frontends reading a device token cannot serve the temporary
-		// installer. Refuse the lookup before they can render a cached install.
-		if entry.TemporaryAssistance && (in.Consume || (entry.DeviceToken && !in.TemporaryInstaller)) {
-			s.mu.Unlock()
+		// Require a frontend that can render the temporary installer.
+		if entry.TemporaryAssistance && (in.Consume || !in.TemporaryInstaller) {
 			return installerInvitation{}, &controlError{Status: http.StatusForbidden, Message: serverText("temporary.assistance.requires.installer")}
 		}
 		if !s.multiDevice[candidate] && (s.connecting[candidate] > 0 || s.hasClientLocked(candidate)) {
-			s.mu.Unlock()
 			return installerInvitation{}, &controlError{Status: http.StatusUnauthorized, Message: i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used")}
 		}
-		if !in.Consume && (entry.DeviceToken || len(secret) == shortCodeLength) {
-			if owner != nil {
-				if !owner.expires.IsZero() {
-					entry.TokenExpiresAt = owner.expires.UTC().Format(time.RFC3339)
-				}
-				switch {
-				case !owner.used:
-					entry.TokenState = "initial"
-				default:
-					entry.TokenState = "offline"
-				}
+		if !in.Consume && owner != nil {
+			if !owner.expires.IsZero() {
+				entry.TokenExpiresAt = owner.expires.UTC().Format(time.RFC3339)
+			}
+			entry.TokenState = "initial"
+			if owner.used {
+				entry.TokenState = "offline"
 			}
 		}
-		if in.Consume && len(secret) == shortCodeLength {
+		if in.Consume && shortCode {
 			key := secret
 			if _, ok := s.shortCodes[key]; !ok {
 				key = strings.ToLower(key)
@@ -369,7 +357,6 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 				s.shortCodes[key] = code
 			}
 		}
-		s.mu.Unlock()
 		return entry, nil
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -137,11 +137,7 @@ impl Options {
                     o.temporary_assistance = boolean(inline.as_deref())?;
                 }
                 "consent-confirmed" => {
-                    o.consent = match inline.as_deref() {
-                        None | Some("true") => true,
-                        Some("false") => false,
-                        _ => return Err("invalid boolean".into()),
-                    };
+                    o.consent = boolean(inline.as_deref())?;
                 }
                 "token" | "invite" | "connection-mode" => {
                     let v = inline
@@ -189,4 +185,14 @@ fn boolean(value: Option<&str>) -> Result<bool> {
         Some("false") => Ok(false),
         _ => Err("invalid boolean".into()),
     }
+}
+
+#[cfg(test)]
+#[test]
+fn temporary_assistance_without_installer_returns_localized_error() {
+    let result = Options::parse(vec!["-temporary-assistance".into()]);
+    assert_eq!(
+        result.err().as_deref(),
+        Some(tr("temporary.assistance.requires.installer"))
+    );
 }

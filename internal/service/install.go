@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -78,6 +79,10 @@ func installCommands(token, code string) (string, string) {
 	if err != nil {
 		return "", ""
 	}
+	return installCommandsForURL(u)
+}
+
+func installCommandsForURL(u *url.URL) (string, string) {
 	address := installAddress(u)
 	shellURL := address + ".sh"
 	if !safeShellURL.MatchString(shellURL) {
@@ -117,12 +122,11 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		credential := strings.TrimPrefix(r.URL.Path, "/c/")
-		var powershell, shell bool
-		if credential, powershell = strings.CutSuffix(credential, ".ps1"); !powershell {
-			credential, shell = strings.CutSuffix(credential, ".sh")
-		}
+		extension := path.Ext(credential)
+		credential = strings.TrimSuffix(credential, extension)
 		redeem := r.Method == http.MethodPost
-		if !validInstallCredential.MatchString(credential) || (redeem && (shell || powershell)) {
+		if !validInstallCredential.MatchString(credential) ||
+			(extension != "" && (redeem || (extension != ".sh" && extension != ".ps1"))) {
 			http.NotFound(w, r)
 			return
 		}
@@ -149,7 +153,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
 			return
 		}
-		if !shell && !powershell {
+		if extension == "" {
 			serveInvitationPage(w, r, entry, code)
 			return
 		}
@@ -172,11 +176,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		}
 		u.Path = strings.TrimSuffix(u.Path, "/client") + "/downloads/" + tag
 		base := u.String()
-		name := "install.sh"
-		if powershell {
-			name = "install.ps1"
-		}
-		script, err := installer.Script(name)
+		script, err := installer.Script("install" + extension)
 		if err != nil {
 			http.Error(w, i18n.Text(i18n.Terminal(), "installer.unavailable"), http.StatusInternalServerError)
 			return
@@ -186,7 +186,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		if entry.TemporaryAssistance {
 			args += " 'temporary-assistance'"
 		}
-		if powershell {
+		if extension == ".ps1" {
 			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + args + "\n"
 		} else {
 			body = "#!/bin/sh\n{\nset -- " + shQuote(value) + " " + shQuote(base) + args + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n") + "\n}\n"

@@ -100,15 +100,13 @@ fn main() {
         "tui.selection.sent",
         "tui.fold.lines",
         "remote.control.authorization.prompt",
-        "connection.retry",
         "connection.retry.status",
         "connection.restored",
         "installer.consent.menu",
         "installer.consent.no",
         "installer.consent.temporary",
         "installer.consent.persistent",
-        "installer.consent.number",
-        "connection.idle.disconnected",
+        "temporary.assistance.requires.installer",
         "invalid.agenterm.connection.address.or.token",
     ];
     let mut source = String::from("pub fn tr(key: &str) -> &'static str { match key {\n");

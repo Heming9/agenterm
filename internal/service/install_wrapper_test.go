@@ -164,7 +164,7 @@ func TestInstallerUsesTokenSecretIndependentlyOfShortCode(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("short-code lookup: %d", response.Code)
 	}
-	for _, suffix := range []string{"", ".ps1"} {
+	for _, suffix := range []string{".sh", ".ps1"} {
 		for i := 0; i < 2; i++ {
 			w := httptest.NewRecorder()
 			s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+decoded.Secret+suffix, nil))

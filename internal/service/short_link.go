@@ -51,7 +51,7 @@ func serveInvitationPage(w http.ResponseWriter, r *http.Request, entry installer
 		http.Error(w, "Invalid connection endpoint", http.StatusInternalServerError)
 		return
 	}
-	shell, windows := installCommands(entry.Token, code)
+	shell, windows := installCommandsForURL(pageURL)
 	query := url.Values{"url": {pageURL.String()}}.Encode()
 	cliURL := "agenterm-cli://connect?" + query
 	lang := shortLinkLanguage(r.Header.Get("Accept-Language"))

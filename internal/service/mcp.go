@@ -288,15 +288,8 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 				return nil, nil, err
 			}
 			code, _ := out["short_code"].(string)
-			out["invitation_url"] = browserInvitationURL(deviceToken, "")
-			if code != "" {
-				out["short_code_url"] = browserInvitationURL(deviceToken, code)
-			}
-			shell, powershell := installCommands(deviceToken, code)
-			out["macos_linux_command"] = shell
-			out["windows_powershell_command"] = powershell
-			out["display_text"] = connectionDisplayText(deviceToken, shell, powershell, code, a, expires)
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out["display_text"].(string)}}}, out, nil
+			text := setConnectionPresentation(out, deviceToken, code, a, expires)
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, out, nil
 		})
 	}
 	return ms

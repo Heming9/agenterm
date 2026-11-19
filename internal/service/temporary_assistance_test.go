@@ -62,12 +62,14 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 			t.Fatalf("installer %q did not receive the invitation policy", suffix)
 		}
 	}
-	_, err = controlCall[installerInvitation](context.Background(), h.s.testFrontend().control, "invitation", invitationRequest{
-		Secret: token.Secret, Identity: requestIdentity{RemoteAddr: "192.0.2.10:12345"},
-	})
-	var rejected *controlError
-	if !errors.As(err, &rejected) || rejected.Status != http.StatusForbidden {
-		t.Fatalf("an older frontend must be denied a cached installer for temporary assistance: %v", err)
+	for _, credential := range []string{token.Secret, issued["short_code"].(string)} {
+		_, err := controlCall[installerInvitation](context.Background(), h.s.testFrontend().control, "invitation", invitationRequest{
+			Secret: credential, Identity: requestIdentity{RemoteAddr: "192.0.2.10:12345"},
+		})
+		var rejected *controlError
+		if !errors.As(err, &rejected) || rejected.Status != http.StatusForbidden {
+			t.Fatalf("an older frontend must be denied temporary assistance: %v", err)
+		}
 	}
 	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol}}
 	conn, response, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
@@ -135,7 +137,8 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 		request := ts.URL + protocol.PathPrefix + "/c/" + token.Secret
 		cmd := exec.CommandContext(ctx, "sh", "-c", "body=$(curl -fsSL "+shQuote(request+".sh")+") && sh -c \"$body\"")
 		if runtime.GOOS == "windows" {
-			cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "irm "+psQuote(request+".ps1")+"|iex")
+			cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+				"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); irm "+psQuote(request+".ps1")+"|iex")
 		} else if interactive {
 			cmd = exec.CommandContext(ctx, "sh", "-c", issued["macos_linux_command"].(string))
 		}

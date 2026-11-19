@@ -238,7 +238,7 @@ impl App {
             invitation: options.invite.clone(),
             temporary: options.temporary,
             mode_provided: options.mode_provided,
-            progress: !options.invite.is_empty(),
+            progress: false,
             palette: view::Palette::current(),
             state: State::Disconnected,
             menu: Menu::Input,
@@ -359,6 +359,7 @@ impl App {
             }
         };
         let invited = !self.invitation.is_empty() && value == self.invitation;
+        self.progress = invited;
         self.input.set(value.clone());
         self.address = clean(&address);
         self.state = State::Connecting;
@@ -532,9 +533,6 @@ impl App {
                     .and_then(|_| io::stdout().flush());
             }
             changed = true;
-        }
-        if changed {
-            self.refresh();
         }
         changed
     }
@@ -886,6 +884,9 @@ pub fn run(options: Options, shutdown: Arc<AtomicBool>, workspace: Option<PathBu
                 app.disconnect();
             }
             dirty |= app.drain();
+            if dirty {
+                app.refresh();
+            }
             if tick.elapsed() >= Duration::from_millis(50) {
                 dirty |= app.selection_tick();
                 tick = Instant::now();
@@ -894,7 +895,6 @@ pub fn run(options: Options, shutdown: Arc<AtomicBool>, workspace: Option<PathBu
                 break;
             }
             if dirty {
-                app.refresh();
                 terminal.draw(|frame| app.render(frame))?;
                 dirty = false;
             }

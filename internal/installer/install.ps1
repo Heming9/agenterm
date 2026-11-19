@@ -183,11 +183,9 @@ try {
   # Keep the client in the language used for the authorization prompt, even
   # when Windows display language and regional format are different.
   $previousLanguage = $env:AGENTERM_LANG
-  $previousLinkRegistration = $env:AGENTERM_SKIP_LINK_REGISTRATION
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
     if ($InstallMode -eq 'temporary-assistance') {
-      $env:AGENTERM_SKIP_LINK_REGISTRATION = '1'
       & $program -token $Invitation -temporary-assistance
     } elseif ($Invitation) {
       if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program -token $Invitation @clientOptions } else { & $program -invite $Invitation -consent-confirmed @clientOptions }
@@ -197,7 +195,6 @@ try {
     $clientExitCode = $LASTEXITCODE
   } finally {
     $env:AGENTERM_LANG = $previousLanguage
-    $env:AGENTERM_SKIP_LINK_REGISTRATION = $previousLinkRegistration
   }
 } finally {
   if ($InstallMode -eq 'temporary-assistance') { Remove-Item -Recurse -Force -LiteralPath $work }

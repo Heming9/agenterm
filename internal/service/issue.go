@@ -64,9 +64,7 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	if err != nil {
 		return nil, err
 	}
-	valueExpires := expires
 	var code string
-	var codeExpires time.Time
 	if !multiDevice && s.enableShortCode {
 		if s.shortCodes == nil {
 			s.shortCodes = make(shortCodeStore)
@@ -77,7 +75,6 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 			delete(s.invitations, decoded.Secret)
 			return nil, err
 		}
-		codeExpires = expires
 	}
 	s.multiDevice[secret] = multiDevice
 	s.tokens[token] = secret
@@ -87,26 +84,34 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	}
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires, temporaryAssistance: args.TemporaryAssistance}
-	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": valueExpires.UTC().Format(time.RFC3339), "token_initial_expires_at": expires.UTC().Format(time.RFC3339)}
+	deadline := expires.UTC().Format(time.RFC3339)
+	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": deadline, "token_initial_expires_at": deadline}
 	if args.TemporaryAssistance {
 		result["temporary_assistance"] = true
 	}
-	result["invitation_url"] = browserInvitationURL(token, "")
 	if code != "" {
 		result["short_code"] = code
+		result["short_code_expires_at"] = deadline
+	}
+	setConnectionPresentation(result, token, code, args, expires)
+	return result, nil
+}
+
+// The replaceable frontend also uses this presentation when a retained
+// runtime supplies credentials in its older display format.
+func setConnectionPresentation(result map[string]any, token, code string, args createClientArgs, expires time.Time) string {
+	result["invitation_url"] = browserInvitationURL(token, "")
+	if code != "" {
 		result["short_code_url"] = browserInvitationURL(token, code)
-		result["short_code_expires_at"] = codeExpires.UTC().Format(time.RFC3339)
 	}
 	shell, powershell := installCommands(token, code)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
-	result["display_text"] = connectionDisplayText(token, shell, powershell, code, args, valueExpires)
-	return result, nil
+	text := connectionDisplayText(token, shell, powershell, code, args, expires)
+	result["display_text"] = text
+	return text
 }
 
-// Presentation belongs to the replaceable frontend too: a retained runtime may
-// still return an older display_text while its credentials and commands remain
-// valid. Never reconstruct or change those credentials when updating the prose.
 func connectionDisplayText(token, shell, powershell, code string, args createClientArgs, expires time.Time) string {
 	expiry := expires.UTC().Format("2006-01-02 15:04:05")
 	link := browserInvitationURL(token, code)

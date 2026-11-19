@@ -54,16 +54,13 @@ say installer.the.server.can.control.this.computer.with
 printf '\n'
 choice=1
 choose_consent() {
-  allow_label=$(text installer.consent.temporary)
-  persistent_label=$(text installer.consent.persistent)
   deny_label=$(text installer.consent.no)
-  number_prompt=$(text installer.consent.number)
   if [ "$install_mode" = temporary-assistance ]; then
-    allow_label=$(text installer.consent.allow)
     number_prompt=$(text installer.consent.binary.number)
-    set -- "$allow_label" "$deny_label"
+    set -- "$(text installer.consent.allow)" "$deny_label"
   else
-    set -- "$allow_label" "$persistent_label" "$deny_label"
+    number_prompt=$(text installer.consent.number)
+    set -- "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$deny_label"
   fi
   last_choice=$#
 say installer.consent.menu
@@ -122,7 +119,8 @@ else
   choose_consent
 fi
 if [ "$install_mode" = temporary-assistance ] && [ "$choice" != 1 ]; then
-  choice=3
+  say installer.connection.cancelled
+  exit 0
 fi
 case "$choice" in 1) connection_mode=temporary;; 2) connection_mode=persistent;; *) say installer.connection.cancelled; exit 0;; esac
 say installer.connection.progress
@@ -208,7 +206,7 @@ else
 fi
 run_client() {
 if [ "$install_mode" = temporary-assistance ]; then
-  TMPDIR="$temp_root" AGENTERM_SKIP_LINK_REGISTRATION=1 "$binary" -token "$invitation" -temporary-assistance
+  TMPDIR="$temp_root" "$binary" -token "$invitation" -temporary-assistance
   return
 fi
 if [ -n "$invitation" ]; then
