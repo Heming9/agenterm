@@ -6,7 +6,7 @@
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
-| `create_client` | 创建私密连接邀请。 | `device_token`、`control_token`、`invitation`、`expires_at`、平台命令、`display_text`，以及可选的 `short_code_url`。 |
+| `create_client` | 创建私密连接邀请。 | `device_token`、`control_token`、`invitation`、`invitation_url`、`expires_at`、平台命令、`display_text`，以及可选的 `short_code_url`。 |
 | `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
 | `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
 | `p2p_transfer_start` | 启动远端 P2P 组件，信令注册后返回 Agent 端脚本。 | `connection_id`、`local_client_id`、`remote_client_id`、`state`、`shell_script`、`powershell_script`。 |
@@ -53,7 +53,7 @@
 
 传入 `{"temporary_assistance": true}` 可生成临时协助邀请，默认值为 `false`。受助者通过页面上的命令或收到的一键命令授权并启动临时客户端。临时协助支持终端操作，P2P 文件传输只在普通邀请中提供。
 
-单设备邀请启用短码时，`short_code_url` 是可在浏览器查看连接信息的私密链接（例如 `example.com/c/abcdef`）。设备在线期间短链接和短码不可使用，断线后仍在有效期内时可重新使用。它与短码共用有效期，并在第 10 次成功兑换后失效；查看页面不计入兑换次数。
+所有邀请都返回私密的 `invitation_url`，打开后显示连接说明。地址加上 `.sh` 或 `.ps1` 会返回对应的一键连接脚本。单设备邀请启用短码时，还会返回等价的 `short_code_url`，一键命令也优先使用短码。短码在第 10 次成功兑换后失效，查看页面或获取脚本不计入兑换次数。单设备令牌在线期间暂不能使用这些地址，断线后仍在有效期内时可重新使用。
 
 通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；每条命令、连接令牌和浏览器邀请文案必须分别放入 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `device_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后使用返回的 `control_token`，分多次调用 `list_client`，每轮 `wait_ms: 30000`，总预算为实际经过的 300 秒。任一设备在线立即结束等待；单轮空列表仅表示该轮没有在线设备，应在剩余预算内继续。预算耗尽后用 `wait_ms: 0` 最后检查一次，仍无设备才报告连接等待超时。临时网络错误后用 `wait_ms: 0` 即时复查一次；复查仍失败则报告检查失败、设备状态未知。重试不重置预算；用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧参数至 `300000`，但前端会将每轮实际等待限制为 30000 毫秒，向保留的旧 runtime 转发时同样生效。这些要求直接写在 MCP 工具说明中。
 

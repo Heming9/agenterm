@@ -184,10 +184,9 @@ func TestCreateClientDisplayText(t *testing.T) {
 		if !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(code) {
 			t.Fatalf("invalid invitation code: %q", code)
 		}
-		clientToken, _ := protocol.Decode(result["client_token"].(string))
-		path := "/agenterm/c/" + clientToken.Secret
+		path := "/agenterm/c/" + code + ".sh"
 		if key == "windows_powershell_command" {
-			path += ".ps1"
+			path = "/agenterm/c/" + code + ".ps1"
 		}
 		if !strings.Contains(display, command) || !strings.Contains(command, "example.com") || !strings.Contains(command, path) || !strings.Contains(command, "https://") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "Agenterm_") || strings.Contains(command, "/downloads/") {
 			t.Fatalf("invalid %s in display: %s", key, command)
@@ -206,8 +205,8 @@ func TestInstallCommandsForPublicHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "https://agenterm.net/c/" + decoded.Secret
-	shell, windows := installCommands(result["client_token"].(string))
-	if want := "curl -fL " + base + "|sh"; shell != want {
+	shell, windows := installCommands(result["client_token"].(string), "")
+	if want := "curl -fL " + base + ".sh|sh"; shell != want {
 		t.Fatalf("shell command = %q, want %q", shell, want)
 	}
 	if want := `powershell -NoP "irm ` + base + `.ps1|iex"`; windows != want {
@@ -246,7 +245,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 						t.Fatal("multi-device output includes a short code")
 					}
 				} else {
-					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != shortCodeURL(structured.DeviceToken, structured.ShortCode) || structured.ShortCode == "" {
+					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != browserInvitationURL(structured.DeviceToken, structured.ShortCode) || structured.ShortCode == "" {
 						t.Fatal("single-device output lacks short code or expiry")
 					}
 					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.DeviceToken + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL
@@ -268,7 +267,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 					t.Fatalf("invalid English connection instructions: %s", display)
 				}
 				sections := strings.Split(display, "\n\n")
-				if (!multi && len(sections) != 7) || (multi && (len(sections) != 7 || !strings.HasPrefix(sections[6], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
+				if (!multi && len(sections) != 7) || (multi && (len(sections) != 8 || !strings.HasPrefix(sections[7], "Multi-device mode:"))) || strings.Contains(display, "Multi-device mode:") != multi {
 					t.Fatalf("incorrect multi-device notice: %s", display)
 				}
 			})

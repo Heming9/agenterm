@@ -277,23 +277,27 @@ fn unpack_host(data: &[u8]) -> Result<String> {
 pub fn short_code(raw: &str) -> bool {
     raw.len() == 6 && raw.bytes().all(|b| b.is_ascii_alphanumeric())
 }
-pub fn short_address(raw: &str) -> Result<Address> {
+pub fn connection_address(raw: &str) -> Result<Address> {
     let a = Address::parse(&if raw.contains("://") {
         raw.into()
     } else {
-        // The server omits the scheme only for HTTP short-code URLs.
+        // The server omits the scheme only for HTTP connection URLs.
         format!("http://{raw}")
     })?;
     if !["http", "https"].contains(&a.scheme.as_str()) {
-        return Err("expected a short-code HTTP address".into());
+        return Err("expected a connection HTTP address".into());
     }
     let (prefix, code) = a
         .path
         .rsplit_once("/c/")
-        .ok_or("invalid short-code address")?;
+        .ok_or("invalid connection address")?;
     validate_prefix(prefix)?;
-    if !short_code(code) {
-        return Err("invalid short code".into());
+    let token_secret = code.len() == 14
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !short_code(code) && !token_secret {
+        return Err("invalid connection credential".into());
     }
     Ok(a)
 }
@@ -346,7 +350,7 @@ mod tests {
             ),
             ("http://example.com/c/abc123", "http://example.com/c/abc123"),
         ] {
-            assert_eq!(short_address(input).unwrap().url(), expected);
+            assert_eq!(connection_address(input).unwrap().url(), expected);
         }
     }
     #[test]

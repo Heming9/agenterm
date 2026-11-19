@@ -126,3 +126,16 @@ func connectExecutionClient(t *testing.T, h *multiHarness, token string) {
 	startRustClient(t, token)
 	waitForRustClient(t, h, token)
 }
+
+// The checked-in release predates token-based links. CI supplies the current
+// client build so this exercises the new link through a real connection.
+func TestRustClientConnectsFromTokenInvitationURL(t *testing.T) {
+	if os.Getenv("AGENTERM_RUST_CLI") == "" {
+		t.Skip("requires a current Rust client build")
+	}
+	h := newMultiHarness(t, 0)
+	h.s.enableShortCode = false
+	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
+	startRustClient(t, issued["invitation_url"].(string))
+	waitForRustClient(t, h, issued["device_token"].(string))
+}

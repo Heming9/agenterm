@@ -45,9 +45,11 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 		}
 		return w.Body.String()
 	}
-	page := get("/c/" + issued["short_code"].(string))
-	if !strings.Contains(page, "system temporary directory") || strings.Contains(page, "agenterm-cli://") {
-		t.Fatal("temporary invitation must direct the recipient to the installer")
+	for _, credential := range []string{token.Secret, issued["short_code"].(string)} {
+		page := get("/c/" + credential)
+		if !strings.Contains(page, "system temporary directory") || strings.Contains(page, "agenterm-cli://") || strings.Contains(page, issued["device_token"].(string)) {
+			t.Fatal("temporary invitation must direct the recipient to the installer")
+		}
 	}
 	for _, suffix := range []string{".sh", ".ps1"} {
 		r := httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string)+suffix, nil)
@@ -56,11 +58,7 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "'token' 'temporary-assistance'") {
 			t.Fatalf("short-code installer %q did not preserve temporary policy: %d", suffix, w.Code)
 		}
-		tokenSuffix := suffix
-		if suffix == ".sh" {
-			tokenSuffix = ""
-		}
-		if !strings.Contains(get("/c/"+token.Secret+tokenSuffix), "'token' 'temporary-assistance'") {
+		if !strings.Contains(get("/c/"+token.Secret+suffix), "'token' 'temporary-assistance'") {
 			t.Fatalf("installer %q did not receive the invitation policy", suffix)
 		}
 	}
@@ -86,7 +84,7 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/agenterm/c/" + issued["short_code"].(string), "/agenterm/invite/redeem"} {
+	for _, path := range []string{"/agenterm/c/" + issued["short_code"].(string), "/agenterm/c/" + token.Secret, "/agenterm/invite/redeem"} {
 		r := httptest.NewRequest(http.MethodPost, path, nil)
 		r.Header.Set(version.Header, version.Protocol)
 		r.Header.Set("Authorization", "Bearer "+invitation.Secret)
@@ -135,7 +133,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	defer cancel()
 	runInstaller := func(input string, interactive bool) (*exec.Cmd, *bytes.Buffer) {
 		request := ts.URL + protocol.PathPrefix + "/c/" + token.Secret
-		cmd := exec.CommandContext(ctx, "sh", "-c", "body=$(curl -fsSL "+shQuote(request)+") && sh -c \"$body\"")
+		cmd := exec.CommandContext(ctx, "sh", "-c", "body=$(curl -fsSL "+shQuote(request+".sh")+") && sh -c \"$body\"")
 		if runtime.GOOS == "windows" {
 			cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "irm "+psQuote(request+".ps1")+"|iex")
 		} else if interactive {

@@ -46,6 +46,7 @@ fn private_file(path: &Path, contents: &str) {
 fn links_normalize_to_the_same_options_as_go() {
     for address in [
         "https://example.com/base/c/ab1234",
+        "https://example.com/base/c/cHpg16F9g4-14A",
         "http://127.0.0.1:12345/c/ABC123",
         "https://[::1]:443/a-b/c/ab1234",
     ] {

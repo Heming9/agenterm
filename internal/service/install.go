@@ -45,21 +45,41 @@ func (s *runtimeState) newInvitation(token, identifier string, expires time.Time
 	}
 }
 
-func installCommands(token string) (string, string) {
+// connectionPageURL derives the public page address from the device credential.
+func connectionPageURL(token, code string) (*url.URL, error) {
 	endpoint, secret, err := invite.Endpoint(token)
+	if err != nil {
+		return nil, err
+	}
+	if code != "" {
+		if len(code) != shortCodeLength || !validInstallCredential.MatchString(code) {
+			return nil, fmt.Errorf("invalid short code")
+		}
+		secret = code
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/invite/redeem") + "/c/" + secret
+	u.RawPath = ""
+	return u, nil
+}
+
+func installAddress(u *url.URL) string {
+	if u.Scheme == "https" {
+		return u.String()
+	}
+	return u.Host + u.EscapedPath()
+}
+
+func installCommands(token, code string) (string, string) {
+	u, err := connectionPageURL(token, code)
 	if err != nil {
 		return "", ""
 	}
-	base := strings.TrimSuffix(endpoint, "/invite/redeem") + "/c/" + secret
-	u, err := url.Parse(base)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
-		return "", ""
-	}
-	address := u.Host + u.EscapedPath()
-	if u.Scheme == "https" {
-		address = u.String()
-	}
-	shellURL := address
+	address := installAddress(u)
+	shellURL := address + ".sh"
 	if !safeShellURL.MatchString(shellURL) {
 		shellURL = shQuote(shellURL)
 	}
@@ -81,7 +101,7 @@ func installCommands(token string) (string, string) {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// A short code serves an invitation page or installer on GET and redeems on POST.
+// Device credentials and short-code aliases share the invitation routes.
 func (s *frontend) installWrapper(tag string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -101,36 +121,36 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		if credential, powershell = strings.CutSuffix(credential, ".ps1"); !powershell {
 			credential, shell = strings.CutSuffix(credential, ".sh")
 		}
-		if !validInstallCredential.MatchString(credential) || (shell && len(credential) != shortCodeLength) || (r.Method == http.MethodPost && (powershell || shell || len(credential) != shortCodeLength)) {
+		redeem := r.Method == http.MethodPost
+		if !validInstallCredential.MatchString(credential) || (redeem && (shell || powershell)) {
 			http.NotFound(w, r)
 			return
 		}
-		if len(credential) == shortCodeLength && !powershell && !shell && r.Method != http.MethodPost {
-			s.shortLink(w, r)
-			return
-		}
-		if r.Method == http.MethodPost && !acceptClientVersion(w, r) {
+		if redeem && !acceptClientVersion(w, r) {
 			return
 		}
 		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{
 			Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential,
-			Consume: r.Method == http.MethodPost, TemporaryInstaller: true,
+			Consume: redeem, TemporaryInstaller: true,
 		})
-		if r.Method == http.MethodPost {
-			if err != nil {
-				writeControlError(w, err)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
-			return
-		}
 		if err != nil {
 			writeControlError(w, err)
 			return
 		}
-		if !entry.DeviceToken && len(credential) != shortCodeLength {
+		code := ""
+		if len(credential) == shortCodeLength {
+			code = credential
+		} else if !entry.DeviceToken {
 			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusUnauthorized)
+			return
+		}
+		if redeem {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
+			return
+		}
+		if !shell && !powershell {
+			serveInvitationPage(w, r, entry, code)
 			return
 		}
 		source, decodeErr := protocol.Decode(entry.Token)

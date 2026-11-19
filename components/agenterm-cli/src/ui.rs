@@ -122,7 +122,7 @@ impl Options {
             match flag {
                 "h" | "help" => {
                     println!(
-                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n       agenterm-cli \"agenterm-cli://connect?url=ENCODED_URL[&mode=temporary|persistent]\"\n\n  -token VALUE              Connection token, short code, or short-code URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
+                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n       agenterm-cli \"agenterm-cli://connect?url=ENCODED_URL[&mode=temporary|persistent]\"\n\n  -token VALUE              Connection token, short code, or invitation URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
                     );
                     return Ok(None);
                 }

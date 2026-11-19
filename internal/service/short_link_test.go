@@ -281,7 +281,7 @@ func TestShortLinkExpiry(t *testing.T) {
 	s.clientOwners[s.tokens[token]].expires = time.Now().Add(-time.Second)
 	s.mu.Unlock()
 	w := httptest.NewRecorder()
-	s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/"+code, nil))
+	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code, nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expired link: %d", w.Code)
 	}
@@ -290,7 +290,7 @@ func TestShortLinkExpiry(t *testing.T) {
 func TestShortLinkDisabled(t *testing.T) {
 	s := &runtimeState{clientURL: "wss://example.com/client"}
 	w := httptest.NewRecorder()
-	s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/abcdef", nil))
+	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/abcdef", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("disabled short link: %d", w.Code)
 	}
@@ -331,41 +331,81 @@ func TestShortLinkRouteIsRedacted(t *testing.T) {
 	}
 }
 
-func TestShortCodeExplicitFormats(t *testing.T) {
-	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/client"}
-	issued, err := s.createClient("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := issued["short_code"].(string)
-	for _, tc := range []struct{ name, accept, agent, suffix, content string }{
-		{"browser", "text/html", "Mozilla/5.0", "", "text/html"},
-		{"curl page", "*/*", "curl/8.0", "", "text/html"},
-		{"powershell page", "*/*", "WindowsPowerShell/5.1", "", "text/html"},
-		{"shell", "text/html", "Mozilla/5.0", ".sh", "text/plain"},
-		{"powershell", "text/html", "Mozilla/5.0", ".ps1", "text/plain"},
+func TestInvitationFormats(t *testing.T) {
+	for _, mode := range []struct {
+		name                    string
+		shortCodes, multiDevice bool
+	}{
+		{name: "token only"},
+		{name: "short code enabled", shortCodes: true},
+		{name: "multi device", shortCodes: true, multiDevice: true},
 	} {
-		for _, method := range []string{http.MethodGet, http.MethodHead} {
-			t.Run(tc.name+method, func(t *testing.T) {
-				r := httptest.NewRequest(method, "/c/"+code+tc.suffix, nil)
-				r.Header.Set("Accept", tc.accept)
-				r.Header.Set("User-Agent", tc.agent)
+		t.Run(mode.name, func(t *testing.T) {
+			s := &runtimeState{enableShortCode: mode.shortCodes, clientURL: "wss://example.com/client"}
+			issued, err := s.createClientMode("", createClientArgs{MultiDevice: mode.multiDevice, TimeoutSeconds: 900})
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := issued["client_token"].(string)
+			decoded, err := protocol.Decode(token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tokenPath := "/c/" + decoded.Secret
+			if issued["invitation_url"] != "https://example.com"+tokenPath {
+				t.Fatal("missing token-based browser link")
+			}
+			code, _ := issued["short_code"].(string)
+			if (code != "") != (mode.shortCodes && !mode.multiDevice) {
+				t.Fatal("unexpected short-code availability")
+			}
+			handler := s.installWrapper("v1.2.3")
+			request := func(method, path string) *httptest.ResponseRecorder {
+				t.Helper()
+				r := httptest.NewRequest(method, path, nil)
+				r.Header.Set("Accept", "*/*")
+				r.Header.Set("User-Agent", "curl/8.0")
+				r.Header.Set(version.Header, version.Protocol)
 				w := httptest.NewRecorder()
-				s.installWrapper("v1.2.3").ServeHTTP(w, r)
-				if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), tc.content) {
-					t.Fatalf("status=%d type=%q", w.Code, w.Header().Get("Content-Type"))
+				handler.ServeHTTP(w, r)
+				return w
+			}
+			for _, format := range []struct{ suffix, content, prefix string }{
+				{"", "text/html", "<!doctype html>"},
+				{".sh", "text/plain", "#!/bin/sh"},
+				{".ps1", "text/plain", "& {"},
+			} {
+				path := tokenPath + format.suffix
+				get, head := request(http.MethodGet, path), request(http.MethodHead, path)
+				if get.Code != http.StatusOK || !strings.HasPrefix(get.Header().Get("Content-Type"), format.content) ||
+					!strings.HasPrefix(get.Body.String(), format.prefix) || !strings.Contains(get.Body.String(), token) ||
+					head.Code != http.StatusOK || head.Header().Get("Content-Type") != get.Header().Get("Content-Type") || head.Body.Len() != 0 {
+					t.Fatalf("invalid %q response: GET=%d, HEAD=%d", format.suffix, get.Code, head.Code)
 				}
-				if method == http.MethodGet && tc.content == "text/plain" {
-					if !strings.Contains(w.Body.String(), issued["client_token"].(string)) {
-						t.Fatal("installer missing token")
-					}
-					isPS := tc.name == "powershell"
-					if strings.HasPrefix(w.Body.String(), "#!/bin/sh") == isPS {
-						t.Fatal("wrong installer format")
-					}
+				if format.suffix == "" && !strings.Contains(get.Body.String(), "Expires in ") {
+					t.Fatal("token-backed invitation is missing its countdown")
 				}
-			})
-		}
+				if code != "" {
+					alias := request(http.MethodGet, "/c/"+code+format.suffix)
+					if alias.Code != http.StatusOK || !strings.HasPrefix(alias.Body.String(), format.prefix) ||
+						(format.suffix != "" && alias.Body.String() != get.Body.String()) {
+						t.Fatalf("unexpected %q alias response: %d", format.suffix, alias.Code)
+					}
+				} else if !mode.shortCodes && request(http.MethodGet, "/c/abcdef"+format.suffix).Code != http.StatusNotFound {
+					t.Fatalf("short-code route %q is enabled", format.suffix)
+				}
+			}
+			if result := request(http.MethodPost, tokenPath); result.Code != http.StatusOK || !strings.Contains(result.Body.String(), token) {
+				t.Fatalf("installed client could not resolve the token link: %d", result.Code)
+			}
+			invitation, err := protocol.Decode(issued["invitation"].(string))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result := request(http.MethodPost, "/c/"+invitation.Secret); result.Code != http.StatusUnauthorized {
+				t.Fatalf("one-time invitation secret accepted by the connection URL route: %d", result.Code)
+			}
+		})
 	}
 }
 
@@ -391,7 +431,7 @@ func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/c/"+code, nil)
 		req.Header.Set("Accept-Language", "zh-CN")
-		h.s.testFrontend().shortLink(w, req)
+		h.s.installWrapper("v1.2.3").ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("page status: %d", w.Code)
 		}
@@ -402,7 +442,7 @@ func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 	}
 	conn, _ := h.connect(t, token, "validity")
 	w := httptest.NewRecorder()
-	h.s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/"+code, nil))
+	h.s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code, nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("online link status: %d", w.Code)
 	}
@@ -436,7 +476,7 @@ func TestShortCodeAddressScheme(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := shortCodeURL(token, "abcdef"); got != tc.want {
+		if got := browserInvitationURL(token, "abcdef"); got != tc.want {
 			t.Fatalf("%s: got %q want %q", tc.clientURL, got, tc.want)
 		}
 	}

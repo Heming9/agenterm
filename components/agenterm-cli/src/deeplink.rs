@@ -1,4 +1,4 @@
-//! Protocol launches follow the former Go CLI: short-code URL + optional mode,
+//! Protocol launches follow the former Go CLI: connection URL + optional mode,
 //! per-user registration, a stable executable, and private macOS link files.
 #[cfg(any(target_os = "linux", test))]
 mod linux;
@@ -60,7 +60,7 @@ pub fn parse(raw: &str) -> Result<Link> {
     }
     let address = address.ok_or(INVALID)?;
     // Scheme omission is valid in the interactive form, but not in a protocol URL.
-    if !address.contains("://") || protocol::short_address(address.trim()).is_err() {
+    if !address.contains("://") || protocol::connection_address(address.trim()).is_err() {
         return Err(INVALID.into());
     }
     Ok(Link { address, mode })

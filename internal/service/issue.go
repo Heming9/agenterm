@@ -91,12 +91,13 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	if args.TemporaryAssistance {
 		result["temporary_assistance"] = true
 	}
+	result["invitation_url"] = browserInvitationURL(token, "")
 	if code != "" {
 		result["short_code"] = code
-		result["short_code_url"] = shortCodeURL(token, code)
+		result["short_code_url"] = browserInvitationURL(token, code)
 		result["short_code_expires_at"] = codeExpires.UTC().Format(time.RFC3339)
 	}
-	shell, powershell := installCommands(token)
+	shell, powershell := installCommands(token, code)
 	result["macos_linux_command"] = shell
 	result["windows_powershell_command"] = powershell
 	result["display_text"] = connectionDisplayText(token, shell, powershell, code, args, valueExpires)
@@ -108,23 +109,20 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 // valid. Never reconstruct or change those credentials when updating the prose.
 func connectionDisplayText(token, shell, powershell, code string, args createClientArgs, expires time.Time) string {
 	expiry := expires.UTC().Format("2006-01-02 15:04:05")
+	link := browserInvitationURL(token, code)
 	var text string
 	if args.TemporaryAssistance {
-		browser := ""
-		if code != "" {
-			browser = "\n\nBrowser invitation link:\n" + shortCodeURL(token, code)
-		}
+		browser := "\n\nBrowser invitation link:\n" + link
 		text = fmt.Sprintf(i18n.Text("en", "connection.display.temporary.assistance"), powershell, shell, browser, args.TimeoutSeconds, expiry)
 	} else {
-		connectionSection := "Connection token:\n```\n" + token + "\n```"
-		firstStep := "run the command above for your system."
+		label := "Connection token:"
 		tokenAlternative := ""
 		if code != "" {
-			connectionSection = "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + shortCodeURL(token, code)
-			firstStep = "open the browser invitation link above or run the command for your system."
+			label = "Connection token / short code ( " + code + " ):"
 			tokenAlternative = " or short code above"
 		}
-		text = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, firstStep, tokenAlternative, args.TimeoutSeconds, expiry)
+		connectionSection := label + "\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + link
+		text = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, "open the browser invitation link above or run the command for your system.", tokenAlternative, args.TimeoutSeconds, expiry)
 	}
 	if args.MultiDevice {
 		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")

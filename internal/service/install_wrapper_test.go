@@ -34,7 +34,7 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths := []string{"/c/" + device.Secret, "/c/" + device.Secret + ".ps1"}
+	paths := []string{"/c/" + device.Secret + ".sh", "/c/" + device.Secret + ".ps1"}
 	for _, scriptPath := range paths {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, scriptPath, nil)

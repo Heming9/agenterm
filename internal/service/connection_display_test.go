@@ -76,7 +76,11 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 			if _, ok := structured["client_token"]; ok || structured["device_token"] != issued["client_token"] {
 				t.Fatal("frontend must publish the runtime device credential only as device_token")
 			}
-			shell, powershell := installCommands(structured["device_token"].(string))
+			if structured["invitation_url"] != browserInvitationURL(structured["device_token"].(string), "") {
+				t.Fatal("frontend did not return a token-based browser link")
+			}
+			code, _ := structured["short_code"].(string)
+			shell, powershell := installCommands(structured["device_token"].(string), code)
 			if structured["macos_linux_command"] != shell || structured["windows_powershell_command"] != powershell {
 				t.Fatal("frontend did not replace legacy commands")
 			}

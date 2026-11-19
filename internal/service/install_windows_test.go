@@ -71,7 +71,7 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		t.Fatal(err)
 	}
 	value := issued["invitation"].(string)
-	_, command := installCommands(issued["client_token"].(string))
+	_, command := installCommands(issued["client_token"].(string), "")
 	forcedFormat := ""
 	customPrefix := ""
 	runWithInput := func(input string) (string, error) {

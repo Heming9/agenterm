@@ -89,11 +89,13 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 			value := issued["invitation"].(string)
 			base := origin + prefix
 			decoded, _ := protocol.Decode(issued["client_token"].(string))
-			shell, powershell := installCommands(issued["client_token"].(string))
+			shell, powershell := installCommands(issued["client_token"].(string), "")
 			for i, command := range []string{shell, powershell} {
 				path := "/c/" + decoded.Secret
 				if i == 1 {
 					path += ".ps1"
+				} else {
+					path += ".sh"
 				}
 				expectedBase := strings.TrimPrefix(base, "http://")
 				if !strings.Contains(command, expectedBase+path) {

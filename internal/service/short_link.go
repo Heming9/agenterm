@@ -13,28 +13,19 @@ import (
 	"strings"
 	"time"
 
-	"agenterm/internal/invite"
 	"agenterm/internal/theme"
 	"agenterm/internal/version"
 
 	"golang.org/x/text/language"
 )
 
-// shortCodeURL retains HTTPS and omits HTTP, matching the installation commands.
-func shortCodeURL(token, code string) string {
-	endpoint, _, err := invite.Endpoint(token)
+// browserInvitationURL uses the same scheme convention as the installer.
+func browserInvitationURL(token, code string) string {
+	u, err := connectionPageURL(token, code)
 	if err != nil {
 		return ""
 	}
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return ""
-	}
-	u.Path = strings.TrimSuffix(u.Path, "/invite/redeem") + "/c/" + code
-	if u.Scheme == "https" {
-		return u.String()
-	}
-	return u.Host + u.EscapedPath()
+	return installAddress(u)
 }
 
 //go:embed assets/short-link.html
@@ -51,45 +42,17 @@ var shortLinkScriptHash = func() string {
 	return base64.StdEncoding.EncodeToString(digest[:])
 }()
 
-func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+func serveInvitationPage(w http.ResponseWriter, r *http.Request, entry installerInvitation, code string) {
 	w.Header().Add("Vary", "Accept-Language")
 	w.Header().Add("Vary", "Accept-Encoding")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'sha256-"+shortLinkScriptHash+"'; base-uri 'none'; frame-ancestors 'none'")
-	code, ok := strings.CutPrefix(r.URL.Path, "/c/")
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if !validInstallCredential.MatchString(code) || len(code) != shortCodeLength {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: code})
-	if err != nil {
-		writeControlError(w, err)
-		return
-	}
-	shell, windows := installCommands(entry.Token)
-	endpoint, _, err := invite.Endpoint(entry.Token)
+	pageURL, err := connectionPageURL(entry.Token, code)
 	if err != nil {
 		http.Error(w, "Invalid connection endpoint", http.StatusInternalServerError)
 		return
 	}
-	shortURL, err := url.Parse(endpoint)
-	if err != nil {
-		http.Error(w, "Invalid connection endpoint", http.StatusInternalServerError)
-		return
-	}
-	shortURL.Path = strings.TrimSuffix(shortURL.Path, "/invite/redeem") + "/c/" + code
-	query := url.Values{"url": {shortURL.String()}}.Encode()
+	shell, windows := installCommands(entry.Token, code)
+	query := url.Values{"url": {pageURL.String()}}.Encode()
 	cliURL := "agenterm-cli://connect?" + query
 	lang := shortLinkLanguage(r.Header.Get("Accept-Language"))
 	switch r.URL.Query().Get("lang") {
@@ -98,8 +61,8 @@ func (s *frontend) shortLink(w http.ResponseWriter, r *http.Request) {
 	case "zh-CN":
 		lang = "zh-CN"
 	}
-	baseURL := *shortURL
-	baseURL.Path = strings.TrimSuffix(baseURL.Path, "/c/"+code)
+	baseURL := *pageURL
+	baseURL.Path = baseURL.Path[:strings.LastIndex(baseURL.Path, "/c/")]
 	baseURL.RawPath = ""
 	serverAddress := baseURL.String()
 	validity := connectionValidity(entry)

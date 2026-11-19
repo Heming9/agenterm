@@ -15,7 +15,7 @@ use std::{
     time::Instant,
 };
 
-pub fn short_target(address: &Address) -> Address {
+pub fn connection_target(address: &Address) -> Address {
     let mut target = address.clone();
     target.scheme = if address.secure() { "wss" } else { "ws" }.into();
     target.path = address.path.rsplit_once("/c/").unwrap().0.to_string() + "/client";
@@ -26,7 +26,7 @@ pub fn display_address(value: &str) -> Result<String> {
     if value.starts_with("Agenterm_") {
         Ok(Token::decode(value)?.connection_url())
     } else {
-        Ok(short_target(&protocol::short_address(value)?).url())
+        Ok(connection_target(&protocol::connection_address(value)?).url())
     }
 }
 
@@ -73,8 +73,8 @@ pub fn run(
         let reservation = reserve(&token.address)?;
         (token, reservation, None)
     } else {
-        let address = protocol::short_address(value)?;
-        let target = short_target(&address);
+        let address = protocol::connection_address(value)?;
+        let target = connection_target(&address);
         let reservation = reserve(&target)?;
         if stopped.load(Ordering::SeqCst) {
             return Ok(());
@@ -82,7 +82,7 @@ pub fn run(
         let validation_started = Instant::now();
         let (token, server_version) = transport::redeem(&address, None)?;
         if token.address.url() != target.url() {
-            return Err("short code resolved to a different server".into());
+            return Err("connection URL resolved to a different server".into());
         }
         (
             token,

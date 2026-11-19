@@ -108,7 +108,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := fmt.Sprintf("s=$(curl -fsSL %s)&&sh -c \"$s\"", shQuote(publicURL+prefix+"/c/"+decodedToken.Secret))
+	command := fmt.Sprintf("s=$(curl -fsSL %s)&&sh -c \"$s\"", shQuote(publicURL+prefix+"/c/"+decodedToken.Secret+".sh"))
 	cache := filepath.Join(root, "cache")
 	// Cancellation must happen before probing, creating a cache, or downloading.
 	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
@@ -215,8 +215,8 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	// The generated pipeline must read authorization from the terminal, not
 	// from the pipe carrying the installer, and pass terminal input onward.
 	write(filepath.Join(assets, archive), installerFixture(t, client)[archive], 0o600)
-	pipeline, _ := installCommands(issued["client_token"].(string))
-	wantPipeline := "curl -fL " + strings.TrimPrefix(publicURL, "http://") + prefix + "/c/" + decodedToken.Secret + "|sh"
+	pipeline, _ := installCommands(issued["client_token"].(string), "")
+	wantPipeline := "curl -fL " + strings.TrimPrefix(publicURL, "http://") + prefix + "/c/" + decodedToken.Secret + ".sh|sh"
 	if pipeline != wantPipeline {
 		t.Fatalf("pipeline = %q, want %q", pipeline, wantPipeline)
 	}

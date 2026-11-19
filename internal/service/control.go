@@ -343,7 +343,7 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 			s.mu.Unlock()
 			return installerInvitation{}, &controlError{Status: http.StatusUnauthorized, Message: i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used")}
 		}
-		if len(secret) == shortCodeLength && !in.Consume {
+		if !in.Consume && (entry.DeviceToken || len(secret) == shortCodeLength) {
 			if owner != nil {
 				if !owner.expires.IsZero() {
 					entry.TokenExpiresAt = owner.expires.UTC().Format(time.RFC3339)

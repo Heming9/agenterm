@@ -31,7 +31,7 @@ func TestInstallCommandsFollowPublicURLProtocol(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			shell, windows := installCommands(token)
+			shell, windows := installCommands(token, "")
 			for _, cmd := range []string{shell, windows} {
 				if strings.Contains(cmd, "https://") != tls || strings.Contains(cmd, "http://") {
 					t.Fatalf("wrong protocol in command: %q", cmd)

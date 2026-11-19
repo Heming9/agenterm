@@ -24,7 +24,7 @@ func TestShortCodeLimiterIsIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokenPath := "/c/" + decoded.Secret
+	tokenPath := "/c/" + decoded.Secret + ".sh"
 	request := func(method, path string) int {
 		var body *strings.Reader
 		if path == "/mcp" {
@@ -39,13 +39,8 @@ func TestShortCodeLimiterIsIndependent(t *testing.T) {
 		w := httptest.NewRecorder()
 		if path == "/mcp" {
 			s.mcp(w, r)
-		} else if strings.HasPrefix(path, "/c/") {
-			if path != tokenPath {
-				r.Header.Set("Accept", "text/html")
-			}
-			s.installWrapper("v1.2.3").ServeHTTP(w, r)
 		} else {
-			s.testFrontend().shortLink(w, r)
+			s.installWrapper("v1.2.3").ServeHTTP(w, r)
 		}
 		if path == tokenPath && (w.Code != http.StatusOK || !strings.Contains(w.Body.String(), issued["client_token"].(string))) {
 			t.Fatalf("valid token installer: %d", w.Code)
@@ -287,7 +282,7 @@ func TestAdminAndShortCodeLimitsAreSeparate(t *testing.T) {
 		}
 	}
 	w := httptest.NewRecorder()
-	s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string), nil))
+	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string), nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("short code blocked by admin guesses: %d", w.Code)
 	}
@@ -309,7 +304,7 @@ func TestShortCodeViewingCannotResetFailures(t *testing.T) {
 	}
 	view := func(value string) int {
 		w := httptest.NewRecorder()
-		s.testFrontend().shortLink(w, httptest.NewRequest(http.MethodGet, "/c/"+value, nil))
+		s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+value, nil))
 		return w.Code
 	}
 	for i := 0; i < 2; i++ {
