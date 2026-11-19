@@ -2,138 +2,78 @@
 
 [简体中文](mcp-tools.zh-CN.md) · [User guide](usage.md) · [Terminal client API](client-api.md)
 
-Use the connected server's `tools/list` response for its schemas and behavior annotations. The management endpoint exposes all eight tools. When authenticating with a scoped `control_token` as the HTTP Bearer credential, the seven device tools use that credential directly. When calling those tools with management access, pass the invitation's `control_token` as a tool argument.
+The connected server's `tools/list` publishes the schemas and behavior annotations. Management access exposes all eight tools and requires the invitation's `control_token` as an argument to device tools. Scoped access exposes the seven device tools and uses that credential as the HTTP Bearer token.
 
-| Tool | When to use it | Main result fields |
-| --- | --- | --- |
-| `create_client` | Create a private connection invitation. | `control_token`, `display_text`, `expires_at`. |
-| `list_client` | List online devices or wait for a connection. | `clients`; empty means no online device when returned. |
-| `close_client` | Close selected devices or all online devices for the token. | Closed `client_ids`. |
-| `p2p_transfer_start` | Start the remote P2P helper and return Agent-side scripts after signaling registration. | `connection_id`, `local_client_id`, `remote_client_id`, `state`, `shell_script`, `powershell_script`. |
-| `execute_command` | Create through setup or reuse through session_id; anonymous commands close quickly or retain on wait expiry. | `command_id`, `status`, `output`, `next_cursor`, `has_more`; optional `session_id`, `exit_code`, `error`, `truncated`. |
-| `session_read` | Read paginated output using the same result format as execute_command. | Six regular fields; completion adds exit_code, with error/truncated only when needed. |
-| `session_control` | Input, interrupt, EOF or stop selected by action. | Input/interrupt/EOF return `ok:true`; stop returns `status` and optional `exit_code/error`. |
-| `session_list` | Find retained sessions in creation order, optionally filtered by client_id. | `sessions`: `session_id`, `client_id`, `command`, `command_id`, `status`; optional `exit_code/error`. |
-
-
-## Common usage
-
-Create an invitation and privately share its short link or connection command. The examples below assume a single device and a scoped MCP connection. For a multi-device invitation, provide `client_id` when executing commands, reading output, or controlling a session. To preserve shell state across commands, reuse the `session_id` returned by `execute_command`. When the current command requests input, use `session_control`:
-
-```json
-{"session_id":"…","action":"input","input":"pwd\n"}
-```
-
-Fast anonymous command (automatically closed on completion):
-
-```json
-{"command":"pwd"}
-```
-
-Independent terminal for a long task:
-
-```json
-{"command":"npm run build","setup":{"cwd":"/project","session_id":"build"},"wait_ms":1000}
-```
-
-Reuse the terminal:
-
-```json
-{"session_id":"…","command":"git status"}
-```
-
-To transfer a file, call `p2p_transfer_start` for the connected device. The result starts in `waiting_for_agent`. Run the script for the Agent's OS and wait for `p2p-cli status` to report `connected` before copying. See the [P2P component guide](../components/p2p-cli/README.md).
-
-## Details
-
-<details>
-<summary>Invitations and display</summary>
-
-The MCP text content of `create_client` returns English connection instructions with Markdown code blocks around commands, identical to `structuredContent.display_text`. `structuredContent` also provides the private `control_token` and the invitation deadline `expires_at` as a UTC RFC 3339 timestamp. Standard invitations display the connection token and, when enabled, the short code. Multi-device mode appends a reuse notice.
-
-Pass `{"temporary_assistance": true}` to create a temporary assistance invitation. The default is `false`. Share the installer command or browser invitation link with the recipient. The installer asks for authorization and starts the temporary client. Temporary assistance supports terminal operations. P2P file transfer is available with standard invitations.
-
-Every invitation includes a private browser link in `display_text`. Append `.sh` or `.ps1` to fetch the corresponding installer. When short codes are enabled for a single-device invitation, the browser link and the generated commands use the short-code address. The alias expires after ten successful redemptions. Viewing the page or fetching an installer does not count as redemption. Single-device links are unavailable while the device is online and can be used again after disconnection if still valid.
-
-After generating connection instructions with `create_client`, the agent must present all sections of `display_text` in order and in the user’s language. Commands, URLs and connection tokens must remain unchanged; preserve the separate Markdown code blocks supplied for commands, the connection token and the browser invitation message for reliable copying. Express the lifetime in equivalent readable units, such as 5 minutes for 300 seconds. When the user’s time zone is known, convert `expires_at` to that time zone and label it explicitly; otherwise show the UTC deadline. Do not guess the time zone from the user’s language or the server settings. Keep `control_token` private: it has the form `device_token:key` and must never be shared with the target device or included in connection instructions. Then poll `list_client` with the returned `control_token`, using separate calls with `wait_ms: 30000` within a total 300-second wall-clock budget. Each call returns immediately when any device is online. An empty poll means only that no device was online for that poll; continue with the remaining budget. Once the budget is exhausted, make a final `wait_ms: 0` check before reporting a connection-wait timeout. On a transient network error, recheck once with `wait_ms: 0`; if that also fails, report that the check failed and device connectivity is unknown. Retries do not reset the budget. Stop on user cancellation or invalid, expired or revoked credentials, reporting credential errors separately. Legacy values through `300000` remain accepted but each call is capped at 30000 ms by the frontend, including when it forwards to a retained older runtime. These requirements are published in the MCP tool descriptions.
-
-</details>
-
-<details>
-<summary>Device information</summary>
-
-`list_client` contains online devices only. Each entry retains client_id, connected_at and client_info, without top-level or per-device status. Array membership indicates connectivity. Hostname, platform, architecture, shell, default directory, client version and capability metadata remain available. Heartbeat/RTT remain internal and available to the client UI; they are not embedded in MCP status strings.
-
-`close_client` accepts a nonempty array of unique `client_ids`; omit it to close all online devices and revoke the token and its invitations, even when no devices are online. Every ID must belong to that token, and validation failure closes none. The result lists the closed IDs, or an empty array when none are online. Closing a device ends its sessions and active transfers; selecting IDs preserves the token and invitations. Closed clients do not automatically reconnect. Management callers pass the returned `control_token` as a tool argument; scoped access uses the same control credential as its bearer token. A device token alone cannot call control tools.
-
-</details>
-
-<details>
-<summary>Responsibility and state ownership</summary>
-
-| Responsibility | Owner |
+| Tool | When to use it |
 | --- | --- |
-| Terminal IDs, creation/reuse, busy and input validation | Client execution core |
-| Ten live-terminal limit, processes, retention on wait expiry and closure | Client |
-| Authorization, device selection and RPC forwarding | Server |
-| Result waiting, output caching, pagination and finished-result retention | Client; result cleanup never closes a terminal |
+| `create_client` | Create a private connection invitation. |
+| `list_client` | Check which devices are online or wait for one to connect. |
+| `close_client` | Close selected devices. Omit `client_ids` to close all online devices under the token and revoke the token and its invitations, even if no devices are online. |
+| `execute_command` | Run a command in a new or existing terminal. |
+| `session_read` | Read more output and check command status. |
+| `session_list` | Find retained sessions on online devices. |
+| `session_control` | Send input, interrupt or EOF, or stop a terminal. |
+| `p2p_transfer_start` | Start the remote helper for a direct file transfer. |
 
-`internal/terminalapi` defines the Go server's terminal wire contract. The Rust CLI owns execution, validation, waiting, control, output storage, and retention. The server tracks connections and routes requests to the client over WebSocket.
+## Invitations and devices
 
-The manager belongs to the client process, outside the reconnect loop. A temporary transport loss cancels response waiters while accepted commands, shell state and output remain available. Reconnect can query the same manager through session_list/session_read without replaying commands. Explicit client shutdown or permanent disconnection closes its manager. Canceling a result waiter does not stop its command. Offline clients cannot be queried.
+`create_client` returns `display_text` as both the MCP text content and a structured field, alongside the private `control_token` and UTC RFC 3339 deadline `expires_at`. Present all sections in the user's language and in their original order. Preserve code blocks and copy commands, links, device tokens and short codes verbatim. Show the deadline in the user's time zone when known, with the zone labeled, or in UTC otherwise.
 
-</details>
+Keep `control_token` in the host's private storage for the connection so later turns can reuse it, including after a wait times out. Keep it out of logs, user-facing messages and invitation material. The recipient uses the link or commands from `display_text`.
 
-<details>
-<summary>Commands and interactive sessions</summary>
+The invitation lifetime defaults to 900 seconds. Set `multi_device: true` to allow simultaneous devices. A single-device invitation uses a short-code link when enabled. See the [invitation and short-code rules](usage.md#invitation-lifetime-and-short-codes) for reuse and redemption. The browser link also serves the installer with the `.sh` or `.ps1` suffix. Set `temporary_assistance: true` for a temporary installation with terminal access only.
 
-Top-level `execute_command.session_id` only reuses an existing terminal and rejects unknown/closed IDs. `setup` always creates a terminal and contains optional `cwd`, `env` and `session_id`; an existing setup ID is rejected, never overwritten or reused. setup and top-level session_id cannot be combined. An explicit setup ID creates a persistent terminal; omit that ID for a generated anonymous terminal. Omitting both also creates an anonymous terminal: fast completion closes it; wait expiry retains the same shell. IDs are unique within each client. For multi-device tokens, execute_command, session_read and session_control always require client_id, including when reusing an existing session. Different devices may use the same session_id.
+### Wait for a device
 
-Directory, variables, functions and environment activation persist within the shell. `cwd`/`env` are available only inside setup to initialize new terminals. Reuse without setup; change state with cd/export or shell equivalents. Each terminal accepts one command at a time and returns session_busy when occupied, without queueing or opening a replacement.
+`list_client` returns a `clients` array of online devices, each with `client_id`, `connected_at` and `client_info`. Use `wait_ms: 0` for an immediate check. Positive values return early when a device is online. Each call waits at most 30 seconds, including when it accepts a legacy value up to `300000` ms.
 
-For ordinary commands, keep the default 10-second wait; completion returns early. Reuse idle shells for related commands. When waiting for new output, prefer `session_read(wait_ms=10000–20000)`. Drain output, then stop task-owned shells that are no longer needed. At capacity, use `session_list(status="idle")` to find reusable shells or `status="live"` to inspect cleanup candidates; confirm `closed` after stopping a shell before creating its replacement.
+1. After presenting the invitation, start a five-minute wall-clock budget. Poll `list_client` using the returned `control_token`. Set `wait_ms` to the remaining time in milliseconds, capped at `30000` per poll.
+2. Stop as soon as `clients` contains a device. An empty array means no device was online when that call returned. Keep polling within the remaining budget.
+3. On a transient network error, recheck once with `wait_ms: 0` within the same budget. If the recheck fails, report that the check failed and device connectivity is unknown. Stop on cancellation or a credential error. Report invalid, expired or revoked credentials separately.
+4. At the end of the budget, check once more with `wait_ms: 0`. Report a connection timeout only if this check succeeds with an empty array.
 
-`wait_ms` defaults to 10000 (10 seconds), range 0–20000, from client admission including shell startup. Zero immediately retains anonymous terminals while still waiting for admission. Expiry never kills execution. Results use running while busy, idle after command completion in a retained shell, and closed once the client confirmed shell termination. Named and retained shells require explicit session_control(action=stop), with no idle expiry. Canceling an MCP waiter does not cancel accepted work.
+### Close devices
 
-execute_command returns command_id, status, output, next_cursor and has_more. It includes session_id for named or previously retained terminals, and for anonymous terminals after wait expiry or when output exceeds the response limit or retained history was truncated. Execution returns up to 16 KiB of UTF-8 output; has_more=true means the remaining output is available through session_read. A completed anonymous shell stays closed, but its ID can read client-cached output. session_read always includes session_id. status is running (busy, including pending stop confirmation), idle (command finished and shell reusable), or closed (the client confirmed shell termination). Fast anonymous commands finish closed; completed named/retained commands become idle. Completion adds exit_code including successful 0; error appears only on failure and truncated only as true when old output was lost.
+Pass a nonempty list of unique `client_ids` to close only those devices and keep the token and its invitations. All IDs must belong to the token. A validation failure closes no devices. Omit `client_ids` to close all online devices under the token and revoke the token and its invitations, even if no devices are online. The result lists the closed `client_ids`. Closing a device ends its sessions and active transfers.
 
-Linux/macOS use the reported shell and a PTY. Windows uses PowerShell and pipes for basic input interaction without full terminal emulation. Persistent terminals inherit client environment but do not load user shell startup files, so the integration remains reliable. Prompt hooks/PS1 are reserved; do not override them or terminal echo settings. Initialize additional environments explicitly in commands. Both server and client must support the current client API version; the handshake advertises and checks that version. There is no legacy execution protocol.
+## Terminal sessions
 
-Each client process permits at most 10 live terminals, including starting, running, idle and closing shells until the OS process exits. Multiple connections within a process share the limit. Other processes using the same token have independent limits. At capacity, anonymous creation or a missing named terminal returns a terminal-limit error. Explicitly selecting an existing terminal by session_id still permits reuse; another terminal is never chosen automatically. Closed output history consumes no slots. The client owns output-cache retention. Temporary transport disconnection preserves terminals and results in the client manager; reconnect does not replay commands. Explicit client shutdown or a permanent rejection closes its terminals. Restarting the server frontend preserves runtime-owned connections; restarting the server runtime loses server credentials and connections, without synthesizing terminal results.
+For multi-device tokens, pass `client_id` to `execute_command`, `session_read` and `session_control`. Session IDs are local to each device.
 
-</details>
+- Use `setup` to create a terminal with optional `cwd`, `env` and `session_id`. An explicit `setup.session_id` must be unused and creates a persistent terminal.
+- Use a top-level `session_id` to reuse a live terminal and preserve shell state. It cannot be combined with `setup`. Busy terminals return `session_busy`.
+- Without an explicit ID, execution uses an anonymous terminal. It closes if the command finishes within the wait and stays open if the wait expires first. `wait_ms` defaults to `10000` and accepts `0–20000` ms from client admission. Use `0` to retain an anonymous terminal immediately. An accepted command can continue after the caller stops waiting.
 
-<details>
-<summary>Reading output and finding sessions</summary>
+Each client process allows up to 10 live terminals. Named and retained terminals have no idle expiry. Reuse an appropriate idle terminal or explicitly stop one when the task is done. Closed history consumes no live slots.
 
-`session_read.max_bytes` defaults to 16384, range 4–65536 bytes, preserving UTF-8 boundaries. Continue from next_cursor and drain has_more even after idle/closed. Empty output or a drained page does not prove completion; inspect status. truncated appears only for discarded older output, never merely for pagination.
-
-`session_list` queries online clients, optionally filtered by `client_id` and `status`: `all` (default), `live` (running or idle), `running`, `idle`, or `closed`. Use `idle` for reuse and `live` to inspect capacity. Entries contain `session_id`, `client_id`, `command`, `command_id`, `status`, and optional `exit_code`/`error`. Command previews are limited to 160 Unicode characters, including a `... (truncated)` suffix when shortened. Closed history consumes no terminal slots; each client retains at most 10 closed records for up to 30 minutes.
-
-New command IDs use eight case-sensitive alphanumeric characters. Pass command IDs from older clients unchanged.
-
-Optionally pass `command_id` to `session_read` to pin its status to that command; if a newer command has started, the read fails rather than mislabeling the result. Omit it to read retained session output by byte cursor across commands. Client-owned retained terminal buffers keep the latest 1 MiB; dropping older requested output sets `truncated=true`, while pagination alone does not. Drain `has_more` even after command completion.
-
-</details>
-
-<details>
-<summary>Session control: input, interrupt, EOF and stop</summary>
-
-`session_control` requires session_id and action. Input targets only the active command; idle shells reject it, and new commands use execute_command. Only input requires/accepts input text, and only stop accepts optional wait_ms (default 1000). Input, interrupt and EOF share `{"ok":true}` after client acknowledgment, without claiming that a program consumed input or handled a signal. Stop returns status and optional exit_code/error, with no action echo. Input/signals may repeat side effects: do not blindly retry uncertain delivery.
-
-Before interrupt or EOF, check `list_client.client_info.session_controls` (`interrupt` and/or `eof`). An empty list means unavailable; older clients may need updating. Both operations wait for the client API response; request cancellation ends only the caller’s wait. `ok=true` does not guarantee the program handled the operation; read output to verify. A timeout or cancellation leaves delivery uncertain, so do not blindly retry.
-
-- `session_control(action="interrupt")` sends SIGINT to the current terminal foreground process group on Linux/macOS. An interactive shell may remain usable after its foreground command exits; the program may also ignore the signal or exit. This does not forcibly cancel the entire session like `session_control(action="stop")`. Windows pipe mode does not support interrupt.
-- `session_control(action="eof")` follows previously queued input. On Linux/macOS canonical terminals it sends the configured VEOF character: pending input may be delivered first, requiring another EOF, and stdin is not permanently closed. Raw mode or disabled VEOF returns an error. On Windows pipes it permanently closes stdin while output remains readable; subsequent writes fail and repeated EOF is harmless. EOF at an idle shell prompt may exit the shell.
-
-`session_control(action="stop")` waits up to `wait_ms` milliseconds for a terminal result (default 1000, range 0–20000). Setting 0 returns immediately. Interpret its result as follows:
-
-| Status | Meaning and next step |
+| Status | Meaning |
 | --- | --- |
-| `running` | Stop has been sent or remains pending. Continue reading state; remote termination is not confirmed. |
-| `closed` | The client confirmed shell termination. Read retained output; a disconnection error means remote termination remains unconfirmed. |
+| `running` | The terminal is busy or a stop is pending. |
+| `idle` | The command finished and the terminal can be reused. |
+| `closed` | The client confirmed the shell terminated. Retained output may still be readable. |
 
+### Execute, read and finish
 
-Repeated stop is safe; the client confirms termination and returns its stored shell result after completion. Unknown/unauthorized sessions remain errors. A transport disconnection returns an error without inventing status=closed or an exit code. Stop cannot undo completed operations, revoke credentials or stop other sessions.
+The examples assume scoped access to a single device.
 
-</details>
+1. Call `execute_command` with `{"command":"pwd"}` for a quick command or `{"command":"npm run build","setup":{"cwd":"/project","session_id":"build"},"wait_ms":1000}` to keep a named terminal.
+2. If the command is still running or `has_more=true`, call `session_read` with the returned `session_id` and `next_cursor` as `cursor`. Pass `command_id` to reject the read if a newer command has started. Read until `has_more=false`, even after `idle` or `closed`. If still `running` with no unread output, use `wait_ms` up to `20000` to wait for new output.
+3. Reuse an idle terminal with `execute_command` and `{"session_id":"build","command":"git status"}`, or stop it with `session_control` and `{"session_id":"build","action":"stop"}`. If stop is pending, check for `closed` before assuming the slot is free.
+
+Execution returns up to 16 KiB of UTF-8 output. It returns `session_id` for named or retained terminals and for closed anonymous terminals with more or truncated output. Reads always include `session_id`. `max_bytes` defaults to 16384 and accepts 4–65536 bytes. Reads preserve UTF-8 boundaries. The retained buffer holds the latest 1 MiB. `truncated=true` means older requested output was discarded. Command completion adds `exit_code`, including 0 on success. A transport failure leaves the outcome unconfirmed.
+
+`session_list` can filter by `client_id` or by status. Use `idle` to find reusable terminals, `live` for `running` and `idle`, or `all` (the default) to include closed history. Each client retains up to 10 closed records for up to 30 minutes. Command previews are capped at 160 Unicode characters. A temporary disconnect can preserve sessions and results on the client. After reconnecting, check them before submitting a new command. See the [terminal client API](client-api.md).
+
+### Control a session
+
+`session_control` requires `session_id` and `action`.
+
+- `input` requires text in `input` and sends it verbatim to the active command. Include a newline if needed, for example `{"session_id":"build","action":"input","input":"yes\n"}`.
+- Before `interrupt` or `eof`, check `list_client.client_info.session_controls`. On Linux/macOS, interrupt sends SIGINT to the foreground process group and EOF sends VEOF in canonical mode. Windows pipe mode supports EOF, which permanently closes stdin.
+- Only `stop` accepts `wait_ms` (default `1000`, range `0–20000`). It returns `running` while pending or `closed` when confirmed, with a shell exit code or error when available. Repeated stop is safe.
+
+For input, interrupt and EOF, `ok: true` confirms receipt by the client. Check output to verify the program's response. Avoid retrying input or signals after uncertain delivery. Initialize any required shell environment explicitly in retained terminals and preserve reserved prompt hooks and echo settings.
+
+## File transfer
+
+Use `p2p_transfer_start` with a standard invitation. Pass `client_id` for multi-device tokens. `waiting_for_agent` means the remote helper registered. Run the private script for the Agent's execution environment, then use the returned `executable` path to check for `connected` before copying. See the [P2P component guide](../components/p2p-cli/README.md).
