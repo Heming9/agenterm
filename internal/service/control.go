@@ -160,6 +160,14 @@ type createRequest struct {
 	Args createClientArgs
 }
 
+// The frontend reads these fields from the versioned runtime response.
+type createClientCredentials struct {
+	DeviceToken  string `json:"client_token"`
+	ControlToken string `json:"control_token"`
+	ExpiresAt    string `json:"expires_at"`
+	ShortCode    string `json:"short_code"`
+}
+
 type invitationRequest struct {
 	Identity           requestIdentity
 	Secret             string

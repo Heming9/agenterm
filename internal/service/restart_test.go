@@ -3,7 +3,6 @@
 package service
 
 import (
-	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"context"
 	"fmt"
@@ -229,7 +228,8 @@ func TestServerUpgradeAndCrashPreserveClientAndSession(t *testing.T) {
 	if len(after) != 1 || after[0].(map[string]any)["client_id"] != deviceID {
 		t.Fatalf("client reconnected across server restart: %v", after)
 	}
-	if redeemed, err := invite.Redeem(context.Background(), pending["invitation"].(string)); err != nil || redeemed != pending["device_token"] {
+	link := displayInvitationLink(t, pending["display_text"].(string))
+	if redeemed, err := redeemBrowserInvitation(context.Background(), link); err != nil || redeemed != deviceTokenFromControl(pending["control_token"].(string)) {
 		t.Fatalf("invitation lost across upgrade: %v", err)
 	}
 	if info, err := os.Stat(runtimeSocket); err != nil || info.Mode().Perm() != 0600 {

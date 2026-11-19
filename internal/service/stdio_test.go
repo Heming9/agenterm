@@ -1,7 +1,6 @@
 package service
 
 import (
-	"agenterm/internal/invite"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,12 +51,7 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	if err != nil || created.IsError {
 		t.Fatalf("create: %v %v", created, err)
 	}
-	var invitation struct {
-		Invitation   string `json:"invitation"`
-		DeviceToken  string `json:"device_token"`
-		ControlToken string `json:"control_token"`
-		DisplayText  string `json:"display_text"`
-	}
+	var invitation createClientResult
 	data, err := json.Marshal(created.StructuredContent)
 	if err != nil {
 		t.Fatal(err)
@@ -68,9 +62,9 @@ func TestStdioSharesInvitationsWithAuthenticatedHTTP(t *testing.T) {
 	if len(created.Content) != 1 || invitation.DisplayText == "" || created.Content[0].(*mcp.TextContent).Text != invitation.DisplayText {
 		t.Fatal("stdio connection instructions must match structured display_text")
 	}
-	token, err := invite.Redeem(ctx, invitation.Invitation)
-	if err != nil || token != invitation.DeviceToken || token == "" {
-		t.Fatalf("HTTP invitation redemption: token match=%v err=%v", token == invitation.DeviceToken, err)
+	token, err := redeemBrowserInvitation(ctx, displayInvitationLink(t, invitation.DisplayText))
+	if err != nil || token != deviceTokenFromControl(invitation.ControlToken) || token == "" {
+		t.Fatalf("HTTP invitation redemption failed: %v", err)
 	}
 	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_client", Arguments: map[string]any{"control_token": invitation.ControlToken}})
 	if err != nil || listed.IsError {

@@ -190,7 +190,8 @@ func TestOfflineExpiryRejectedBeforeCleanup(t *testing.T) {
 func TestShortCodeFollowsOnlineAndOfflineToken(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	token, code := issued["device_token"].(string), issued["short_code"].(string)
+	token := deviceTokenFromControl(issued["control_token"].(string))
+	code := displayShortCode(t, issued["display_text"].(string))
 	decoded, _ := protocol.Decode(token)
 	conn, _ := h.connect(t, token, "short-code-test")
 	h.s.mu.Lock()

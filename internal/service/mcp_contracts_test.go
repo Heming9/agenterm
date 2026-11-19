@@ -157,10 +157,10 @@ func TestAllToolResultsMatchPublishedContracts(t *testing.T) {
 		return structured
 	}
 	created := call("create_client", map[string]any{})
-	token := created["device_token"].(string)
 	control := created["control_token"].(string)
-	if _, old := created["client_token"]; old {
-		t.Fatal("create_client exposed legacy client_token")
+	token := deviceTokenFromControl(control)
+	if len(created) != 3 || control == "" || created["display_text"] == "" || created["expires_at"] == "" {
+		t.Fatal("create_client must return only control_token, display_text, and expires_at")
 	}
 	for _, invalid := range []map[string]any{{"client_token": control}, {"device_token": token}, {"control_token": token}} {
 		result, err := admin.CallTool(ctx, &mcp.CallToolParams{Name: "list_client", Arguments: invalid})

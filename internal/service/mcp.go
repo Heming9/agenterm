@@ -6,6 +6,7 @@ import (
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -266,7 +267,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		timeout.Minimum = new(float64(1))
 		timeout.Maximum = new(float64(maxInvitationTimeoutSeconds))
 		timeout.Default, _ = json.Marshal(defaultInvitationTimeoutSeconds)
-		mcp.AddTool(ms, toolDefinition("create_client", "mcp.create.a.client.connection.token.and.a.one", input), func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, map[string]any, error) {
+		mcp.AddTool(ms, toolDefinition("create_client", "mcp.create.a.client.connection.token.and.a.one", input), func(ctx context.Context, _ *mcp.CallToolRequest, a createClientArgs) (*mcp.CallToolResult, createClientResult, error) {
 			principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
 			if a.TimeoutSeconds == 0 {
 				a.TimeoutSeconds = defaultInvitationTimeoutSeconds
@@ -275,22 +276,46 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if a.TemporaryAssistance {
 				method = "create/temporary"
 			}
-			out, err := controlCall[map[string]any](ctx, s.control, method, createRequest{IP: principal.IP, Args: a})
+			credentials, err := controlCall[createClientCredentials](ctx, s.control, method, createRequest{IP: principal.IP, Args: a})
 			if err != nil {
-				return nil, nil, err
+				return nil, createClientResult{}, err
 			}
-			// Runtime API 14 calls the device credential client_token on its private wire.
-			deviceToken := out["client_token"].(string)
-			delete(out, "client_token")
-			out["device_token"] = deviceToken
-			expires, err := time.Parse(time.RFC3339, out["expires_at"].(string))
+			expires, err := time.Parse(time.RFC3339, credentials.ExpiresAt)
 			if err != nil {
-				return nil, nil, err
+				return nil, createClientResult{}, err
 			}
-			code, _ := out["short_code"].(string)
-			text := setConnectionPresentation(out, deviceToken, code, a, expires)
+			text := connectionDisplayText(credentials.DeviceToken, credentials.ShortCode, a, expires)
+			out := createClientResult{
+				ControlToken: credentials.ControlToken,
+				DisplayText:  text,
+				ExpiresAt:    credentials.ExpiresAt,
+			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, out, nil
 		})
 	}
 	return ms
+}
+
+func connectionDisplayText(token, code string, args createClientArgs, expires time.Time) string {
+	expiry := expires.UTC().Format("2006-01-02 15:04:05")
+	link := browserInvitationURL(token, code)
+	shell, powershell := installCommands(token, code)
+	var text string
+	if args.TemporaryAssistance {
+		browser := "\n\nBrowser invitation link:\n" + link
+		text = fmt.Sprintf(i18n.Text("en", "connection.display.temporary.assistance"), powershell, shell, browser, args.TimeoutSeconds, expiry)
+	} else {
+		label := "Connection token:"
+		tokenAlternative := ""
+		if code != "" {
+			label = "Connection token / short code ( " + code + " ):"
+			tokenAlternative = " or short code above"
+		}
+		connectionSection := label + "\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + link
+		text = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, "open the browser invitation link above or run the command for your system.", tokenAlternative, args.TimeoutSeconds, expiry)
+	}
+	if args.MultiDevice {
+		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
+	}
+	return text
 }

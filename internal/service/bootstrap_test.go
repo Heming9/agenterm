@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"agenterm/internal/invite"
 	"agenterm/internal/p2p"
 	"crypto/sha256"
 	"encoding/hex"
@@ -111,10 +110,10 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	}
 	h := &multiHarness{ts: &httptest.Server{URL: origin}}
 	created := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	if _, ok := created["short_code"]; ok {
+	if strings.Contains(created["display_text"].(string), "short code ( ") {
 		t.Fatal("default server issued a short code")
 	}
-	token := created["device_token"].(string)
+	token := deviceTokenFromControl(created["control_token"].(string))
 	startRustClient(t, token)
 	devices := h.call(t, token, "list_client", map[string]any{"wait_ms": 4000}, false).(map[string]any)["clients"].([]any)
 	if len(devices) != 1 {
@@ -225,9 +224,7 @@ func TestServerAutomaticallyStartsAndReusesRuntime(t *testing.T) {
 	}
 	stagingHarness := &multiHarness{ts: &httptest.Server{URL: "http://" + isolatedAddress}}
 	stagingCreated := stagingHarness.call(t, "staging-key", "create_client", map[string]any{}, false).(map[string]any)
-	if _, ok := stagingCreated["short_code"]; !ok {
-		t.Fatal("enabled server did not issue a short code")
-	}
+	displayShortCode(t, stagingCreated["display_text"].(string))
 	if output, err := exec.Command(executable, "status", "-instance", "staging").CombinedOutput(); err != nil || !strings.Contains(string(output), "staging") {
 		t.Fatalf("named status: %v\n%s", err, output)
 	}
@@ -343,10 +340,7 @@ func TestManagedRuntimeStdioStartupAndEOF(t *testing.T) {
 	if err != nil || created.IsError {
 		t.Fatalf("create: %v %v", created, err)
 	}
-	var credential struct {
-		Invitation  string `json:"invitation"`
-		DeviceToken string `json:"device_token"`
-	}
+	var credential createClientResult
 	data, err := json.Marshal(created.StructuredContent)
 	if err != nil {
 		t.Fatal(err)
@@ -364,9 +358,16 @@ func TestManagedRuntimeStdioStartupAndEOF(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("stdio EOF did not exit server")
 	}
-	if token, err := invite.Redeem(ctx, credential.Invitation); err != nil || token != credential.DeviceToken {
+	token := deviceTokenFromControl(credential.ControlToken)
+	h := &multiHarness{}
+	device, response, err := h.dial(token, "after-stdio-eof")
+	if err != nil {
+		if response != nil {
+			response.Body.Close()
+		}
 		t.Fatalf("runtime did not survive stdio EOF: %v", err)
 	}
+	device.Close()
 	startup, err := os.ReadFile(logs.Name())
 	if err != nil {
 		t.Fatal(err)

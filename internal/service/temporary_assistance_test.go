@@ -28,10 +28,12 @@ import (
 func TestTemporaryAssistanceInvitation(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{"temporary_assistance": true}, false).(map[string]any)
-	token, err := protocol.Decode(issued["device_token"].(string))
-	if err != nil || issued["temporary_assistance"] != true {
-		t.Fatal("temporary assistance policy missing", err)
+	deviceToken := deviceTokenFromControl(issued["control_token"].(string))
+	token, err := protocol.Decode(deviceToken)
+	if err != nil {
+		t.Fatal(err)
 	}
+	code := displayShortCode(t, issued["display_text"].(string))
 	get := func(path string) string {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -45,14 +47,14 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 		}
 		return w.Body.String()
 	}
-	for _, credential := range []string{token.Secret, issued["short_code"].(string)} {
+	for _, credential := range []string{token.Secret, code} {
 		page := get("/c/" + credential)
-		if !strings.Contains(page, "system temporary directory") || strings.Contains(page, "agenterm-cli://") || strings.Contains(page, issued["device_token"].(string)) {
+		if !strings.Contains(page, "system temporary directory") || strings.Contains(page, "agenterm-cli://") || strings.Contains(page, deviceToken) {
 			t.Fatal("temporary invitation must direct the recipient to the installer")
 		}
 	}
 	for _, suffix := range []string{".sh", ".ps1"} {
-		r := httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string)+suffix, nil)
+		r := httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil)
 		w := httptest.NewRecorder()
 		h.s.installWrapper(installerTestTag).ServeHTTP(w, r)
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "'token' 'temporary-assistance'") {
@@ -62,7 +64,7 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 			t.Fatalf("installer %q did not receive the invitation policy", suffix)
 		}
 	}
-	for _, credential := range []string{token.Secret, issued["short_code"].(string)} {
+	for _, credential := range []string{token.Secret, code} {
 		_, err := controlCall[installerInvitation](context.Background(), h.s.testFrontend().control, "invitation", invitationRequest{
 			Secret: credential, Identity: requestIdentity{RemoteAddr: "192.0.2.10:12345"},
 		})
@@ -82,11 +84,11 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 	if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
 		t.Fatalf("ordinary client should be rejected, got %v", err)
 	}
-	invitation, err := protocol.Decode(issued["invitation"].(string))
+	invitation, err := protocol.Decode(h.s.legacyInvitationForToken(t, deviceToken))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/agenterm/c/" + issued["short_code"].(string), "/agenterm/c/" + token.Secret, "/agenterm/invite/redeem"} {
+	for _, path := range []string{"/agenterm/c/" + code, "/agenterm/c/" + token.Secret, "/agenterm/invite/redeem"} {
 		r := httptest.NewRequest(http.MethodPost, path, nil)
 		r.Header.Set(version.Header, version.Protocol)
 		r.Header.Set("Authorization", "Bearer "+invitation.Secret)
@@ -126,11 +128,16 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	h := &multiHarness{s: s, ts: ts}
 	issued := h.call(t, "admin-test", "create_client", map[string]any{"temporary_assistance": true}, false).(map[string]any)
 	control := issued["control_token"].(string)
-	token, err := protocol.Decode(issued["device_token"].(string))
+	token, err := protocol.Decode(deviceTokenFromControl(control))
 	if err != nil {
 		t.Fatal(err)
 	}
 	root, home, temp := t.TempDir(), t.TempDir(), t.TempDir()
+	_, shellBlock, _ := strings.Cut(issued["display_text"].(string), "macOS / Linux one-click connection command:\n```\n")
+	shell, _, foundShell := strings.Cut(shellBlock, "\n```")
+	if !foundShell || shell == "" {
+		t.Fatal("connection instructions are missing the shell command")
+	}
 	profile := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -141,7 +148,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 			cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
 				"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); irm "+psQuote(request+".ps1")+"|iex")
 		} else if interactive {
-			cmd = exec.CommandContext(ctx, "sh", "-c", issued["macos_linux_command"].(string))
+			cmd = exec.CommandContext(ctx, "sh", "-c", shell)
 		}
 		cmd.Dir = root
 		for _, entry := range os.Environ() {

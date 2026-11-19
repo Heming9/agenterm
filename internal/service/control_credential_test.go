@@ -1,7 +1,6 @@
 package service
 
 import (
-	"agenterm/internal/invite"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -24,8 +23,8 @@ func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
 	}
 	token := issued["client_token"].(string)
 	control := issued["control_token"].(string)
-	if !strings.HasPrefix(control, token+":") || strings.Contains(issued["display_text"].(string), control) || strings.Contains(issued["macos_linux_command"].(string), control) {
-		t.Fatal("control credential missing or exposed to device")
+	if !strings.HasPrefix(control, token+":") {
+		t.Fatal("control credential missing")
 	}
 	_, err = protocol.Decode(issued["invitation"].(string))
 	if err != nil {
@@ -82,14 +81,15 @@ func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
 func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	rawToken := issued["device_token"].(string)
 	control := issued["control_token"].(string)
-	invitation := issued["invitation"].(string)
-	_, err := protocol.Decode(invitation)
-	if err != nil {
-		t.Fatal(err)
+	rawToken := deviceTokenFromControl(control)
+	display := issued["display_text"].(string)
+	if strings.Contains(display, strings.TrimPrefix(control, rawToken+":")) {
+		t.Fatal("connection instructions expose the control key")
 	}
-	response, err := http.Get(h.ts.URL + "/agenterm/c/" + issued["short_code"].(string))
+	link := displayInvitationLink(t, display)
+	codePath := "/agenterm/c/" + displayShortCode(t, display)
+	response, err := http.Get(h.ts.URL + codePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,11 +98,10 @@ func TestShortCodeDeviceAndControlCredentialsEndToEnd(t *testing.T) {
 	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(script), rawToken) || strings.Contains(string(script), strings.TrimPrefix(control, rawToken+":")) {
 		t.Fatal("short link did not deliver only the device token")
 	}
-	redeemed, err := invite.Redeem(context.Background(), invitation)
+	redeemed, err := redeemBrowserInvitation(context.Background(), link)
 	if err != nil || redeemed != rawToken {
 		t.Fatalf("redeem: token matches=%v, err=%v", redeemed == rawToken, err)
 	}
-	codePath := "/agenterm/c/" + issued["short_code"].(string)
 	stop := startRustClient(t, h.ts.URL+codePath)
 	waitForRustClient(t, h, rawToken)
 	checkLink := func(method, path string, want int) {

@@ -2,7 +2,6 @@ package service
 
 import (
 	"crypto/sha256"
-	"fmt"
 	"time"
 
 	"agenterm/internal/i18n"
@@ -85,6 +84,7 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires, temporaryAssistance: args.TemporaryAssistance}
 	deadline := expires.UTC().Format(time.RFC3339)
+	// Older API 14 frontends still forward the invitation and lifetime fields.
 	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": deadline, "token_initial_expires_at": deadline}
 	if args.TemporaryAssistance {
 		result["temporary_assistance"] = true
@@ -93,44 +93,5 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 		result["short_code"] = code
 		result["short_code_expires_at"] = deadline
 	}
-	setConnectionPresentation(result, token, code, args, expires)
 	return result, nil
-}
-
-// The replaceable frontend also uses this presentation when a retained
-// runtime supplies credentials in its older display format.
-func setConnectionPresentation(result map[string]any, token, code string, args createClientArgs, expires time.Time) string {
-	result["invitation_url"] = browserInvitationURL(token, "")
-	if code != "" {
-		result["short_code_url"] = browserInvitationURL(token, code)
-	}
-	shell, powershell := installCommands(token, code)
-	result["macos_linux_command"] = shell
-	result["windows_powershell_command"] = powershell
-	text := connectionDisplayText(token, shell, powershell, code, args, expires)
-	result["display_text"] = text
-	return text
-}
-
-func connectionDisplayText(token, shell, powershell, code string, args createClientArgs, expires time.Time) string {
-	expiry := expires.UTC().Format("2006-01-02 15:04:05")
-	link := browserInvitationURL(token, code)
-	var text string
-	if args.TemporaryAssistance {
-		browser := "\n\nBrowser invitation link:\n" + link
-		text = fmt.Sprintf(i18n.Text("en", "connection.display.temporary.assistance"), powershell, shell, browser, args.TimeoutSeconds, expiry)
-	} else {
-		label := "Connection token:"
-		tokenAlternative := ""
-		if code != "" {
-			label = "Connection token / short code ( " + code + " ):"
-			tokenAlternative = " or short code above"
-		}
-		connectionSection := label + "\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + link
-		text = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, "open the browser invitation link above or run the command for your system.", tokenAlternative, args.TimeoutSeconds, expiry)
-	}
-	if args.MultiDevice {
-		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
-	}
-	return text
 }

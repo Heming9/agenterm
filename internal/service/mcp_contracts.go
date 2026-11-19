@@ -37,22 +37,10 @@ type sessionStopResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-type invitationResult struct {
-	DeviceToken              string `json:"device_token"`
-	ControlToken             string `json:"control_token"`
-	TokenIdentifier          string `json:"token_identifier,omitempty"`
-	MultiDevice              bool   `json:"multi_device"`
-	TemporaryAssistance      bool   `json:"temporary_assistance,omitempty"`
-	Invitation               string `json:"invitation"`
-	InvitationURL            string `json:"invitation_url"`
-	ExpiresAt                string `json:"expires_at"`
-	ShortCode                string `json:"short_code,omitempty"`
-	ShortCodeURL             string `json:"short_code_url,omitempty"`
-	ShortCodeExpiresAt       string `json:"short_code_expires_at,omitempty"`
-	TokenInitialExpiresAt    string `json:"token_initial_expires_at"`
-	MacOSLinuxCommand        string `json:"macos_linux_command"`
-	WindowsPowerShellCommand string `json:"windows_powershell_command"`
-	DisplayText              string `json:"display_text"`
+type createClientResult struct {
+	ControlToken string `json:"control_token"`
+	DisplayText  string `json:"display_text"`
+	ExpiresAt    string `json:"expires_at"`
 }
 
 func resultSchema[T any]() *jsonschema.Schema {
@@ -105,7 +93,7 @@ func toolDefinition(name, description string, input *jsonschema.Schema) *mcp.Too
 	var output *jsonschema.Schema
 	switch name {
 	case "create_client":
-		output = resultSchema[invitationResult]()
+		output = resultSchema[createClientResult]()
 	case "list_client":
 		output = resultSchema[clientsResult]()
 	case "close_client":

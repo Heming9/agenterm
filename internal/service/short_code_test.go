@@ -117,7 +117,7 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"short_code", "short_code_expires_at", "short_code_url"} {
+	for _, field := range []string{"short_code", "short_code_expires_at"} {
 		if _, ok := issued[field]; ok {
 			t.Fatalf("multi-device output includes %s", field)
 		}
@@ -134,9 +134,6 @@ func TestMultiDeviceDoesNotSupportShortCodes(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("multi-device short code lookup: %d", w.Code)
 	}
-	if strings.Contains(issued["display_text"].(string), "short code ( ") {
-		t.Fatal("multi-device instructions contain a short code")
-	}
 }
 
 func TestShortCodesDisabled(t *testing.T) {
@@ -150,8 +147,8 @@ func TestShortCodesDisabled(t *testing.T) {
 			t.Fatalf("disabled short code returned %s", key)
 		}
 	}
-	if len(s.shortCodes) != 0 || strings.Contains(issued["display_text"].(string), "short code ( ") {
-		t.Fatal("disabled short code issued or displayed")
+	if len(s.shortCodes) != 0 {
+		t.Fatal("short code issued while disabled")
 	}
 	if remaining := time.Until(s.clientOwners[s.tokens[issued["client_token"].(string)]].expires); remaining > time.Second {
 		t.Fatalf("token lifetime unexpectedly extended: %v", remaining)

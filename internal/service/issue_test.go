@@ -36,13 +36,15 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			before := time.Now()
 			created := h.call(t, "admin-test", "create_client", tc.args, false).(map[string]any)
 			after := time.Now()
-			decoded, err := protocol.Decode(created["invitation"].(string))
+			token := deviceTokenFromControl(created["control_token"].(string))
+			value := h.s.legacyInvitationForToken(t, token)
+			decoded, err := protocol.Decode(value)
 			if err != nil {
 				t.Fatal(err)
 			}
 			h.s.mu.Lock()
 			entry := h.s.invitations[decoded.Secret]
-			ownerExpiry := h.s.clientOwners[h.s.tokens[created["device_token"].(string)]].expires
+			ownerExpiry := h.s.clientOwners[h.s.tokens[token]].expires
 			h.s.mu.Unlock()
 			if entry.expires.Before(before.Add(tc.want)) || entry.expires.After(after.Add(tc.want)) || ownerExpiry.Before(entry.expires) {
 				t.Fatalf("invitation expiry %s, owner expiry %s, want lifetime %s", entry.expires, ownerExpiry, tc.want)
@@ -53,9 +55,6 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			expires, err := time.Parse(time.RFC3339, created["expires_at"].(string))
 			if err != nil || !expires.Equal(entry.expires.Truncate(time.Second)) {
 				t.Fatalf("expires_at: %v %v", created["expires_at"], err)
-			}
-			if _, exists := created["next_action"]; exists {
-				t.Fatal("create_client must not return next_action")
 			}
 			if !strings.Contains(created["display_text"].(string), fmt.Sprintf("Invitation validity: %d seconds", int64(tc.want/time.Second))) || !strings.Contains(created["display_text"].(string), expires.UTC().Format("2006-01-02 15:04:05")+" UTC") {
 				t.Fatalf("display does not show configured lifetime and deadline: %v", created["display_text"])
@@ -70,16 +69,17 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			if !retained || remaining != 0 {
 				t.Fatalf("expiry cleanup: retained before=%v remaining at deadline=%d", retained, remaining)
 			}
-			if code, ok := created["short_code"].(string); ok {
+			if !isMulti(tc.args) {
+				code := displayShortCode(t, created["display_text"].(string))
 				for _, suffix := range []string{"", ".sh", ".ps1"} {
 					w := httptest.NewRecorder()
 					h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil))
-					if w.Code != http.StatusUnauthorized || strings.Contains(w.Body.String(), created["invitation"].(string)) {
+					if w.Code != http.StatusUnauthorized || strings.Contains(w.Body.String(), value) {
 						t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
 					}
 				}
 			}
-			if _, err := invite.Redeem(context.Background(), created["invitation"].(string)); err == nil {
+			if _, err := invite.Redeem(context.Background(), value); err == nil {
 				t.Fatal("expired invitation could still be redeemed")
 			}
 		})
@@ -156,13 +156,19 @@ func TestCreateClientWithMoreThanThousandTokens(t *testing.T) {
 
 func TestCreateClientDisplayText(t *testing.T) {
 	t.Setenv("AGENTERM_LANG", "zh-CN")
-	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
-	result, err := s.createClient("")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := &runtimeState{enableShortCode: true, adminKey: "admin-test", clientURL: "wss://example.com/agenterm/client"}
+	server := httptest.NewServer(s.routes(installerTestTag, nil))
+	defer server.Close()
+	h := &multiHarness{s: s, ts: server}
+	result := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
 	display := result["display_text"].(string)
-	for _, part := range []string{"Connection token / short code ( " + result["short_code"].(string) + " ):\n```\n" + result["client_token"].(string) + "\n```", "How to connect:\n1.", "\n2.", "\n3.", "If Agenterm is already installed,", "Invitation validity: 900 seconds"} {
+	token := deviceTokenFromControl(result["control_token"].(string))
+	code := displayShortCode(t, display)
+	if !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(code) {
+		t.Fatalf("invalid invitation code: %q", code)
+	}
+	tokenBlock := "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```"
+	for _, part := range []string{"How to connect:\n1.", "\n2.", "\n3.", "If Agenterm is already installed,"} {
 		if !strings.Contains(display, part) {
 			t.Fatalf("display missing %q: %s", part, display)
 		}
@@ -171,25 +177,19 @@ func TestCreateClientDisplayText(t *testing.T) {
 		t.Fatalf("unexpected validity footer: %s", display)
 	}
 	sections := strings.Split(display, "\n\n")
-	if len(sections) != 7 || sections[3] != "Browser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): "+result["short_code_url"].(string) || sections[0] != "Windows one-click connection command:\n```\n"+result["windows_powershell_command"].(string)+"\n```" || sections[1] != "macOS / Linux one-click connection command:\n```\n"+result["macos_linux_command"].(string)+"\n```" || sections[2] != "Connection token / short code ( "+result["short_code"].(string)+" ):\n```\n"+result["client_token"].(string)+"\n```" {
+	shell, powershell := installCommands(token, code)
+	if len(sections) != 7 || sections[0] != "Windows one-click connection command:\n```\n"+powershell+"\n```" ||
+		sections[1] != "macOS / Linux one-click connection command:\n```\n"+shell+"\n```" || sections[2] != tokenBlock ||
+		sections[3] != "Browser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): "+browserInvitationURL(token, code) {
 		t.Fatalf("incorrect connection instructions order or line breaks: %s", display)
 	}
 	if strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") || strings.Contains(display, "Multi-device mode:") {
 		t.Fatalf("unexpected formatting or multi-device notice: %s", display)
 	}
-	for _, key := range []string{"macos_linux_command", "windows_powershell_command"} {
-		command := result[key].(string)
-		decoded, _ := protocol.Decode(result["invitation"].(string))
-		code := result["short_code"].(string)
-		if !regexp.MustCompile(`^[a-z0-9]{6}$`).MatchString(code) {
-			t.Fatalf("invalid invitation code: %q", code)
-		}
-		path := "/agenterm/c/" + code + ".sh"
-		if key == "windows_powershell_command" {
-			path = "/agenterm/c/" + code + ".ps1"
-		}
-		if !strings.Contains(display, command) || !strings.Contains(command, "example.com") || !strings.Contains(command, path) || !strings.Contains(command, "https://") || strings.Contains(command, decoded.Secret) || strings.Contains(command, "Agenterm_") || strings.Contains(command, "/downloads/") {
-			t.Fatalf("invalid %s in display: %s", key, command)
+	decoded, _ := protocol.Decode(token)
+	for suffix, command := range map[string]string{".sh": shell, ".ps1": powershell} {
+		if !strings.Contains(command, "https://example.com/agenterm/c/"+code+suffix) || strings.Contains(command, decoded.Secret) || strings.Contains(command, "Agenterm_") || strings.Contains(command, "/downloads/") {
+			t.Fatalf("invalid %s command in display: %s", suffix, command)
 		}
 	}
 }
@@ -229,7 +229,7 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var structured invitationResult
+				var structured createClientResult
 				if err := json.Unmarshal(data, &structured); err != nil {
 					t.Fatal(err)
 				}
@@ -237,18 +237,19 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 				if err := json.Unmarshal(data, &fields); err != nil {
 					t.Fatal(err)
 				}
-				_, hasURL := fields["short_code_url"]
-				_, hasCode := fields["short_code"]
-				_, hasExpiry := fields["short_code_expires_at"]
+				if len(fields) != 3 || structured.ControlToken == "" || structured.DisplayText == "" || structured.ExpiresAt == "" {
+					t.Fatal("unexpected structured invitation fields")
+				}
+				token := deviceTokenFromControl(structured.ControlToken)
+				link := displayInvitationLink(t, structured.DisplayText)
+				var code string
 				if multi {
-					if hasCode || hasExpiry || hasURL || structured.ShortCode != "" || strings.Contains(structured.DisplayText, "short code ( ") || strings.Contains(structured.DisplayText, "or short code above") {
+					if link != browserInvitationURL(token, "") || strings.Contains(structured.DisplayText, "short code ( ") || strings.Contains(structured.DisplayText, "or short code above") {
 						t.Fatal("multi-device output includes a short code")
 					}
 				} else {
-					if !hasCode || !hasExpiry || !hasURL || structured.ShortCodeURL != browserInvitationURL(structured.DeviceToken, structured.ShortCode) || structured.ShortCode == "" {
-						t.Fatal("single-device output lacks short code or expiry")
-					}
-					expected := "Connection token / short code ( " + structured.ShortCode + " ):\n```\n" + structured.DeviceToken + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + structured.ShortCodeURL
+					code = displayShortCode(t, structured.DisplayText)
+					expected := "Connection token / short code ( " + code + " ):\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + browserInvitationURL(token, code)
 					if !strings.Contains(structured.DisplayText, expected) {
 						t.Fatal("short code is not directly after the token")
 					}
@@ -263,7 +264,8 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 					t.Fatal("MCP text must contain exactly the connection instructions")
 				}
 				display := structured.DisplayText
-				if !strings.HasPrefix(display, "Windows one-click connection command:\n```\n"+structured.WindowsPowerShellCommand+"\n```\n\n") || !strings.Contains(display, "How to connect:\n1.") || !strings.Contains(display, "Invitation validity: 120 seconds") || strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") {
+				_, powershell := installCommands(token, code)
+				if !strings.HasPrefix(display, "Windows one-click connection command:\n```\n"+powershell+"\n```\n\n") || !strings.Contains(display, "How to connect:\n1.") || !strings.Contains(display, "Invitation validity: 120 seconds") || strings.ContainsAny(display, "*\r\x1b") || strings.Contains(display, "%!") {
 					t.Fatalf("invalid English connection instructions: %s", display)
 				}
 				sections := strings.Split(display, "\n\n")
@@ -324,9 +326,9 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 	if created["isError"] != false {
 		t.Fatalf("create: %v", created)
 	}
-	token := created["device_token"].(string)
 	control := created["control_token"].(string)
-	invitation := created["invitation"].(string)
+	token := deviceTokenFromControl(control)
+	invitation := s.legacyInvitationForToken(t, token)
 	got, err := invite.Redeem(context.Background(), invitation)
 	if err != nil || got != token {
 		t.Fatalf("redeem: %q %v", got, err)
@@ -411,12 +413,9 @@ func TestCreateClientMCPWithShortCodesDisabled(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"short_code", "short_code_expires_at"} {
-		if _, ok := fields[key]; ok {
-			t.Fatalf("unexpected %s", key)
-		}
-	}
-	if fields["control_token"] == "" || fields["device_token"] == "" || strings.Contains(fields["display_text"].(string), "short code ( ") {
+	display := fields["display_text"].(string)
+	token := deviceTokenFromControl(fields["control_token"].(string))
+	if len(fields) != 3 || displayInvitationLink(t, display) != browserInvitationURL(token, "") || strings.Contains(display, "short code ( ") {
 		t.Fatalf("invalid result: %v", fields)
 	}
 }

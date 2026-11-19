@@ -44,7 +44,9 @@ func TestShortLinkPage(t *testing.T) {
 				t.Fatal(err)
 			}
 			code := issued["short_code"].(string)
-			link := issued["short_code_url"].(string)
+			token := issued["client_token"].(string)
+			link := browserInvitationURL(token, code)
+			shell, powershell := installCommands(token, code)
 			if link != strings.TrimPrefix(origin, "http://")+prefix+"/c/"+code {
 				t.Fatalf("link: %s", link)
 			}
@@ -202,7 +204,7 @@ func TestShortLinkPage(t *testing.T) {
 				if !strings.Contains(text, `data-url="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版并连接") {
 					t.Fatalf("missing CLI deep link %q", wantCLIURL)
 				}
-				if res.StatusCode != http.StatusOK || !strings.Contains(text, issued["client_token"].(string)) || !strings.Contains(text, issued["windows_powershell_command"].(string)) || !strings.Contains(text, issued["macos_linux_command"].(string)) || strings.Contains(text, issued["control_token"].(string)) {
+				if res.StatusCode != http.StatusOK || !strings.Contains(text, token) || !strings.Contains(text, powershell) || !strings.Contains(text, shell) || strings.Contains(text, issued["control_token"].(string)) {
 					t.Fatalf("page status %d: %s", res.StatusCode, body)
 				}
 				expires, err := time.Parse(time.RFC3339, issued["token_initial_expires_at"].(string))
@@ -352,7 +354,7 @@ func TestInvitationFormats(t *testing.T) {
 				t.Fatal(err)
 			}
 			tokenPath := "/c/" + decoded.Secret
-			if issued["invitation_url"] != "https://example.com"+tokenPath {
+			if browserInvitationURL(token, "") != "https://example.com"+tokenPath {
 				t.Fatal("missing token-based browser link")
 			}
 			code, _ := issued["short_code"].(string)
@@ -440,7 +442,8 @@ func TestConnectionValidityStates(t *testing.T) {
 func TestShortLinkShowsCurrentTokenLifetime(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{"timeout_seconds": 3600}, false).(map[string]any)
-	token, code := issued["device_token"].(string), issued["short_code"].(string)
+	token := deviceTokenFromControl(issued["control_token"].(string))
+	code := displayShortCode(t, issued["display_text"].(string))
 	read := func() string {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/c/"+code, nil)

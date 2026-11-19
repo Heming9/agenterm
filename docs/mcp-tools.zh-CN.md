@@ -6,7 +6,7 @@
 
 | 工具 | 使用场景 | 主要返回字段 |
 | --- | --- | --- |
-| `create_client` | 创建私密连接邀请。 | `device_token`、`control_token`、`invitation`、`invitation_url`、`expires_at`、平台命令、`display_text`，以及可选的 `short_code_url`。 |
+| `create_client` | 创建私密连接邀请。 | `control_token`、`display_text`、`expires_at`。 |
 | `list_client` | 查看在线设备或等待连接。 | `clients`；空数组表示返回时无在线设备。 |
 | `close_client` | 关闭指定设备或当前 token 下的全部在线设备。 | 已关闭的 `client_ids`。 |
 | `p2p_transfer_start` | 启动远端 P2P 组件，信令注册后返回 Agent 端脚本。 | `connection_id`、`local_client_id`、`remote_client_id`、`state`、`shell_script`、`powershell_script`。 |
@@ -49,11 +49,11 @@
 <details>
 <summary>邀请创建与展示</summary>
 
-`create_client` 的 MCP 文本内容直接返回英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致。凭据、有效期和平台命令仍保留在 `structuredContent` 中，供程序读取。普通邀请会展示连接令牌及启用时的短码。多设备模式会追加复用提示。
+`create_client` 的 MCP 文本内容直接返回英文连接模板，其中每条命令自带 Markdown 代码块，与 `structuredContent.display_text` 一致。`structuredContent` 同时提供私密控制凭据 `control_token` 和 UTC RFC 3339 格式的邀请到期时间 `expires_at`。普通邀请会展示连接令牌及启用时的短码。多设备模式会追加复用提示。
 
 传入 `{"temporary_assistance": true}` 可生成临时协助邀请，默认值为 `false`。向受助者发送一键命令或浏览器邀请链接。安装器会在取得授权后启动临时客户端。临时协助支持终端操作，P2P 文件传输只在普通邀请中提供。
 
-所有邀请都返回私密的 `invitation_url`，打开后显示连接说明。地址加上 `.sh` 或 `.ps1` 会返回对应的一键连接脚本。单设备邀请启用短码时，还会返回等价的 `short_code_url`，一键命令也优先使用短码。短码在第 10 次成功兑换后失效，查看页面或获取脚本不计入兑换次数。单设备令牌在线期间暂不能使用这些地址，断线后仍在有效期内时可重新使用。
+所有邀请的 `display_text` 都包含私密浏览器链接，打开后显示连接说明。地址加上 `.sh` 或 `.ps1` 会返回对应的一键连接脚本。单设备邀请启用短码时，浏览器链接和一键命令均使用短码地址。短码在第 10 次成功兑换后失效，查看页面或获取脚本不计入兑换次数。单设备令牌在线期间暂不能使用这些地址，断线后仍在有效期内时可重新使用。
 
 通过 `create_client` 生成连接说明后，agent 必须先按顺序以用户使用的语言展示 `display_text` 的所有段落。命令、URL 和连接令牌须保持原样；须保留模板中命令、连接令牌和浏览器邀请文案各自的 Markdown 代码块，方便准确复制。有效期可换算为等价的易读单位，例如 300 秒显示为 5 分钟。已知用户时区时，将 `expires_at` 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器设置猜测用户时区。`control_token` 的格式为 `device_token:密钥`，是私密控制凭证，不得放入连接说明或分享给目标设备。然后使用返回的 `control_token`，分多次调用 `list_client`，每轮 `wait_ms: 30000`，总预算为实际经过的 300 秒。任一设备在线立即结束等待；单轮空列表仅表示该轮没有在线设备，应在剩余预算内继续。预算耗尽后用 `wait_ms: 0` 最后检查一次，仍无设备才报告连接等待超时。临时网络错误后用 `wait_ms: 0` 即时复查一次；复查仍失败则报告检查失败、设备状态未知。重试不重置预算；用户取消或凭据无效、过期、撤销时结束，凭据错误单独说明。兼容旧参数至 `300000`，但前端会将每轮实际等待限制为 30000 毫秒，向保留的旧 runtime 转发时同样生效。这些要求直接写在 MCP 工具说明中。
 

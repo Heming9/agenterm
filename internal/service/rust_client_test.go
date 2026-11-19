@@ -136,6 +136,6 @@ func TestRustClientConnectsFromTokenInvitationURL(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	h.s.enableShortCode = false
 	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	startRustClient(t, issued["invitation_url"].(string))
-	waitForRustClient(t, h, issued["device_token"].(string))
+	startRustClient(t, displayInvitationLink(t, issued["display_text"].(string)))
+	waitForRustClient(t, h, deviceTokenFromControl(issued["control_token"].(string)))
 }

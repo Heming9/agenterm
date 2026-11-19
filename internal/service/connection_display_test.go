@@ -11,7 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Simulate the API-v1 runtime retained during a frontend-only deployment.
+// Simulate an API 14 runtime retained during a frontend-only deployment.
 // Its display template is old, but all credentials are still authoritative.
 type legacyDisplayControl struct {
 	control
@@ -19,20 +19,24 @@ type legacyDisplayControl struct {
 }
 
 func (c *legacyDisplayControl) call(ctx context.Context, method string, in, out any) error {
-	if err := c.control.call(ctx, method, in, out); err != nil {
+	if method != "create" {
+		return c.control.call(ctx, method, in, out)
+	}
+	result, err := controlCall[map[string]any](ctx, c.control, method, in)
+	if err != nil {
 		return err
 	}
-	if method == "create" {
-		result := *out.(*map[string]any)
-		result["display_text"] = "Legacy runtime connection instructions"
-		result["macos_linux_command"] = "legacy shell command"
-		result["windows_powershell_command"] = "legacy PowerShell command"
-		issued := make(map[string]any, len(result))
-		for key, value := range result {
-			issued[key] = value
-		}
-		c.issued <- issued
+	result["display_text"] = "Legacy runtime connection instructions"
+	result["macos_linux_command"] = "legacy shell command"
+	result["windows_powershell_command"] = "legacy PowerShell command"
+	data, err := json.Marshal(result)
+	if err != nil {
+		return err
 	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return err
+	}
+	c.issued <- result
 	return nil
 }
 
@@ -58,7 +62,11 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 			text := structured["display_text"].(string)
-			if !strings.HasPrefix(text, "Windows one-click connection command:\n```\n"+structured["windows_powershell_command"].(string)+"\n```") || !strings.Contains(text, "macOS / Linux one-click connection command:\n```\n"+structured["macos_linux_command"].(string)+"\n```") || !strings.Contains(text, "How to connect:") || !strings.Contains(text, "Invitation validity: 120 seconds") {
+			issued := <-legacy.issued
+			token := issued["client_token"].(string)
+			code, _ := issued["short_code"].(string)
+			shell, powershell := installCommands(token, code)
+			if !strings.HasPrefix(text, "Windows one-click connection command:\n```\n"+powershell+"\n```") || !strings.Contains(text, "macOS / Linux one-click connection command:\n```\n"+shell+"\n```") || !strings.Contains(text, "How to connect:") || !strings.Contains(text, "Invitation validity: 120 seconds") {
 				t.Fatal("retained runtime did not receive the new frontend template")
 			}
 			if strings.Contains(text, "Multi-device mode:") != multi {
@@ -67,22 +75,11 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 			if len(result.Content) != 1 || result.Content[0].(*mcp.TextContent).Text != text {
 				t.Fatal("text and display_text differ")
 			}
-			issued := <-legacy.issued
-			for _, key := range []string{"control_token", "invitation", "expires_at", "multi_device"} {
-				if structured[key] != issued[key] {
-					t.Fatalf("frontend changed runtime field %s", key)
-				}
+			if len(structured) != 3 || structured["control_token"] != issued["control_token"] || structured["expires_at"] != issued["expires_at"] {
+				t.Fatal("frontend must return only its display text and the runtime control token and expiry")
 			}
-			if _, ok := structured["client_token"]; ok || structured["device_token"] != issued["client_token"] {
-				t.Fatal("frontend must publish the runtime device credential only as device_token")
-			}
-			if structured["invitation_url"] != browserInvitationURL(structured["device_token"].(string), "") {
-				t.Fatal("frontend did not return a token-based browser link")
-			}
-			code, _ := structured["short_code"].(string)
-			shell, powershell := installCommands(structured["device_token"].(string), code)
-			if structured["macos_linux_command"] != shell || structured["windows_powershell_command"] != powershell {
-				t.Fatal("frontend did not replace legacy commands")
+			if displayInvitationLink(t, text) != browserInvitationURL(token, code) {
+				t.Fatal("frontend displayed the wrong browser link")
 			}
 		})
 	}

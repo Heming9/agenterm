@@ -129,12 +129,18 @@ func TestRustCLIRealServer(t *testing.T) {
 	}
 	created := call("create_client", map[string]any{})
 	control := created["control_token"].(string)
+	_, invitation, ok := strings.Cut(created["display_text"].(string), "\n\nBrowser invitation link:\n")
+	line, _, _ := strings.Cut(invitation, "\n")
+	link := line[strings.LastIndexByte(line, ' ')+1:]
+	if !ok || !strings.Contains(link, "/c/") {
+		t.Fatal("connection instructions are missing the browser invitation link")
+	}
 	clientLog, err := os.Create(filepath.Join(home, "client.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer clientLog.Close()
-	client := exec.Command(clientPath, "-token", created["short_code_url"].(string), "-connection-mode", "persistent")
+	client := exec.Command(clientPath, "-token", link, "-connection-mode", "persistent")
 	remoteState := filepath.Join(home, "p2p-remote")
 	client.Env = append(env, "SHELL=/bin/sh", "NO_COLOR=1", "P2P_CLI_STATE_DIR="+remoteState,
 		"XDG_CACHE_HOME="+filepath.Join(home, "cache-remote"))

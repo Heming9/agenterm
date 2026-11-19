@@ -668,8 +668,8 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 900, or 15 minutes). When short codes are enabled, in single-device mode the short code permits up to 10 successful redemptions and follows the connection token’s lifetime. For standard invitations, present short_code to clients that know the server. For temporary assistance, share the installer commands and browser link from display_text. Multi-device tokens do not support short codes. Returns a fixed template with Markdown code blocks in both text content and structuredContent.display_text; structuredContent also retains the credentials and platform commands. You MUST first present the complete display_text in the language used to communicate with the user. Preserve all sections and their order, and keep commands, URLs, connection tokens and short codes exactly unchanged. You MUST preserve the separate Markdown code blocks supplied in the template for commands, the connection token, and the browser invitation message so they can be copied reliably. Express the invitation lifetime in readable units without changing its duration (for example, 300 seconds is 5 minutes). If the user’s time zone is known, convert expires_at, token_initial_expires_at, and short_code_expires_at when present to that time zone and label it explicitly; otherwise show the UTC deadline. Never guess the user’s time zone from their language or the server time zone. Do not omit any connection instructions. Keep structuredContent.control_token private; never include it in connection instructions or share it with the target device. After presenting the invitation, poll list_client with the returned control_token and wait_ms=30000, within a total 300-second wall-clock budget. Follow list_client’s retry and timeout rules. multi_device controls simultaneous connections and invitation reuse. Present the private browser link in display_text. invitation_url is the token-based link and short_code_url is its optional short alias.",
-    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 900 秒（15 分钟）。启用短码时，单设备模式下短码最多可成功兑换 10 次，有效期随连接令牌变化。普通邀请可向已知服务器地址的客户端提供 short_code。临时协助应转发 display_text 中的安装命令和浏览器链接。多设备令牌不支持短码。文本内容和 structuredContent.display_text 均返回固定模板，命令自带 Markdown 代码块，structuredContent 同时保留凭据和平台命令。必须先根据与用户交流所使用的语言完整展示 display_text，保留所有段落及其顺序，命令、URL、连接令牌和短码必须保持原样。必须保留模板中现有的命令、连接令牌和浏览器邀请文案各自的 Markdown 代码块，方便准确复制。有效期可换算成易读的单位，但不能改变实际时长（例如 300 秒为 5 分钟）。已知用户时区时，将 expires_at、token_initial_expires_at 及存在时的 short_code_expires_at 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器时区猜测用户时区，也不得省略连接说明。structuredContent.control_token 是控制凭证，必须保密，不得放入连接说明或分享给目标设备。展示邀请后，使用返回的 control_token，以 wait_ms=30000 分轮调用 list_client，总预算为实际经过的 300 秒；重试和超时处理遵循 list_client 的说明。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。 请展示 display_text 中的私密浏览器链接。invitation_url 是令牌地址，short_code_url 是可选的短码地址。"
+    "en": "Use this tool when the user asks to generate or create a remote connection token, connection invitation, or remote assistance connection for Agenterm, including “生成远程连接令牌” and “创建远程连接邀请”. Creates a private client connection token and invitation registered with the Agenterm server; a locally generated random string cannot substitute for them. timeout_seconds sets the invitation lifetime in seconds (default 900, or 15 minutes). When short codes are enabled, in single-device mode the short code permits up to 10 successful redemptions and follows the connection token’s lifetime. For standard invitations, present the short code from display_text to clients that know the server. For temporary assistance, share the installer commands and browser link from display_text. Multi-device tokens do not support short codes. Returns the connection instructions as both text content and structuredContent.display_text, alongside the private control_token and the invitation deadline expires_at in structuredContent. You MUST first present the complete display_text in the language used to communicate with the user. Preserve all sections and their order, and keep commands, URLs, connection tokens and short codes exactly unchanged. You MUST preserve the separate Markdown code blocks supplied in the template for commands, the connection token, and the browser invitation message so they can be copied reliably. Express the invitation lifetime in readable units without changing its duration (for example, 300 seconds is 5 minutes). If the user’s time zone is known, convert structuredContent.expires_at to that time zone and label it explicitly; otherwise show the UTC deadline. Never guess the user’s time zone from their language or the server time zone. Do not omit any connection instructions. Keep structuredContent.control_token private; never include it in connection instructions or share it with the target device. After presenting the invitation, poll list_client with the returned control_token and wait_ms=30000, within a total 300-second wall-clock budget. Follow list_client’s retry and timeout rules. multi_device controls simultaneous connections and invitation reuse. Present the private browser link in display_text.",
+    "zh-CN": "当用户要求生成或创建 Agenterm 远程连接令牌、连接邀请或远程协助连接时使用本工具，例如“生成远程连接令牌”“创建远程连接邀请”。本工具在 Agenterm 服务端创建私密的客户端连接令牌和邀请，本地生成的随机字符串不能替代。timeout_seconds 设置邀请有效期，单位秒，默认 900 秒（15 分钟）。启用短码时，单设备模式下短码最多可成功兑换 10 次，有效期随连接令牌变化。普通邀请可向已知服务器地址的客户端提供 display_text 中的短码。临时协助应转发 display_text 中的安装命令和浏览器链接。多设备令牌不支持短码。文本内容和 structuredContent.display_text 均返回连接说明，命令自带 Markdown 代码块。structuredContent 还提供私密控制凭据 control_token 和邀请到期时间 expires_at。必须先根据与用户交流所使用的语言完整展示 display_text，保留所有段落及其顺序，命令、URL、连接令牌和短码必须保持原样。必须保留模板中现有的命令、连接令牌和浏览器邀请文案各自的 Markdown 代码块，方便准确复制。有效期可换算成易读的单位，但不能改变实际时长（例如 300 秒为 5 分钟）。已知用户时区时，将 structuredContent.expires_at 换算到该时区并明确标注；未知时显示 UTC 截止时间。不得根据用户语言或服务器时区猜测用户时区，也不得省略连接说明。structuredContent.control_token 是控制凭证，必须保密，不得放入连接说明或分享给目标设备。展示邀请后，使用返回的 control_token，以 wait_ms=30000 分轮调用 list_client，总预算为实际经过的 300 秒；重试和超时处理遵循 list_client 的说明。multi_device 控制是否允许多台设备同时连接和重复兑换邀请。请展示 display_text 中的私密浏览器链接。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 900 (15 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
@@ -875,17 +875,9 @@
     "en": "Optional execution or connection error. A disconnect does not prove the remote process completed successfully.",
     "zh-CN": "可选的执行或连接错误；断线不能证明远程进程成功完成。"
   },
-  "mcp.result.token_identifier": {
-    "en": "Public identifier for recognizing the connection token; not an authentication secret.",
-    "zh-CN": "用于识别连接令牌的公开标识符，不是认证密钥。"
-  },
   "mcp.result.control_token": {
     "en": "Private scoped control credential in token:key format; never share with the target device.",
     "zh-CN": "私密控制凭证，格式为 token:密钥；不得分享给目标设备。"
-  },
-  "mcp.result.device_token": {
-    "en": "Device connection credential; it cannot authorize MCP control. Use the separate control_token for control access.",
-    "zh-CN": "设备连接凭证，不能用于 MCP 控制。控制访问须使用单独的 control_token。"
   },
   "mcp.result.temporary_assistance": {
     "en": "Use a temporary installation for terminal assistance and remove it after disconnecting. Defaults to false. Run the invitation's one-click installer on the target device. P2P is unavailable for this mode.",
@@ -895,33 +887,9 @@
     "en": "True permits multiple simultaneous devices and reuses the invitation until expiry. False allows one device and a single-use invitation.",
     "zh-CN": "true 允许多台设备同时连接，邀请在过期前可复用；false 仅允许一台设备和单次使用邀请。"
   },
-  "mcp.result.invitation": {
-    "en": "Private invitation credential for target-client authorization; expires at expires_at.",
-    "zh-CN": "用于目标客户端授权的私密邀请凭据，在 expires_at 过期。"
-  },
-  "mcp.result.short_code": {
-    "en": "Random short code for up to 10 successful redemptions of a single-device connection token; omitted in multi-device mode or when short codes are disabled. Treat it as a credential.",
-    "zh-CN": "用于查找单设备连接令牌的随机短码，最多可成功兑换 10 次；多设备模式或禁用短码时不返回。应作为凭证保密。"
-  },
-  "mcp.result.token_initial_expires_at": {
-    "en": "Initial UTC expiry of the connection token before the first device connects; also applies to one-click commands.",
-    "zh-CN": "首台设备连接前连接令牌的 UTC 到期时间，一键连接命令也适用。"
-  },
-  "mcp.result.short_code_expires_at": {
-    "en": "Initial UTC expiry of the short code, matching the token’s initial expiry; the deadline changes with the token lifecycle; omitted in multi-device mode or when short codes are disabled.",
-    "zh-CN": "短码的初始 UTC 到期时间，与连接令牌首次连接前到期时间一致；此后随令牌生命周期变化；多设备模式或禁用短码时不返回。"
-  },
   "mcp.result.expires_at": {
     "en": "Invitation expiry deadline as a UTC RFC 3339 timestamp.",
     "zh-CN": "邀请过期截止时间，使用 UTC RFC 3339 时间戳。"
-  },
-  "mcp.result.macos_linux_command": {
-    "en": "macOS/Linux connection command containing private invitation access.",
-    "zh-CN": "包含私密邀请访问权限的 macOS/Linux 连接命令。"
-  },
-  "mcp.result.windows_powershell_command": {
-    "en": "Windows connection command containing private invitation access.",
-    "zh-CN": "包含私密邀请访问权限的 Windows 连接命令。"
   },
   "mcp.result.display_text": {
     "en": "Fixed English connection template with Markdown code blocks, identical to the tool's text content. Present all sections in order in the user's language; keep commands, URLs and tokens unchanged. Each command must be placed in its own Markdown code block. Express the lifetime in readable equivalent units. If the user's time zone is known, convert expires_at and label the time zone; otherwise show UTC. Do not infer the time zone from language or server settings.",
@@ -1146,14 +1114,6 @@
   "connection.idle.disconnected": {
     "en": "Disconnected after 5 minutes of inactivity.",
     "zh-CN": "连接已因 5 分钟无操作自动断开。"
-  },
-  "mcp.result.invitation_url": {
-    "en": "Private browser address for viewing the device invitation, available with or without short codes. Treat it as a credential.",
-    "zh-CN": "在浏览器查看设备邀请的私密地址，无论是否启用短码都可使用。请将其视为凭证。"
-  },
-  "mcp.result.short_code_url": {
-    "en": "Scheme-free private browser address for viewing connection instructions; valid while the short code is valid. Treat it as a credential.",
-    "zh-CN": "用于在浏览器查看连接信息的不带协议头的私密短链接；有效期与短码一致，应作为凭证保密。"
   },
   "mcp.session.list.status": {
     "en": "Filter sessions: all (default), live (running or idle), running, idle, or closed. Prefer idle for reuse and live for cleanup inspection.",

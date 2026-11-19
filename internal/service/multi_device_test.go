@@ -91,13 +91,8 @@ func (h *multiHarness) request(auth, name string, args map[string]any, timeout .
 	}
 	result, err := decodeToolResult(payload.Result.Content[0].Text, payload.Result.IsError, payload.Result.StructuredContent)
 	if name == "create_client" && err == nil && !payload.Result.IsError {
-		if data, ok := result.(map[string]any); ok {
-			if device, ok := data["device_token"].(string); ok {
-				if control, ok := data["control_token"].(string); ok {
-					h.controls.Store(device, control)
-				}
-			}
-		}
+		control := result.(map[string]any)["control_token"].(string)
+		h.controls.Store(deviceTokenFromControl(control), control)
 	}
 	return result, payload.Result.IsError, err
 }
@@ -113,7 +108,8 @@ func (h *multiHarness) call(t *testing.T, auth, name string, args map[string]any
 
 func (h *multiHarness) create(t *testing.T, multi bool) string {
 	t.Helper()
-	return h.call(t, "admin-test", "create_client", map[string]any{"multi_device": multi}, false).(map[string]any)["device_token"].(string)
+	result := h.call(t, "admin-test", "create_client", map[string]any{"multi_device": multi}, false).(map[string]any)
+	return deviceTokenFromControl(result["control_token"].(string))
 }
 
 func (h *multiHarness) dial(token, hostname string) (*testDeviceConn, *http.Response, error) {
@@ -252,8 +248,8 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 
 func TestMultiDeviceInvitationsAndQuota(t *testing.T) {
 	h := newMultiHarness(t, 2)
-	created := h.call(t, "admin-test", "create_client", map[string]any{"multi_device": true}, false).(map[string]any)
-	value, token := created["invitation"].(string), created["device_token"].(string)
+	token := h.create(t, true)
+	value := h.s.legacyInvitationForToken(t, token)
 	for i := 0; i < 2; i++ {
 		got, err := invite.Redeem(context.Background(), value)
 		if err != nil || got != token {
@@ -345,13 +341,12 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 
 func TestTokenIdentifierMatchesInvitationAndRoute(t *testing.T) {
 	h := newMultiHarness(t, 0)
-	result := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	encoded := result["device_token"].(string)
+	encoded := h.create(t, false)
 	token, err := protocol.Decode(encoded)
-	if err != nil || !protocol.ValidTokenIdentifier(token.Identifier) || result["token_identifier"] != token.Identifier {
+	if err != nil || !protocol.ValidTokenIdentifier(token.Identifier) {
 		t.Fatalf("invalid identifier: %#v %v", token, err)
 	}
-	invitation, err := protocol.Decode(result["invitation"].(string))
+	invitation, err := protocol.Decode(h.s.legacyInvitationForToken(t, encoded))
 	if err != nil || invitation.Identifier != token.Identifier || invitation.Secret == token.Secret {
 		t.Fatalf("invitation identifier or secret: %#v %v", invitation, err)
 	}

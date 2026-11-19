@@ -16,7 +16,8 @@ import (
 func TestSingleDeviceResumeTakeover(t *testing.T) {
 	h := newMultiHarness(t, 1)
 	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
-	token := issued["device_token"].(string)
+	token := deviceTokenFromControl(issued["control_token"].(string))
+	invitation := h.s.legacyInvitationForToken(t, token)
 	decoded, err := protocol.Decode(token)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +38,7 @@ func TestSingleDeviceResumeTakeover(t *testing.T) {
 	if len(resume) < 32 {
 		t.Fatal("missing resume credential")
 	}
-	if _, err := invite.Redeem(context.Background(), issued["invitation"].(string)); err == nil {
+	if _, err := invite.Redeem(context.Background(), invitation); err == nil {
 		t.Fatal("online invitation redeemed")
 	}
 	for _, key := range []string{"", "wrong"} {
@@ -76,7 +77,7 @@ func TestSingleDeviceResumeTakeover(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if redeemed, err := invite.Redeem(context.Background(), issued["invitation"].(string)); err != nil || redeemed != token {
+	if redeemed, err := invite.Redeem(context.Background(), invitation); err != nil || redeemed != token {
 		t.Fatalf("invitation should remain usable after disconnect: %v", err)
 	}
 	third, response, err := dial("")
