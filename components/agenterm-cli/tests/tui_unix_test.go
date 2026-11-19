@@ -301,7 +301,7 @@ func (f *liveTUI) execute(t *testing.T, command string) {
 
 func (f *liveTUI) checkConnectionLog(t *testing.T, redeemed bool) {
 	t.Helper()
-	const timestamp = `[0-9]{2}:[0-9]{2}:[0-9]{2}  `
+	const timestamp = `[0-9]{2}:[0-9]{2}:[0-9]{2} `
 	const waiting = "Client connected. Waiting for remote operations..."
 	screen := f.capture.wait(t, waiting)
 	pattern := `(?m)^` + timestamp + `Connecting to server ` + regexp.QuoteMeta(f.address) + `\n`
