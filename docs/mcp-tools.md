@@ -17,7 +17,7 @@ The connected server's `tools/list` publishes the schemas and behavior annotatio
 
 ## Invitations and devices
 
-`create_client` returns `display_text` as both the MCP text content and a structured field, alongside the private `control_token` and UTC RFC 3339 deadline `expires_at`. Present all sections in the user's language and in their original order. Preserve code blocks and copy commands, links, device tokens and short codes verbatim. Show the deadline in the user's time zone when known, with the zone labeled, or in UTC otherwise.
+`create_client` returns `display_text` as both the MCP text content and a structured field, alongside the private `control_token` and UTC RFC 3339 deadline `expires_at`. Present the entire `display_text`, translating only its natural-language prose. Do not paraphrase, summarize, add, omit, or reorder content. Preserve code blocks and copy commands, URLs, device tokens, and short codes verbatim. Show each original URL as visible text, not as a Markdown link label. Show the deadline in the user's time zone when known or in UTC otherwise, and label the zone.
 
 Keep `control_token` in the host's private storage for the connection so later turns can reuse it, including after a wait times out. Keep it out of logs, user-facing messages and invitation material. The recipient uses the link or commands from `display_text`.
 

@@ -668,8 +668,8 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Create an Agenterm remote connection token and invitation. Present all of display_text in the user's language and preserve its section order and code blocks. Copy commands, links, device tokens, and short codes verbatim. Show expires_at in the user's known time zone or UTC. Keep control_token private and reuse it across turns, including after a wait times out. After presenting the invitation, wait for the device with list_client.",
-    "zh-CN": "创建 Agenterm 远程连接令牌和邀请。用用户的语言完整展示 display_text，保留段落顺序和代码块，原样复制命令、链接、设备令牌和短码。按用户已知的时区标注 expires_at，时区未知则显示 UTC。私密保管 control_token 并跨轮复用，等待超时后也要保留。展示邀请后调用 list_client 等待设备。"
+    "en": "Create an Agenterm remote connection token and invitation. Present the entire display_text, translating only its natural-language prose into the user's language. Do not paraphrase, summarize, add, omit, or reorder any content. Preserve all sections and code blocks. Copy commands, URLs, device tokens, and short codes verbatim. Show each original URL as visible text; do not replace it with a Markdown link label. Show the expiry deadline (expires_at) in the user's time zone if known, or UTC otherwise, and label the zone. Keep control_token private and reuse it across turns, including after a wait times out. After presenting the invitation, wait for the device with list_client.",
+    "zh-CN": "创建 Agenterm 远程连接令牌和邀请。完整展示 display_text，只将其中的自然语言翻译成用户使用的语言。不得改写、摘要、增删或重排内容。保留所有段落和代码块，逐字复制命令、URL、设备令牌和短码。每个原始 URL 都必须作为可见文本显示，不得替换为 Markdown 链接标题。已知用户时区时，按该时区显示过期时间（expires_at），否则用 UTC，并标注时区。私密保管 control_token 并跨轮复用，等待超时后也要保留。展示邀请后调用 list_client 等待设备。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 900 (15 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
