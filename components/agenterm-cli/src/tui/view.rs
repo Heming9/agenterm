@@ -28,7 +28,7 @@ impl Palette {
             Kind::System => self.text(colors::SECONDARY),
             Kind::Command | Kind::Welcome => self.text(colors::PRIMARY),
             Kind::Error => self.text(colors::ERROR),
-            Kind::Output | Kind::Ready => Style::default(),
+            Kind::Connection | Kind::Output => Style::default(),
         }
     }
     fn status(self, state: State) -> Style {

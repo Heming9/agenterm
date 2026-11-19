@@ -227,7 +227,7 @@ fn idle_reconnect_does_not_repeat_welcome() {
     app.refresh();
     let restored = screen(&app).join("\n");
     assert!(restored.contains(tr("connection.restored")));
-    assert!(!restored.contains(tr("tui.welcome.waiting")));
+    assert_eq!(restored.matches(tr("tui.welcome.waiting")).count(), 1);
 }
 
 #[test]
@@ -265,7 +265,8 @@ fn startup_banner_is_selectable_in_the_log() {
     app.client_event(started("one", "pwd"));
     app.refresh();
     assert!(app.log.rows.iter().all(|row| !row.text.contains(top)));
-    assert!(!screen(&app).join("\n").contains(tr("tui.welcome.waiting")));
+    let log = screen(&app).join("\n");
+    assert!(log.find(tr("tui.welcome.waiting")).unwrap() < log.find("$ pwd").unwrap());
 }
 
 #[test]
@@ -500,8 +501,10 @@ fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
     let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(0, 6)].fg, Color::from_u32(colors::SECONDARY));
-    assert_eq!(buffer[(10, 6)].fg, Color::Reset);
+    for row in [5, 6] {
+        assert_eq!(buffer[(0, row)].fg, Color::from_u32(colors::SECONDARY));
+        assert_eq!(buffer[(10, row)].fg, Color::Reset);
+    }
     for position in [(2, 2), (10, 2), (2, 3), (2, 4)] {
         assert_eq!(buffer[position].fg, Color::from_u32(colors::PRIMARY));
     }
@@ -516,12 +519,12 @@ fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     app.scroll = 0;
     app.follow = false;
     app.selection = Some(Selection {
-        anchor: Point { row: 2, col: 0 },
-        cursor: Point { row: 2, col: 2 },
+        anchor: Point { row: 3, col: 0 },
+        cursor: Point { row: 3, col: 2 },
         down: false,
         dragged: true,
         mouse_x: 0,
-        mouse_y: 4,
+        mouse_y: 5,
         id: 1,
         request: 0,
         notice: "",
@@ -529,7 +532,7 @@ fn banner_uses_configured_colors_and_no_color_selection_reverses_text() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
     assert!(
-        terminal.backend().buffer()[(0, 4)]
+        terminal.backend().buffer()[(0, 5)]
             .modifier
             .contains(Modifier::REVERSED)
     );

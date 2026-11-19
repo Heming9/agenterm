@@ -392,7 +392,6 @@ impl App {
             worker.stopped.store(true, Ordering::SeqCst);
             self.state = State::Disconnecting;
             self.latency = None;
-            self.log.clear_waiting();
         }
     }
     fn client_event(&mut self, event: ClientEvent) {
@@ -410,7 +409,6 @@ impl App {
                     |version| format!("v{}", version.strip_prefix('v').unwrap_or(&version)),
                 );
                 self.log.connection_line(
-                    Kind::System,
                     &ui::reporter_timestamp(),
                     &format!(
                         "{} · {} {release} · {} {} ms",
@@ -427,7 +425,6 @@ impl App {
                     self.address = clean(&address);
                     self.latency = None;
                     self.log.connection_line(
-                        Kind::System,
                         &ui::reporter_timestamp(),
                         &format!("{} {}", tr("tui.connection.connecting"), self.address),
                     );
@@ -436,7 +433,6 @@ impl App {
             ClientEvent::WebSocketUpgraded(status) => {
                 if self.state != State::Disconnecting {
                     self.log.connection_line(
-                        Kind::System,
                         &ui::reporter_timestamp(),
                         &format!("{} · HTTP {status}", tr("tui.connection.handshake")),
                     );
@@ -451,11 +447,9 @@ impl App {
                 self.show_welcome = !self.ever_connected;
                 let time = ui::reporter_timestamp();
                 if self.ever_connected {
-                    self.log
-                        .connection_line(Kind::System, &time, tr("connection.restored"));
+                    self.log.connection_line(&time, tr("connection.restored"));
                 } else {
                     self.log.connection_line(
-                        Kind::System,
                         &time,
                         &format!(
                             "{} · {} {} ms",
@@ -464,8 +458,7 @@ impl App {
                             elapsed.as_millis()
                         ),
                     );
-                    self.log
-                        .connection_line(Kind::Ready, &time, tr("tui.welcome.waiting"));
+                    self.log.connection_line(&time, tr("tui.welcome.waiting"));
                 }
                 self.ever_connected = true;
             }
@@ -473,7 +466,6 @@ impl App {
                 if self.state != State::Disconnecting {
                     self.state = State::Reconnecting(delay);
                     self.latency = None;
-                    self.log.clear_waiting();
                 }
                 self.log.message(
                     Kind::Error,
@@ -492,7 +484,6 @@ impl App {
             event => {
                 if matches!(event, ClientEvent::Started { .. }) {
                     self.show_welcome = false;
-                    self.log.clear_waiting();
                 }
                 self.log.event(event);
             }

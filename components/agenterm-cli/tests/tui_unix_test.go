@@ -352,8 +352,8 @@ func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 	f.execute(t, "printf 'first line\\nsecond line\\nthird line\\n'")
 	f.capture.wait(t, "1 commands · 42ms")
 	screen = f.capture.wait(t, "[3 lines]")
-	if strings.Contains(screen, "Client connected. Waiting for remote operations...") {
-		t.Fatal("waiting message still visible after the first command")
+	if !strings.Contains(screen, "Client connected. Waiting for remote operations...") {
+		t.Fatal("waiting message missing from the log after the first command")
 	}
 	if strings.Contains(screen, "\nsecond line\n") {
 		t.Fatal("multiline log should initially be folded:\n" + screen)

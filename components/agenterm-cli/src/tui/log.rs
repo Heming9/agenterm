@@ -10,11 +10,11 @@ pub const MAX_LOG: usize = 10 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     System,
+    Connection,
     Command,
     Output,
     Error,
     Welcome,
-    Ready,
 }
 #[derive(Clone, Debug)]
 pub struct Row {
@@ -207,17 +207,13 @@ impl Log {
         let text = format!("{}{}\n", self.before(2), clean(text));
         self.push(kind, text, 0);
     }
-    pub fn connection_line(&mut self, kind: Kind, time: &str, message: &str) {
+    pub fn connection_line(&mut self, time: &str, message: &str) {
         let prefix = format!("{}{time}  ", self.before(1));
-        self.push(kind, format!("{prefix}{}\n", clean(message)), prefix.len());
-    }
-    pub fn clear_waiting(&mut self) {
-        if let Some(index) = self.spans.iter().rposition(|span| span.kind == Kind::Ready)
-            && let Some(span) = self.spans.remove(index)
-        {
-            self.bytes -= span.text.len();
-            self.dirty = true;
-        }
+        self.push(
+            Kind::Connection,
+            format!("{prefix}{}\n", clean(message)),
+            prefix.len(),
+        );
     }
     pub fn event(&mut self, event: Event) {
         match event {
