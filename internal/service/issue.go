@@ -76,12 +76,9 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 		s.clientOwners = make(map[string]*clientOwner)
 	}
 	s.nextClientOrder++
-	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires, temporaryAssistance: args.TemporaryAssistance}
+	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires}
 	deadline := expires.UTC().Format(time.RFC3339)
 	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "expires_at": deadline, "token_initial_expires_at": deadline}
-	if args.TemporaryAssistance {
-		result["temporary_assistance"] = true
-	}
 	if code != "" {
 		result["short_code"] = code
 		result["short_code_expires_at"] = deadline

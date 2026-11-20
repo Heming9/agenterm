@@ -23,7 +23,7 @@ func TestShellInstallerRetriesTimedOutDownload(t *testing.T) {
 		t.Skip("curl is required to exercise installer retries")
 	}
 	const name = "agenterm-client-cli-linux-amd64"
-	payload := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then echo \"${AGENTERM_TEST_CLIENT_VERSION:-0.20.15}\"; exit 0; fi\nprintf 'client:%s\\n' \"$*\"\n")
+	payload := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then echo \"${AGENTERM_TEST_CLIENT_VERSION:-0.20.16}\"; exit 0; fi\nprintf 'client:%s\\n' \"$*\"\n")
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -46,7 +46,7 @@ func TestShellInstallerRetriesTimedOutDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	// Use an isolated cache and the raw binary path. Keep real curl retry
+	// Use an isolated config directory and the raw binary path. Keep real curl retry
 	// behavior while shortening its per-attempt timeout for this test.
 	for name, data := range map[string][]byte{
 		"install.sh": script,
@@ -62,7 +62,7 @@ func TestShellInstallerRetriesTimedOutDownload(t *testing.T) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", filepath.Join(dir, "install.sh"), "test-invitation", server.URL+"/downloads/v1")
 	cmd.Env = append(os.Environ(), "AGENTERM_LANG=en", "AGENTERM_TEST_CURL="+curl, "PATH="+dir+":"+os.Getenv("PATH"),
-		"XDG_CACHE_HOME="+dir, "NO_PROXY=127.0.0.1", "no_proxy=127.0.0.1")
+		"XDG_CONFIG_HOME="+dir, "NO_PROXY=127.0.0.1", "no_proxy=127.0.0.1")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("installer failed to resume after timeout: %v\n%s", err, output)
@@ -74,7 +74,7 @@ func TestShellInstallerRetriesTimedOutDownload(t *testing.T) {
 	old := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
 	old.Env = append(cmd.Env, "AGENTERM_TEST_CLIENT_VERSION=0.20.12")
 	output, err = old.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "0.20.15 or newer is required") || strings.Contains(string(output), "client:") {
+	if err == nil || !strings.Contains(string(output), "0.20.16 or newer is required") || strings.Contains(string(output), "client:") {
 		t.Fatalf("old client must not receive any credentials: %v\n%s", err, output)
 	}
 }

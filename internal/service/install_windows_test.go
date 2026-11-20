@@ -3,6 +3,8 @@ package service
 import (
 	"agenterm/internal/protocol"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +26,7 @@ func TestPowerShellInvitationInstaller(t *testing.T) {
 	source := filepath.Join(root, "main.go")
 	if err := os.WriteFile(source, []byte(`package main
 import ("fmt"; "os"; "strconv")
-func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { version := os.Getenv("AGENTERM_TEST_CLIENT_VERSION"); if version == "" { version = "0.20.15" }; fmt.Println(version); return }; fmt.Printf("arg=%s token=%s lang=%s\n", args[0], args[1], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
+func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { version := os.Getenv("AGENTERM_TEST_CLIENT_VERSION"); if version == "" { version = "0.20.16" }; fmt.Println(version); return }; fmt.Printf("arg=%s token=%s lang=%s\n", args[0], args[1], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -100,23 +102,35 @@ func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { ve
 				cmd.Env = append(cmd.Env, value)
 			}
 		}
-		cmd.Env = append(cmd.Env, "LOCALAPPDATA="+filepath.Join(root, "local"))
+		cmd.Env = append(cmd.Env, "APPDATA="+filepath.Join(root, "roaming"), "AGENTERM_LANG=zh-CN")
 		cmd.Stdin = strings.NewReader(input)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
 	run := func() (string, error) { return runWithInput("") }
-	for i, message := range []string{"正在下载客户端", "本地客户端校验通过，跳过下载"} {
-		out, err := run()
-		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-token token="+issued["client_token"].(string)) || strings.Contains(out, "选择授权方式") {
-			t.Fatalf("run %d: %v\n%s", i, err, out)
-		}
+	if out, err := run(); err != nil || !strings.Contains(out, "正在下载客户端") ||
+		!strings.Contains(out, "arg=-token token="+issued["client_token"].(string)) || strings.Contains(out, "选择授权方式") {
+		t.Fatalf("first run: %v\n%s", err, out)
+	}
+	cache := filepath.Join(root, "roaming")
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("bootstrap should not create a persistent install: %v", err)
+	}
+	cached := filepath.Join(cache, "Agenterm", "cli", fmt.Sprintf("agenterm-cli-%x.exe", sha256.Sum256(client)))
+	if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cached, client, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run(); err != nil || !strings.Contains(out, "本地客户端校验通过，跳过下载") {
+		t.Fatalf("reuse: %v\n%s", err, out)
 	}
 	if archiveRequests.Load() != 1 {
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())
 	}
 	customPrefix = "$env:AGENTERM_LANG = 'en'; $env:AGENTERM_TEST_CLIENT_VERSION = '0.20.12'; "
-	if out, err := run(); err == nil || !strings.Contains(out, "0.20.15 or newer is required") || strings.Contains(out, "arg=-token") {
+	if out, err := run(); err == nil || !strings.Contains(out, "0.20.16 or newer is required") || strings.Contains(out, "arg=-token") {
 		t.Fatalf("old client must not receive any credentials: %v\n%s", err, out)
 	}
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; [Threading.Thread]::CurrentThread.CurrentCulture = 'zh-CN'; $env:AGENTERM_LANG = 'auto'; `
@@ -135,7 +149,6 @@ func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { ve
 		t.Fatalf("client exit code not propagated: %v\n%s", err, out)
 	}
 	customPrefix = ""
-	cached := filepath.Join(root, "local", "Agenterm", "cache", installerTestTag, "windows-"+runtime.GOARCH, name)
 	if err := os.WriteFile(cached, []byte("corrupted"), 0o600); err != nil {
 		t.Fatal(err)
 	}

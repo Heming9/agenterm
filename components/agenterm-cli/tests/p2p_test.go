@@ -50,7 +50,7 @@ func waitForP2PStateRemoval(t *testing.T, dirs ...string) {
 func TestRustCLIP2PBootstrapLifecycle(t *testing.T) {
 	for _, action := range []string{"complete", "stop", "reconnect"} {
 		t.Run(action, func(t *testing.T) {
-			f := newFixture(t, false, "")
+			f := newFixture(t, false, "persistent")
 			dir := t.TempDir()
 			config := base64.StdEncoding.EncodeToString([]byte("private negotiation test config"))
 			started := filepath.Join(dir, "start.txt")

@@ -5,6 +5,7 @@ package interop
 import (
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -37,12 +38,6 @@ func TestRustNativeMacProtocolLaunch(t *testing.T) {
 	binary, err := filepath.Abs(binary)
 	if err != nil {
 		t.Fatal(err)
-	}
-	registration := exec.Command(binary, "-version")
-	registration.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=0")
-	out, err := registration.CombinedOutput()
-	if err != nil || strings.Contains(string(out), "link registration:") {
-		t.Fatalf("register handler: %v %s", err, out)
 	}
 	data, err := os.ReadFile(binary)
 	if err != nil {
@@ -96,6 +91,35 @@ func TestRustNativeMacProtocolLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(tokenReady)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	registration := exec.CommandContext(ctx, binary, "-plain", "-token", token, "-connection-mode", "persistent")
+	registration.Env = append(os.Environ(), "AGENTERM_SKIP_LINK_REGISTRATION=0")
+	registration.Stdin = strings.NewReader("1\n")
+	registered := make(chan error, 1)
+	go func() {
+		out, err := registration.CombinedOutput()
+		if err != nil || strings.Contains(string(out), "link registration:") {
+			registered <- fmt.Errorf("register handler: %v %s", err, out)
+			return
+		}
+		registered <- nil
+	}()
+	select {
+	case peer := <-peers:
+		err := peer.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+		peer.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	case err := <-registered:
+		t.Fatalf("registration client exited before opening a connection: %v", err)
+	case <-ctx.Done():
+		t.Fatal("registration client did not connect")
+	}
+	if err := <-registered; err != nil {
+		t.Fatal(err)
+	}
 	raw := "agenterm-cli://authorize?" + url.Values{"url": {server.URL + "/agenterm/c/ABC123"}}.Encode()
 	t.Log("In the Terminal window that opens, approve the loopback connection in the Agenterm CLI.")
 	if out, err := exec.Command("/usr/bin/open", raw).CombinedOutput(); err != nil {

@@ -2,14 +2,11 @@ package service
 
 import (
 	"agenterm/internal/protocol"
-	"agenterm/internal/version"
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io/fs"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -21,78 +18,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/gorilla/websocket"
 )
-
-func TestTemporaryAssistanceInvitation(t *testing.T) {
-	h := newMultiHarness(t, 0)
-	issued := h.call(t, "admin-test", "create_client", map[string]any{"temporary_assistance": true}, false).(map[string]any)
-	deviceToken := deviceTokenFromControl(issued["control_token"].(string))
-	token, err := protocol.Decode(deviceToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := displayShortCode(t, issued["display_text"].(string))
-	get := func(path string) string {
-		t.Helper()
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		if len(strings.TrimPrefix(path, "/c/")) == shortCodeLength {
-			req.Header.Set("Accept", "text/html")
-		}
-		h.s.installWrapper(installerTestTag).ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("%s returned %d", path, w.Code)
-		}
-		return w.Body.String()
-	}
-	for _, credential := range []string{token.Secret, code} {
-		page := get("/c/" + credential)
-		if !strings.Contains(page, "system temporary directory") || strings.Contains(page, "agenterm-cli://") || strings.Contains(page, deviceToken) {
-			t.Fatal("temporary invitation must direct the recipient to the installer")
-		}
-	}
-	for _, suffix := range []string{".sh", ".ps1"} {
-		r := httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil)
-		w := httptest.NewRecorder()
-		h.s.installWrapper(installerTestTag).ServeHTTP(w, r)
-		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "'temporary-assistance'") {
-			t.Fatalf("short-code installer %q did not preserve temporary policy: %d", suffix, w.Code)
-		}
-		if !strings.Contains(get("/c/"+token.Secret+suffix), "'temporary-assistance'") {
-			t.Fatalf("installer %q did not receive the invitation policy", suffix)
-		}
-	}
-	for _, credential := range []string{token.Secret, code} {
-		_, err := controlCall[installerInvitation](context.Background(), h.s.testFrontend().control, "invitation", invitationRequest{
-			Secret: credential, Identity: requestIdentity{RemoteAddr: "192.0.2.10:12345"},
-		})
-		var rejected *controlError
-		if !errors.As(err, &rejected) || rejected.Status != http.StatusForbidden {
-			t.Fatalf("an older frontend must be denied temporary assistance: %v", err)
-		}
-	}
-	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol}}
-	conn, response, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
-	if conn != nil {
-		conn.Close()
-	}
-	if response != nil {
-		response.Body.Close()
-	}
-	if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
-		t.Fatalf("ordinary client should be rejected, got %v", err)
-	}
-	for _, path := range []string{"/agenterm/c/" + code, "/agenterm/c/" + token.Secret} {
-		r := httptest.NewRequest(http.MethodPost, path, nil)
-		r.Header.Set(version.Header, version.Protocol)
-		w := httptest.NewRecorder()
-		h.s.routes(installerTestTag, nil).ServeHTTP(w, r)
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("%s returned %d, want forbidden", path, w.Code)
-		}
-	}
-}
 
 func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	binary, err := rustClientBinary()
@@ -120,7 +46,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	defer ts.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
 	h := &multiHarness{s: s, ts: ts}
-	issued := h.call(t, "admin-test", "create_client", map[string]any{"temporary_assistance": true}, false).(map[string]any)
+	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
 	control := issued["control_token"].(string)
 	token, err := protocol.Decode(deviceTokenFromControl(control))
 	if err != nil {
@@ -171,7 +97,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	if err := denied.Run(); err != nil || !strings.Contains(deniedOutput.String(), "cancelled") {
 		t.Fatalf("declining consent: %v\n%s", err, deniedOutput)
 	}
-	for _, want := range []string{"Choose authorization", "1. Allow authorization (temporary)", "2. Deny authorization", "Enter a choice:"} {
+	for _, want := range []string{"Choose authorization", "1. Allow authorization (temporary)", "2. Allow authorization (persistent)", "3. Deny authorization", "Enter a choice:"} {
 		if !strings.Contains(deniedOutput.String(), want) {
 			t.Errorf("consent prompt missing %q:\n%s", want, deniedOutput)
 		}

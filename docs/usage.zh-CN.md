@@ -52,25 +52,25 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 
 单设备在线期间，短链接、短码和连接令牌无法用于发起另一条连接。设备断开后，只要令牌仍有效，就可以再次使用。短码第 10 次成功兑换后，短码和短链接失效。打开受邀页面不计入兑换次数。
 
-连接成功后，客户端会在本地保存 Server 地址。输入 6 位短码时，可从历史列表中选择生成该短码的 Server；客户端只查询选中的 Server，并沿用记录中的 HTTP 或 HTTPS 协议。没有历史记录时，可直接粘贴受邀短码地址。CLI 将省略协议的地址按 HTTP 处理；使用 HTTPS 时请保留 `https://`。
+持久连接成功后，客户端会在本地保存 Server 地址。输入 6 位短码时，可从历史列表中选择生成该短码的 Server；客户端只查询选中的 Server，并沿用记录中的 HTTP 或 HTTPS 协议。没有历史记录时，可直接粘贴受邀短码地址。CLI 将省略协议的地址按 HTTP 处理；使用 HTTPS 时请保留 `https://`。
 
 ## 💻 客户端操作
 
-目前维护的客户端为 [Rust CLI](../components/agenterm-cli/README.md)。粘贴连接令牌或短码地址即可连接。使用方向键或鼠标滚轮浏览，拖选文字复制。选中文字后可按 Esc 取消选择，再按 Ctrl+C 断开并返回连接界面。在连接界面中，Ctrl+C 先清空令牌，再按一次退出。
+目前维护的客户端为 [Rust CLI](../components/agenterm-cli/README.md)。粘贴连接令牌或短码地址即可连接。使用方向键或鼠标滚轮浏览，拖选文字复制。选中文字后可按 Esc 取消选择，再按 Ctrl+C 断开。临时连接会退出客户端，持久连接会返回连接界面。
 
-临时连接空闲五分钟后自动断开，执行命令的时间不计入空闲时长。持久连接会保持到主动断开。无论从哪种入口打开邀请，都在 CLI 的授权提示中选择连接模式。详见 [Rust CLI 的浏览器协议注册说明](../components/agenterm-cli/README.md#protocol-links)。
+临时连接空闲五分钟后自动断开，执行命令的时间不计入空闲时长。持久连接会保持到主动断开。无论从哪种入口打开邀请，都在 CLI 的授权提示中选择连接模式，默认预选临时连接。详见 [Rust CLI 的浏览器协议注册说明](../components/agenterm-cli/README.md#protocol-links)。
 
-一键连接下载的客户端会保留在本机缓存中；关闭客户端后可以删除：
+选择持久授权后，客户端会在以下目录保留一份可复用的程序。
 
 | 系统 | 缓存目录 |
 | --- | --- |
-| macOS | `~/Library/Caches/Agenterm` |
-| Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
-| Windows | `%LOCALAPPDATA%\Agenterm\cache` |
+| macOS | `~/Library/Application Support/Agenterm/cli` |
+| Linux | `${XDG_CONFIG_HOME:-~/.config}/Agenterm/cli` |
+| Windows | `%APPDATA%\Agenterm\cli` |
 
-### 临时协助邀请
+### 临时连接
 
-如果发起方创建了临时协助邀请，请运行邀请中的一键连接命令并确认授权。安装器只在系统临时目录下载和运行客户端。Agenterm 不把会话输出保存为本地日志，待执行命令可写入临时脚本。正常结束后，安装器移除这次下载的客户端和临时文件，协助任务对本机文件和配置的改动会保留。如果安装器与客户端同时被强制关闭或设备断电，临时文件可能残留。
+请使用 CLI 0.20.16 或更新版本。运行邀请中的一键命令并选择临时授权后，客户端仅在系统临时目录安装和运行。Agenterm 不把会话输出保存为本地日志，待执行命令可写入临时脚本。正常结束后，引导脚本删除本次下载的客户端和临时文件，协助任务对本机文件和配置的改动会保留。从已安装的客户端发起临时连接时，原有安装会保留。断电或强制关闭引导脚本时，临时文件可能残留。
 
 ## ❓ 常见问题
 
@@ -88,7 +88,7 @@ Agenterm 提供终端协助，不提供远程桌面。Windows 支持简单的交
 
 ### 如何传输文件？
 
-目标设备通过 Rust CLI 上线后，可通过 MCP 的 `p2p_transfer_start` 发起直连。两端连通后，可在同一条连接上双向复制文件，每次复制一个文件。关闭客户端会停止其 P2P 组件。详见 [P2P 组件说明](../components/p2p-cli/README.md)。
+目标设备通过 Rust CLI 建立持久连接后，可通过 MCP 的 `p2p_transfer_start` 发起直连。两端连通后，可在同一条连接上双向复制文件，每次复制一个文件。关闭客户端会停止其 P2P 组件。详见 [P2P 组件说明](../components/p2p-cli/README.md)。
 
 ### 权限与隐私
 

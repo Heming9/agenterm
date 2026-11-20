@@ -1,13 +1,13 @@
 //! Shared connection lifecycle for plain output and the interactive UI.
 use crate::{
+    deeplink,
     protocol::{self, Address, Result, Token},
     storage,
     terminal::Manager,
     transport,
-    ui::{Event, Reporter},
+    ui::{ConnectionMode, Event, Reporter},
 };
 use std::{
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -40,24 +40,17 @@ pub fn display_address(value: &str) -> Result<String> {
 
 pub fn run(
     value: &str,
-    temporary: bool,
+    mode: ConnectionMode,
     stopped: Arc<AtomicBool>,
     reporter: Reporter,
-    workspace: Option<PathBuf>,
+    register_link: bool,
 ) -> Result<()> {
     let started = Instant::now();
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
-    // A temporary installer launches a single connection and the server
-    // already arbitrates token admission. The reusable CLI also reserves a
-    // per-server lock across its local instances.
-    let reserve = |address: &Address| {
-        workspace
-            .is_none()
-            .then(|| storage::lock(address))
-            .transpose()
-    };
+    let temporary = mode == ConnectionMode::Temporary;
+    let reserve = |address: &Address| (!temporary).then(|| storage::lock(address)).transpose();
     let (token, reservation, validation) = if value.starts_with("Agenterm_") {
         let token = Token::decode(value)?;
         let reservation = reserve(&token.address)?;
@@ -93,8 +86,15 @@ pub fn run(
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
-    let manager = Manager::with_reporter(stopped.clone(), reporter, workspace);
-    let result = transport::run(&token, &manager, &stopped, temporary, started);
+    if !temporary
+        && register_link
+        && let Err(error) = deeplink::register()
+    {
+        eprintln!("Agenterm link registration: {error}");
+    }
+    let workspace = temporary.then(storage::installer_workspace).flatten();
+    let manager = Manager::with_reporter(stopped.clone(), reporter, temporary, workspace);
+    let result = transport::run(&token, &manager, &stopped, started);
     manager.close();
     drop(reservation);
     result

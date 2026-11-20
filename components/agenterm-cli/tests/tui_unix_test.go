@@ -464,7 +464,15 @@ func TestRustTUIControllingTerminalStdin(t *testing.T) {
 		t.Fatal("invitation was not redeemed exactly once")
 	}
 	f.write(t, "\x03")
-	f.capture.wait(t, "Token or code:")
+	select {
+	case err := <-f.done:
+		f.done <- err
+		if err != nil {
+			t.Fatalf("temporary connection did not exit cleanly: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("temporary connection did not exit")
+	}
 }
 
 func TestRustTUIProtocolLinkModes(t *testing.T) {

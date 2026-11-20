@@ -169,18 +169,16 @@ type createClientCredentials struct {
 }
 
 type invitationRequest struct {
-	Identity           requestIdentity
-	Secret             string
-	Consume            bool
-	TemporaryInstaller bool
+	Identity requestIdentity
+	Secret   string
+	Consume  bool
 }
 
 type installerInvitation struct {
-	Token               string
-	DeviceToken         bool
-	TokenExpiresAt      string
-	TokenState          string
-	TemporaryAssistance bool
+	Token          string
+	DeviceToken    bool
+	TokenExpiresAt string
+	TokenState     string
 }
 
 func registerControl[I, O any](mux *http.ServeMux, method string, f func(context.Context, I) (O, error)) {
@@ -272,13 +270,6 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		return "", nil
 	})
 	registerControl(mux, "create", func(_ context.Context, in createRequest) (map[string]any, error) {
-		in.Args.TemporaryAssistance = false
-		return s.createClientMode(in.IP, in.Args)
-	})
-	// A separate private route prevents a retained older runtime from silently
-	// ignoring temporary_assistance and issuing an ordinary invitation.
-	registerControl(mux, "create/temporary", func(_ context.Context, in createRequest) (map[string]any, error) {
-		in.Args.TemporaryAssistance = true
 		return s.createClientMode(in.IP, in.Args)
 	})
 	registerControl(mux, "clients", func(ctx context.Context, in toolRequest[listClientsArgs]) ([]clientInfo, error) {
@@ -335,11 +326,6 @@ func (s *runtimeState) controlHandler(shutdown ...context.CancelFunc) http.Handl
 		// client or disclose its token. Keep it for reconnect after disconnect.
 		candidate := s.tokens[entry.Token]
 		owner := s.clientOwners[candidate]
-		entry.TemporaryAssistance = owner != nil && owner.temporaryAssistance
-		// Require a frontend that can render the temporary installer.
-		if entry.TemporaryAssistance && (in.Consume || !in.TemporaryInstaller) {
-			return installerInvitation{}, &controlError{Status: http.StatusForbidden, Message: serverText("temporary.assistance.requires.installer")}
-		}
 		if !s.multiDevice[candidate] && (s.connecting[candidate] > 0 || s.hasClientLocked(candidate)) {
 			return installerInvitation{}, &controlError{Status: http.StatusUnauthorized, Message: i18n.Text(i18n.Terminal(), "invitation.invalid.expired.or.already.used")}
 		}

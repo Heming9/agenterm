@@ -47,6 +47,7 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	persistent := mode == "persistent"
 	f := &fixture{t: t, peers: make(chan *websocket.Conn, 4), done: make(chan error, 1)}
 	secret := base64.RawURLEncoding.EncodeToString([]byte("device-key"))
 	var token string
@@ -67,8 +68,8 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
-		if r.Header.Get(protocol.P2PCapabilityHeader) != "1" {
-			t.Error("Rust CLI did not advertise P2P")
+		if advertised := r.Header.Get(protocol.P2PCapabilityHeader) == "1"; advertised != persistent {
+			t.Errorf("P2P advertised = %v, persistent connection = %v", advertised, persistent)
 		}
 		if r.Header.Get(protocol.ResumeCredentialHeader) == "resume-test" {
 			f.resumes.Add(1)
@@ -95,6 +96,9 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	close(tokenReady)
 	address := server.URL + "/prototype/c/ABC123"
 	args := []string{"-token", address}
+	if persistent {
+		args = append(args, "-connection-mode", "persistent")
+	}
 	if strings.HasPrefix(mode, "link-") {
 		query := neturl.Values{"url": {address}}
 		if mode != "link-default" {

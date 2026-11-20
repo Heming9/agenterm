@@ -21,7 +21,7 @@ Schema 和行为标注以所连接服务端的 `tools/list` 为准。管理访�
 
 将 `control_token` 保存到宿主提供的私密存储，并与本次连接关联，方便跨轮复用，等待超时后也应保留。凭据仅供控制端使用，须避开日志、用户可见消息和邀请材料。受助者使用 `display_text` 中的链接或命令。
 
-`create_client` 的每个可选参数均使用默认值，除非用户明确要求其他值；用户未指定任何设置时，使用空对象调用。邀请默认有效 900 秒。设置 `multi_device: true` 可允许多台设备同时在线。短码启用时，单设备邀请会使用短码链接。复用和兑换规则见[邀请有效期与短码](usage.zh-CN.md#邀请有效期与短码)。在浏览器链接后加上 `.sh` 或 `.ps1` 可获取安装脚本。仅当用户明确要求临时安装时，才设置 `temporary_assistance: true` 创建临时安装邀请，仅支持终端协助。
+`create_client` 的每个可选参数均使用默认值，除非用户明确要求其他值；用户未指定任何设置时，使用空对象调用。邀请默认有效 900 秒。设置 `multi_device: true` 可允许多台设备同时在线。短码启用时，单设备邀请会使用短码链接。复用和兑换规则见[邀请有效期与短码](usage.zh-CN.md#邀请有效期与短码)。在浏览器链接后加上 `.sh` 或 `.ps1` 可获取安装脚本。受助端在本机授权时选择连接模式。
 
 ### 等待设备上线
 
@@ -76,4 +76,4 @@ Schema 和行为标注以所连接服务端的 `tools/list` 为准。管理访�
 
 ## 文件传输
 
-普通邀请支持 `p2p_transfer_start`。多设备令牌须传入 `client_id`。`waiting_for_agent` 表示远端组件已注册。按 Agent 的实际执行环境运行对应私密脚本，再用脚本返回的 `executable` 路径查询状态，等到 `connected` 后开始复制。详见 [P2P 组件说明](../components/p2p-cli/README.md)。
+持久连接支持 `p2p_transfer_start`。多设备令牌须传入 `client_id`。`waiting_for_agent` 表示远端组件已注册。按 Agent 的实际执行环境运行对应私密脚本，再用脚本返回的 `executable` 路径查询状态，等到 `connected` 后开始复制。详见 [P2P 组件说明](../components/p2p-cli/README.md)。

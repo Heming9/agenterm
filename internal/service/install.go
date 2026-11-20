@@ -134,7 +134,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		}
 		entry, err := controlCall[installerInvitation](r.Context(), s.control, "invitation", invitationRequest{
 			Identity: requestIdentity{Header: r.Header, RemoteAddr: r.RemoteAddr}, Secret: credential,
-			Consume: redeem, TemporaryInstaller: true,
+			Consume: redeem,
 		})
 		if err != nil {
 			writeControlError(w, err)
@@ -185,14 +185,10 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		body := strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)
-		args := ""
-		if entry.TemporaryAssistance {
-			args += " 'temporary-assistance'"
-		}
 		if extension == ".ps1" {
-			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + args + "\n"
+			body = "& {\n" + body + "\n} " + psQuote(value) + " " + psQuote(base) + "\n"
 		} else {
-			body = "#!/bin/sh\n{\nset -- " + shQuote(value) + " " + shQuote(base) + args + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n") + "\n}\n"
+			body = "#!/bin/sh\n{\nset -- " + shQuote(value) + " " + shQuote(base) + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n") + "\n}\n"
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if r.Method == http.MethodGet {

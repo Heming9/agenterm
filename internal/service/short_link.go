@@ -81,8 +81,7 @@ func serveInvitationPage(w http.ResponseWriter, r *http.Request, entry installer
 		CountdownLabel, CountdownFallback string
 		Remaining                         int64
 		CLIURL                            template.URL
-		TemporaryAssistance               bool
-	}{windows, shell, entry.Token, version.Current, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL), entry.TemporaryAssistance}); err != nil {
+	}{windows, shell, entry.Token, version.Current, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL)}); err != nil {
 		http.Error(w, "Unable to render invitation page", http.StatusInternalServerError)
 		return
 	}

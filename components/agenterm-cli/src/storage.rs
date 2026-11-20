@@ -16,21 +16,18 @@ pub fn directory() -> Result<PathBuf> {
     private_dir(&p)?;
     Ok(p)
 }
-pub fn assistance_workspace() -> Result<PathBuf> {
-    let error = || crate::ui::tr("temporary.assistance.requires.installer").to_string();
-    let root = std::env::temp_dir().canonicalize().map_err(|_| error())?;
+pub fn installer_workspace() -> Option<PathBuf> {
+    let root = std::env::temp_dir().canonicalize().ok()?;
     let executable = std::env::current_exe()
         .and_then(|path| path.canonicalize())
-        .map_err(|_| error())?;
-    let workspace = executable.parent().ok_or_else(error)?;
-    if workspace.parent() != Some(root.as_path())
-        || !workspace
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().starts_with("agenterm-assistance."))
-    {
-        return Err(error());
-    }
-    Ok(workspace.to_owned())
+        .ok()?;
+    let workspace = executable.parent()?;
+    (workspace.parent() == Some(root.as_path())
+        && workspace
+            .file_name()?
+            .to_str()?
+            .starts_with("agenterm-assistance."))
+    .then(|| workspace.to_owned())
 }
 pub fn private_dir(p: &std::path::Path) -> Result<()> {
     fs::create_dir_all(p).map_err(|e| e.to_string())?;
@@ -77,7 +74,7 @@ pub fn lock(a: &Address) -> Result<File> {
     Ok(f)
 }
 pub fn history() -> Result<Vec<String>> {
-    let p = directory()?.join("servers.json");
+    let p = home()?.join(".agenterm").join("servers.json");
     let raw = match fs::read(p) {
         Ok(b) if b.len() <= 65536 => b,
         Ok(_) => return Err("server history too large".into()),

@@ -11,7 +11,6 @@ fn ctrl_c() -> KeyEvent {
 }
 fn app() -> App {
     App::new(Options {
-        temporary: true,
         ..Options::default()
     })
 }

@@ -22,39 +22,31 @@ fn run() -> Result<()> {
     let link_launch = deeplink::is_launch(&args);
     let args = deeplink::arguments(args)?;
     let options = ui::Options::parse(args)?;
-    if !link_launch
-        && !options
-            .as_ref()
-            .is_some_and(|options| options.temporary_assistance)
-        && std::env::var_os("AGENTERM_SKIP_LINK_REGISTRATION").as_deref()
-            != Some(std::ffi::OsStr::new("1"))
-        && let Err(error) = deeplink::register()
-    {
-        eprintln!("Agenterm link registration: {error}");
-    }
     let Some(mut options) = options else {
         return Ok(());
     };
+    let register_link = !link_launch
+        && std::env::var_os("AGENTERM_SKIP_LINK_REGISTRATION").as_deref()
+            != Some(std::ffi::OsStr::new("1"));
     let startup_target = !options.token.is_empty() && !protocol::short_code(&options.token);
+    let mut authorized = None;
     if startup_target {
         let address = connection::target_address(&options.token)?;
-        let Some(temporary) = ui::consent(&address.server(), options.temporary_assistance)? else {
+        authorized = ui::consent(&address.server(), options.mode)?;
+        if authorized.is_none() {
             ui::line("Connection cancelled.", "已取消连接。");
             return Ok(());
-        };
-        options.temporary = temporary;
+        }
     }
-    let workspace = options
-        .temporary_assistance
-        .then(storage::assistance_workspace)
-        .transpose()?;
     let stopped = Arc::new(AtomicBool::new(false));
     if !options.plain && io::stdin().is_terminal() && io::stdout().is_terminal() {
         install_signal(stopped.clone())?;
-        return tui::run(options, stopped, workspace, startup_target);
+        return tui::run(options, stopped, authorized, register_link);
     }
     ui::heading();
-    if !startup_target {
+    let mode = if let Some(mode) = authorized {
+        mode
+    } else {
         if options.token.is_empty() && !options.token_provided {
             options.token = ui::input(ui::text(
                 "Connection token, short code, or short-code address: ",
@@ -79,19 +71,19 @@ fn run() -> Result<()> {
             options.token = format!("{server}/c/{}", options.token.to_ascii_uppercase());
         }
         let address = connection::target_address(&options.token)?;
-        let Some(temporary) = ui::consent(&address.server(), false)? else {
+        let Some(mode) = ui::consent(&address.server(), options.mode)? else {
             ui::line("Connection cancelled.", "已取消连接。");
             return Ok(());
         };
-        options.temporary = temporary;
-    }
+        mode
+    };
     install_signal(stopped.clone())?;
     connection::run(
         &options.token,
-        options.temporary,
+        mode,
         stopped,
         ui::Reporter::default(),
-        workspace,
+        register_link,
     )
 }
 

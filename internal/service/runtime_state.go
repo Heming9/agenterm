@@ -224,17 +224,6 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	if !acceptClientVersion(w, r) {
 		return
 	}
-	s.mu.Lock()
-	owner := s.clientOwners[secret]
-	temporaryAssistance := owner != nil && owner.temporaryAssistance
-	s.mu.Unlock()
-	if temporaryAssistance != (r.Header.Get(protocol.TemporaryAssistanceHeader) == "1") {
-		if temporaryAssistance {
-			w.Header().Set(protocol.TemporaryAssistanceHeader, "1")
-		}
-		http.Error(w, serverText("temporary.assistance.requires.installer"), http.StatusForbidden)
-		return
-	}
 	previous, resume, rejection := s.reserveConnection(secret, r.Header.Get(protocol.ResumeCredentialHeader))
 	if rejection != nil {
 		http.Error(w, rejection.Message, rejection.Status)
@@ -245,9 +234,6 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set(protocol.HeartbeatHeader, "1")
 	w.Header().Set(protocol.ClientAPIHeader, terminal.APIVersion)
-	if temporaryAssistance {
-		w.Header().Set(protocol.TemporaryAssistanceHeader, "1")
-	}
 	upgrader := websocket.Upgrader{
 		HandshakeTimeout: protocol.WriteTimeout,
 		CheckOrigin:      func(r *http.Request) bool { return r.Header.Get("Origin") == "" },
@@ -292,7 +278,7 @@ func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
 			ClientVersion:   clientReleaseVersion(r),
 			SessionControls: sessionControlsHeader(r),
 			TerminalAPI:     r.Header.Get(protocol.ClientAPIHeader) == terminal.APIVersion,
-			P2P:             !temporaryAssistance && r.Header.Get(protocol.P2PCapabilityHeader) == "1",
+			P2P:             r.Header.Get(protocol.P2PCapabilityHeader) == "1",
 		},
 	}}
 	if s.clients == nil {

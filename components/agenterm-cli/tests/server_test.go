@@ -141,7 +141,7 @@ func TestRustCLIRealServer(t *testing.T) {
 	}
 	defer clientLog.Close()
 	client := exec.Command(clientPath, "-token", link, "-connection-mode", "persistent")
-	client.Stdin = strings.NewReader("2\n")
+	client.Stdin = strings.NewReader("1\n")
 	remoteState := filepath.Join(home, "p2p-remote")
 	client.Env = append(env, "SHELL=/bin/sh", "NO_COLOR=1", "P2P_CLI_STATE_DIR="+remoteState,
 		"XDG_CACHE_HOME="+filepath.Join(home, "cache-remote"))

@@ -105,7 +105,6 @@ fn main() {
         "installer.consent.no",
         "installer.consent.temporary",
         "installer.consent.persistent",
-        "temporary.assistance.requires.installer",
         "invalid.agenterm.connection.address.or.token",
     ];
     let mut source = String::from("pub fn tr(key: &str) -> &'static str { match key {\n");

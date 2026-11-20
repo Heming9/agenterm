@@ -3,12 +3,11 @@ package service
 import "time"
 
 type clientOwner struct {
-	ip, token           string
-	controlKeyHash      [32]byte
-	order               uint64
-	used                bool      // a successful client connection, not merely an invitation redemption
-	expires             time.Time // first-connection deadline, or expiry after the last device disconnects
-	temporaryAssistance bool
+	ip, token      string
+	controlKeyHash [32]byte
+	order          uint64
+	used           bool      // a successful client connection, not merely an invitation redemption
+	expires        time.Time // first-connection deadline, or expiry after the last device disconnects
 }
 
 // The caller holds s.mu. Admission counts reservations immediately, while

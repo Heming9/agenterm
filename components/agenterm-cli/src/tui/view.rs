@@ -2,7 +2,7 @@ use super::{App, Menu, State, clean, colors};
 use crate::{
     connection,
     protocol::VERSION,
-    ui::{self, tr},
+    ui::{self, ConnectionMode, tr},
 };
 use ratatui::{
     Frame,
@@ -49,7 +49,7 @@ impl App {
         match self.state {
             State::Disconnected | State::Disconnecting => tr("disconnected.2").into(),
             State::Connecting => tr("connecting").into(),
-            State::Connected => tr(if self.temporary {
+            State::Connected => tr(if self.mode == ConnectionMode::Temporary {
                 "connected.temporary"
             } else {
                 "connected.persistent"
@@ -279,7 +279,7 @@ impl App {
                         form.line(vec![(format!(" {line}"), default)]);
                     }
                 }
-                for (index, choice) in ui::consent_choices(false).iter().enumerate() {
+                for (index, choice) in ui::consent_choices(self.requested_mode).iter().enumerate() {
                     let (marker, style) = if index == selected {
                         (
                             " ▶ ",
@@ -290,7 +290,10 @@ impl App {
                     } else {
                         ("   ", default)
                     };
-                    form.line(vec![(format!(" {marker}{} ", tr(choice)), style)]);
+                    form.line(vec![(
+                        format!(" {marker}{} ", ui::consent_label(*choice)),
+                        style,
+                    )]);
                 }
             }
             Menu::Server(selected) => {

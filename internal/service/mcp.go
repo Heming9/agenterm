@@ -87,9 +87,8 @@ type sessionActionArgs struct {
 	terminal.ControlRequest
 }
 type createClientArgs struct {
-	MultiDevice         bool  `json:"multi_device,omitempty"`
-	TimeoutSeconds      int64 `json:"timeout_seconds,omitempty"`
-	TemporaryAssistance bool  `json:"temporary_assistance,omitempty"`
+	MultiDevice    bool  `json:"multi_device,omitempty"`
+	TimeoutSeconds int64 `json:"timeout_seconds,omitempty"`
 }
 
 func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, ms *mcp.Server, admin bool, name, description string, handle func(context.Context, string, In) (*mcp.CallToolResult, Out, error)) {
@@ -260,9 +259,6 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		}
 		input.Properties["multi_device"].Description = serverText("mcp.result.multi_device")
 		input.Properties["multi_device"].Default = json.RawMessage("false")
-		temporaryAssistance := input.Properties["temporary_assistance"]
-		temporaryAssistance.Description = serverText("mcp.result.temporary_assistance")
-		temporaryAssistance.Default = json.RawMessage("false")
 		timeout := input.Properties["timeout_seconds"]
 		timeout.Description = serverText("mcp.invitation.timeout.seconds")
 		timeout.Minimum = new(float64(1))
@@ -273,11 +269,7 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			if a.TimeoutSeconds == 0 {
 				a.TimeoutSeconds = defaultInvitationTimeoutSeconds
 			}
-			method := "create"
-			if a.TemporaryAssistance {
-				method = "create/temporary"
-			}
-			credentials, err := controlCall[createClientCredentials](ctx, s.control, method, createRequest{IP: principal.IP, Args: a})
+			credentials, err := controlCall[createClientCredentials](ctx, s.control, "create", createRequest{IP: principal.IP, Args: a})
 			if err != nil {
 				return nil, createClientResult{}, err
 			}
@@ -301,20 +293,14 @@ func connectionDisplayText(token, code string, args createClientArgs, expires ti
 	expiry := expires.UTC().Format("2006-01-02 15:04:05")
 	link := browserInvitationURL(token, code)
 	shell, powershell := installCommands(token, code)
-	var text string
-	if args.TemporaryAssistance {
-		browser := "\n\nBrowser invitation link:\n" + link
-		text = fmt.Sprintf(i18n.Text("en", "connection.display.temporary.assistance"), powershell, shell, browser, args.TimeoutSeconds, expiry)
-	} else {
-		label := "Connection token:"
-		tokenAlternative := ""
-		if code != "" {
-			label = "Connection token / short code ( " + code + " ):"
-			tokenAlternative = " or short code above"
-		}
-		connectionSection := label + "\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + link
-		text = fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, "open the browser invitation link above or run the command for your system.", tokenAlternative, args.TimeoutSeconds, expiry)
+	label := "Connection token:"
+	tokenAlternative := ""
+	if code != "" {
+		label = "Connection token / short code ( " + code + " ):"
+		tokenAlternative = " or short code above"
 	}
+	connectionSection := label + "\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + link
+	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, "open the browser invitation link above or run the command for your system.", tokenAlternative, args.TimeoutSeconds, expiry)
 	if args.MultiDevice {
 		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
 	}

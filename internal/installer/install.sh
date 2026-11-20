@@ -7,7 +7,6 @@ set -eu
 version='@RELEASE_TAG@'
 token=${1:-}
 base=${2:-}
-install_mode=${3:-cached}
 locale=${AGENTERM_LANG:-}
 if [ -z "$locale" ] || [ "$locale" = auto ]; then
   locale=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
@@ -48,30 +47,18 @@ banner
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) say installer.unsupported.system >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) say installer.unsupported.architecture >&2; exit 1;; esac
 umask 077
-if [ "$install_mode" = temporary-assistance ]; then
-  temp_root=${TMPDIR:-}
-  if [ -z "$temp_root" ] && [ "$os" = macos ]; then
-    temp_root=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)
-  fi
-  temp_root=${temp_root:-/tmp}
-  case "$temp_root" in /*) ;; *) say installer.invalid.temp.directory >&2; exit 1;; esac
-  work=$(mktemp -d "$temp_root/agenterm-assistance.XXXXXXXX")
-  destination=$work
-else
-  [ -n "${HOME:-}" ] || { say installer.missing.home >&2; exit 1; }
-  case "$os" in
-    macos) cache_root="${HOME}/Library/Caches/Agenterm" ;;
-    linux) case "${XDG_CACHE_HOME:-}" in /*) cache_root="$XDG_CACHE_HOME/agenterm";; *) cache_root="${HOME}/.cache/agenterm";; esac ;;
-  esac
-  destination="$cache_root/$version/$os-$arch"
-  mkdir -p "$destination"
-  work=$(mktemp -d "$destination/.tmp.XXXXXXXX")
+temp_root=${TMPDIR:-}
+if [ -z "$temp_root" ] && [ "$os" = macos ]; then
+  temp_root=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)
 fi
+temp_root=${temp_root:-/tmp}
+case "$temp_root" in /*) ;; *) say installer.invalid.temp.directory >&2; exit 1;; esac
+work=$(mktemp -d "$temp_root/agenterm-assistance.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
 trap 'exit 130' HUP INT TERM
 say installer.2.4.preparing.client
 name="agenterm-client-cli-$os-$arch"
-binary="$destination/$name"
+binary="$work/$name"
 download_asset() {
   timeout=$1
   shift
@@ -87,9 +74,23 @@ expected() {
 }
 expected_binary=$(expected "$name")
 [ -n "$expected_binary" ] || { say installer.missing.client.checksum >&2; exit 1; }
-if [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] && [ "$(checksum "$binary")" = "$expected_binary" ]; then
+# A previous persistent authorization may have installed a reusable copy.
+cache_root=''
+case "$os" in
+  macos) if [ -n "${HOME:-}" ]; then cache_root="$HOME/Library/Application Support"; fi ;;
+  linux)
+    case "${XDG_CONFIG_HOME:-}" in
+      /*) cache_root=$XDG_CONFIG_HOME ;;
+      '') if [ -n "${HOME:-}" ]; then cache_root="$HOME/.config"; fi ;;
+    esac ;;
+esac
+cached="$cache_root/Agenterm/cli/agenterm-cli-$expected_binary"
+if [ -n "$cache_root" ] && [ -f "$cached" ] && [ ! -L "$cached" ] && [ -x "$cached" ] &&
+   [ "$(checksum "$cached")" = "$expected_binary" ] &&
+   cp -p "$cached" "$binary" && [ "$(checksum "$binary")" = "$expected_binary" ]; then
   say installer.cached.client.verified.skipping.download
 else
+  if [ -e "$binary" ]; then rm -f "$binary"; fi
   say installer.downloading.client
   archive_format=raw
   if command -v tar >/dev/null 2>&1; then
@@ -121,23 +122,15 @@ else
   [ -f "$work/$name" ] && [ ! -L "$work/$name" ] || { say installer.invalid.client.archive >&2; exit 1; }
   [ "$(checksum "$work/$name")" = "$expected_binary" ] || { say installer.client.checksum.mismatch >&2; exit 1; }
   chmod 700 "$work/$name"
-  [ ! -d "$binary" ] || { say installer.client.cache.path.is.a.directory >&2; exit 1; }
-  if [ "$work" != "$destination" ]; then mv -f "$work/$name" "$binary"; fi
   say installer.client.verified
 fi
 if ! client_version=$(AGENTERM_SKIP_LINK_REGISTRATION=1 "$binary" -version) ||
-   ! printf '%s\n' "$client_version" | awk -F. 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($1 > 0 || $2 > 20 || ($2 == 20 && $3 >= 15)) { supported = 1 } END { exit !(NR == 1 && supported) }'; then
+   ! printf '%s\n' "$client_version" | awk -F. 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($1 > 0 || $2 > 20 || ($2 == 20 && $3 >= 16)) { supported = 1 } END { exit !(NR == 1 && supported) }'; then
   say installer.client.authorization.version >&2
   exit 1
 fi
 run_client() {
-  if [ "$install_mode" = temporary-assistance ]; then
-    TMPDIR="$temp_root" "$binary" -token "$token" -temporary-assistance
-  elif [ -n "$token" ]; then
-    "$binary" -token "$token"
-  else
-    "$binary" -token ""
-  fi
+  TMPDIR="$temp_root" "$binary" -token "$token"
 }
 if [ ! -t 0 ] && [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
   run_client </dev/tty

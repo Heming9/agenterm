@@ -10,7 +10,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     io::{Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Child,
     sync::{
         Arc, Condvar, Mutex,
@@ -43,6 +43,7 @@ struct ManagerInner {
     closed: AtomicBool,
     activity: Arc<Mutex<Instant>>,
     reporter: ui::Reporter,
+    temporary: bool,
     workspace: Option<PathBuf>,
 }
 struct Terminal {
@@ -161,17 +162,18 @@ fn wait_ms(n: u64) -> Result<Duration> {
 impl Manager {
     #[cfg(test)]
     pub fn new(stopped: Arc<AtomicBool>) -> Self {
-        Self::with_reporter(stopped, ui::Reporter::default(), None)
+        Self::with_reporter(stopped, ui::Reporter::default(), false, None)
     }
     pub fn reporter(&self) -> &ui::Reporter {
         &self.inner.reporter
     }
-    pub fn temporary_assistance(&self) -> bool {
-        self.inner.workspace.is_some()
+    pub fn temporary(&self) -> bool {
+        self.inner.temporary
     }
     pub fn with_reporter(
         stopped: Arc<AtomicBool>,
         reporter: ui::Reporter,
+        temporary: bool,
         workspace: Option<PathBuf>,
     ) -> Self {
         Self {
@@ -179,6 +181,7 @@ impl Manager {
                 sessions: Mutex::new(BTreeMap::new()),
                 stopped,
                 reporter,
+                temporary,
                 workspace,
                 closed: AtomicBool::new(false),
                 activity: Arc::new(Mutex::new(Instant::now())),
@@ -303,15 +306,7 @@ impl Manager {
             }
             let setup = a.setup.as_ref();
             let retained = setup.is_some_and(|s| !s.session_id.is_empty()) || wait.is_zero();
-            let t = Terminal::spawn(
-                id.clone(),
-                setup,
-                retained,
-                deadline,
-                self.inner.activity.clone(),
-                self.inner.reporter.clone(),
-                self.inner.workspace.as_deref(),
-            )?;
+            let t = Terminal::spawn(id.clone(), setup, retained, deadline, &self.inner)?;
             sessions.insert(id.clone(), t.clone());
             t
         };
@@ -530,19 +525,21 @@ impl Terminal {
         setup: Option<&Setup>,
         retained: bool,
         deadline: Instant,
-        activity: Arc<Mutex<Instant>>,
-        reporter: ui::Reporter,
-        workspace: Option<&Path>,
+        manager: &ManagerInner,
     ) -> Result<Arc<Self>> {
         let default_root = std::env::temp_dir();
-        let directory = workspace.unwrap_or(&default_root).join(format!(
-            "agenterm-rust-{}-{}",
-            std::process::id(),
-            random(12)?
-        ));
+        let directory = manager
+            .workspace
+            .as_deref()
+            .unwrap_or(&default_root)
+            .join(format!(
+                "agenterm-rust-{}-{}",
+                std::process::id(),
+                random(12)?
+            ));
         crate::storage::private_dir(&directory)?;
         let marker = format!("\x1eagenterm:{}:", random(24)?).into_bytes();
-        let spawned = match platform::spawn(&marker, setup, workspace.is_some()) {
+        let spawned = match platform::spawn(&marker, setup, manager.temporary) {
             Ok(p) => p,
             Err(e) => {
                 let _ = fs::remove_dir_all(&directory);
@@ -573,8 +570,8 @@ impl Terminal {
             child: Mutex::new(Some(spawned.child)),
             directory,
             marker,
-            activity,
-            reporter,
+            activity: manager.activity.clone(),
+            reporter: manager.reporter.clone(),
             exited: AtomicBool::new(false),
             #[cfg(unix)]
             pty: spawned.pty,

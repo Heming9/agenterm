@@ -62,7 +62,7 @@ func startRustClient(t *testing.T, token string) func() {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(binary, "-plain", "-token", token, "-connection-mode", "persistent")
-	cmd.Stdin = strings.NewReader("2\n")
+	cmd.Stdin = strings.NewReader("1\n")
 	cmd.Env = append(os.Environ(), "HOME="+home, "USERPROFILE="+home,
 		"AGENTERM_SKIP_LINK_REGISTRATION=1", "NO_COLOR=1", "SHELL=/bin/sh")
 	cmd.Stdout, cmd.Stderr = log, log

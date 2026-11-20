@@ -48,7 +48,6 @@ const ClientAPIHeader = "X-Agenterm-Client-API"
 const ResumeCredentialHeader = "X-Agenterm-Resume-Credential"
 
 const P2PCapabilityHeader = "X-Agenterm-P2P"
-const TemporaryAssistanceHeader = "X-Agenterm-Temporary-Assistance"
 
 // Advertised by servers that send Ping frames and latency measurements.
 const HeartbeatHeader = "X-Agenterm-Heartbeat"

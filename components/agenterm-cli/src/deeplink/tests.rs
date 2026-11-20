@@ -68,7 +68,7 @@ fn links_discard_legacy_mode_and_require_local_authorization() {
                 let options = Options::parse(normalized).unwrap().unwrap();
                 assert_eq!(options.token, address);
                 assert!(options.token_provided);
-                assert!(options.temporary);
+                assert!(options.mode.is_none());
             }
         }
         let raw = link(address, None).replacen("connect?", "authorize?", 1);

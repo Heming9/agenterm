@@ -2,7 +2,7 @@
 # Project: https://github.com/Heming9/agenterm
 # SPDX-License-Identifier: Apache-2.0
 # License: https://www.apache.org/licenses/LICENSE-2.0
-param([AllowEmptyString()][string]$Token, [Parameter(Mandatory=$true)][string]$Base, [string]$InstallMode = "cached")
+param([AllowEmptyString()][string]$Token, [Parameter(Mandatory=$true)][string]$Base)
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
@@ -50,19 +50,11 @@ Show-Banner
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
 Say 'installer.2.4.preparing.client'
-if ($InstallMode -eq 'temporary-assistance') {
-  $work = Join-Path ([IO.Path]::GetTempPath()) ('agenterm-assistance.' + [System.Guid]::NewGuid())
-  $destination = $work
-} else {
-  if (-not $env:LOCALAPPDATA) { throw (Text 'installer.localappdata.is.not.set') }
-  $destination = Join-Path $env:LOCALAPPDATA "Agenterm\cache\$Version\windows-$arch"
-  New-Item -ItemType Directory -Path $destination -Force | Out-Null
-  $work = Join-Path $destination ('.tmp-' + [System.Guid]::NewGuid())
-}
+$work = Join-Path ([IO.Path]::GetTempPath()) ('agenterm-assistance.' + [System.Guid]::NewGuid())
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
   $binary = "agenterm-client-cli-windows-$arch.exe"
-  $program = Join-Path $destination $binary
+  $program = Join-Path $work $binary
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 "$base/SHA256SUMS" -OutFile (Join-Path $work 'SHA256SUMS')
   $manifest = Get-Content (Join-Path $work 'SHA256SUMS')
   function Get-ExpectedHash([string]$Name) {
@@ -71,16 +63,23 @@ try {
     return $line.Substring(0, 64)
   }
   $expectedBinary = Get-ExpectedHash $binary
+  # A previous persistent authorization may have installed a reusable copy.
   $valid = $false
-  if (Test-Path -LiteralPath $program -PathType Leaf) {
-    $item = Get-Item -LiteralPath $program -Force
-    if (-not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-      $valid = (Get-FileHash -Algorithm SHA256 -LiteralPath $program).Hash -eq $expectedBinary
+  if ($env:APPDATA) {
+    $cached = Join-Path $env:APPDATA ("Agenterm\cli\agenterm-cli-" + $expectedBinary.ToLowerInvariant() + ".exe")
+    if (Test-Path -LiteralPath $cached -PathType Leaf) {
+      $item = Get-Item -LiteralPath $cached -Force
+      if (-not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $cached).Hash -eq $expectedBinary) {
+        Copy-Item -LiteralPath $cached -Destination $program
+        $valid = (Get-FileHash -Algorithm SHA256 -LiteralPath $program).Hash -eq $expectedBinary
+      }
     }
   }
   if ($valid) {
     Say 'installer.cached.client.verified.skipping.download'
   } else {
+    if (Test-Path -LiteralPath $program) { Remove-Item -Force -LiteralPath $program }
     Say 'installer.downloading.client'
     $format = 'raw'
     $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
@@ -111,25 +110,14 @@ try {
       & $tar.Source -xf $file -C $work $binary
       if ($LASTEXITCODE -ne 0) { throw (Text 'installer.invalid.client.archive') }
     } elseif ($format -eq 'zip') { Expand-Archive -LiteralPath $file -DestinationPath $work }
-    $staged = Join-Path $work $binary
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $staged).Hash -ne $expectedBinary) { throw (Text 'installer.client.checksum.mismatch') }
-    if (Test-Path -LiteralPath $program -PathType Container) { throw (Text 'installer.client.cache.path.is.a.directory') }
-    if ($work -ne $destination) {
-      try {
-        Move-Item -LiteralPath $staged -Destination $program -Force -ErrorAction Stop
-      } catch {
-        # Another running instance can keep the cached executable locked on Windows.
-        # The independently verified staged client remains usable for this session.
-        $program = $staged
-      }
-    }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $program).Hash -ne $expectedBinary) { throw (Text 'installer.client.checksum.mismatch') }
     Say 'installer.client.verified'
   }
   $previousSkip = $env:AGENTERM_SKIP_LINK_REGISTRATION
   try {
     $env:AGENTERM_SKIP_LINK_REGISTRATION = '1'
     $clientVersion = & $program -version
-    if ($LASTEXITCODE -ne 0 -or $clientVersion -isnot [string] -or $clientVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$clientVersion -lt [version]'0.20.15') {
+    if ($LASTEXITCODE -ne 0 -or $clientVersion -isnot [string] -or $clientVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$clientVersion -lt [version]'0.20.16') {
       throw (Text 'installer.client.authorization.version')
     }
   } finally {
@@ -138,9 +126,7 @@ try {
   $previousLanguage = $env:AGENTERM_LANG
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
-    if ($InstallMode -eq 'temporary-assistance') {
-      & $program -token $Token -temporary-assistance
-    } elseif ($Token) {
+    if ($Token) {
       & $program -token $Token
     } else {
       & $program -token=
@@ -150,7 +136,6 @@ try {
     $env:AGENTERM_LANG = $previousLanguage
   }
 } finally {
-  if ($InstallMode -eq 'temporary-assistance') { Remove-Item -Recurse -Force -LiteralPath $work }
-  else { Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue }
+  Remove-Item -Recurse -Force -LiteralPath $work
 }
 if ($clientExitCode -ne 0) { exit $clientExitCode }

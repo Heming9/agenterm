@@ -10,7 +10,7 @@ use crate::{
     connection,
     protocol::{self, Result},
     storage,
-    ui::{self, Event as ClientEvent, Options, Reporter, tr},
+    ui::{self, ConnectionMode, Event as ClientEvent, Options, Reporter, tr},
 };
 use clipboard::Clipboard;
 use crossterm::{
@@ -27,7 +27,6 @@ use log::{Log, LogOptions, Logger, StreamOptions, clean};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     io::{self, Write},
-    path::PathBuf,
     sync::{
         Arc, Once,
         atomic::{AtomicBool, AtomicU8, Ordering},
@@ -126,12 +125,12 @@ impl Drop for TerminalGuard {
     }
 }
 
-pub fn consent(temporary_only: bool) -> Result<Option<bool>> {
+pub fn consent(mode: Option<ConnectionMode>) -> Result<Option<ConnectionMode>> {
     println!("\n{}", tr("installer.consent.menu"));
     let _guard = TerminalGuard::enter(false).map_err(|e| e.to_string())?;
     let mut out = io::stdout();
     let mut selected = 0usize;
-    let choices = ui::consent_choices(temporary_only);
+    let choices = ui::consent_choices(mode);
     let mut lines = 0;
     loop {
         if lines > 1 {
@@ -143,7 +142,7 @@ pub fn consent(temporary_only: bool) -> Result<Option<bool>> {
             && std::env::var("TERM").unwrap_or_default() != "dumb";
         let labels: Vec<String> = choices
             .iter()
-            .map(|choice| tr(choice))
+            .map(|choice| ui::consent_label(*choice))
             .enumerate()
             .map(|(i, s)| {
                 if i == selected {
@@ -167,7 +166,7 @@ pub fn consent(temporary_only: bool) -> Result<Option<bool>> {
                 KeyCode::Down | KeyCode::Right => selected = (selected + 1).min(choices.len() - 1),
                 KeyCode::Enter => {
                     write!(out, "\r\n").map_err(|e| e.to_string())?;
-                    return Ok(ui::consent_mode(selected, temporary_only));
+                    return Ok(choices[selected]);
                 }
                 KeyCode::Esc => return Ok(None),
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -217,7 +216,8 @@ struct Worker {
 }
 struct App {
     input: Input,
-    temporary: bool,
+    requested_mode: Option<ConnectionMode>,
+    mode: ConnectionMode,
     palette: view::Palette,
     state: State,
     menu: Menu,
@@ -241,7 +241,7 @@ struct App {
     clipboard: Clipboard,
     worker: Option<Worker>,
     exiting: bool,
-    workspace: Option<PathBuf>,
+    register_link: bool,
     exit_result: Option<Result<()>>,
 }
 impl App {
@@ -254,7 +254,8 @@ impl App {
         identity.retain(|c| !c.is_control());
         Self {
             input: Input::new(options.token),
-            temporary: options.temporary,
+            requested_mode: options.mode,
+            mode: ConnectionMode::default(),
             palette: view::Palette::current(),
             state: State::Disconnected,
             menu: Menu::Input,
@@ -280,7 +281,7 @@ impl App {
             clipboard: Clipboard::default(),
             worker: None,
             exiting: false,
-            workspace: None,
+            register_link: false,
             exit_result: None,
         }
     }
@@ -387,10 +388,10 @@ impl App {
         let stop = stopped.clone();
         let (tx, events) = mpsc::sync_channel(256);
         let reporter = Reporter::channel(tx, stop.clone());
-        let temporary = self.temporary;
-        let workspace = self.workspace.clone();
+        let mode = self.mode;
+        let register_link = self.register_link;
         let thread = std::thread::spawn(move || {
-            connection::run(&value, temporary, stop, reporter, workspace)
+            connection::run(&value, mode, stop, reporter, register_link)
         });
         self.worker = Some(Worker {
             stopped,
@@ -522,7 +523,7 @@ impl App {
                 .thread
                 .join()
                 .unwrap_or_else(|_| Err("connection worker failed".into()));
-            if self.workspace.is_some() {
+            if self.mode == ConnectionMode::Temporary {
                 self.exiting = true;
                 self.exit_result = Some(result);
                 return true;
@@ -587,16 +588,17 @@ impl App {
                 match key.code {
                     KeyCode::Up | KeyCode::Left => selected = selected.saturating_sub(1),
                     KeyCode::Down | KeyCode::Right => {
-                        selected = (selected + 1).min(ui::consent_choices(false).len() - 1)
+                        selected =
+                            (selected + 1).min(ui::consent_choices(self.requested_mode).len() - 1)
                     }
                     KeyCode::Esc => {
                         self.menu = Menu::Input;
                         return;
                     }
                     KeyCode::Enter => {
-                        let temporary = ui::consent_mode(selected, false);
-                        let visible = temporary.is_none()
-                            || self.connection_form().height() <= self.body_height();
+                        let mode = ui::consent_choices(self.requested_mode)[selected];
+                        let visible =
+                            mode.is_none() || self.connection_form().height() <= self.body_height();
                         self.menu = Menu::Input;
                         if !visible {
                             self.message = ui::text(
@@ -604,8 +606,8 @@ impl App {
                                 "请放大终端窗口后查看并确认授权。",
                             )
                             .into();
-                        } else if let Some(temporary) = temporary {
-                            self.temporary = temporary;
+                        } else if let Some(mode) = mode {
+                            self.mode = mode;
                             self.connect();
                         }
                         return;
@@ -888,18 +890,19 @@ impl App {
 pub fn run(
     options: Options,
     shutdown: Arc<AtomicBool>,
-    workspace: Option<PathBuf>,
-    authorized: bool,
+    authorized: Option<ConnectionMode>,
+    register_link: bool,
 ) -> Result<()> {
     let guard = TerminalGuard::enter(true).map_err(|e| e.to_string())?;
     let mut terminal =
         Terminal::new(CrosstermBackend::new(io::stdout())).map_err(|e| e.to_string())?;
     let mut app = App::new(options);
-    app.workspace = workspace;
+    app.register_link = register_link;
     if let Ok((w, h)) = terminal::size() {
         app.resize(w, h);
     }
-    if authorized {
+    if let Some(mode) = authorized {
+        app.mode = mode;
         app.connect();
     } else if !app.input.value.is_empty() {
         app.begin();

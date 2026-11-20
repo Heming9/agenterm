@@ -87,14 +87,6 @@
     "en": "MCP endpoint: %s/mcp\n",
     "zh-CN": "MCP 接口：%s/mcp\n"
   },
-  "connection.display.temporary.assistance": {
-    "en": "Windows one-click connection command:\n```\n%s\n```\n\nmacOS / Linux one-click connection command:\n```\n%s\n```%s\n\nRun the command for your system and approve temporary assistance. The installer removes the client and temporary files when the session ends normally.\n\nInvitation validity: %d seconds.\nExpires at (UTC): %s",
-    "zh-CN": "Windows 一键连接命令：\n```\n%s\n```\n\nmacOS / Linux 一键连接命令：\n```\n%s\n```%s\n\n运行对应系统的命令并确认临时协助授权。会话正常结束后，安装器会移除客户端和临时文件。\n\n邀请有效期：%d 秒。\n到期时间（UTC）：%s"
-  },
-  "temporary.assistance.requires.installer": {
-    "en": "Use the one-click installer supplied with this temporary assistance invitation.",
-    "zh-CN": "请使用本次临时协助邀请提供的一键安装命令。"
-  },
   "connection.display.text": {
     "en": "Windows one-click connection command:\n```\n%s\n```\n\nmacOS / Linux one-click connection command:\n```\n%s\n```\n\n%s\n\nHow to connect:\n1. On the computer that needs help, %s\n2. Follow the on-screen instructions and allow the connection.\n3. Keep the client running while connected. To end the session, click Disconnect or close the client.\n\nIf Agenterm is already installed, open the client and enter the connection token%s.\n\nInvitation validity: %d seconds (expires at %s UTC).",
     "zh-CN": "Windows 一键连接命令：\n```\n%s\n```\n\nmacOS / Linux 一键连接命令：\n```\n%s\n```\n\n%s\n\n使用方法：\n1. 在需要协助的电脑上，%s\n2. 根据页面或屏幕提示，同意连接。\n3. 连接后请保持客户端运行。需要结束协助时，点击“断开连接”或关闭客户端。\n\n如果电脑已安装 Agenterm，打开客户端，输入上方的连接令牌%s。\n\n邀请有效期：%d 秒（截止时间：%s UTC）。"
@@ -587,14 +579,6 @@
     "en": "Invalid client archive",
     "zh-CN": "客户端压缩包无效"
   },
-  "installer.client.cache.path.is.a.directory": {
-    "en": "Client cache path is a directory",
-    "zh-CN": "客户端缓存路径为目录"
-  },
-  "installer.localappdata.is.not.set": {
-    "en": "LOCALAPPDATA is not set",
-    "zh-CN": "未设置 LOCALAPPDATA"
-  },
   "installer.remote.control.authorization": {
     "en": "⚠️ Remote control authorization reminder",
     "zh-CN": "⚠️ 远程控制授权提醒"
@@ -644,8 +628,8 @@
     "zh-CN": "仅 action=input 时必填，其他 action 不得填写。文本按原样发送，不自动添加换行符；提交 shell 命令或提示回答时请包含换行符。"
   },
   "mcp.create.a.client.connection.token.and.a.one": {
-    "en": "Create an Agenterm remote connection token and invitation. For each optional parameter, use its default unless the user explicitly requests a different value. Do not infer non-default settings from the task or choose them independently. If the user specifies no settings, call with an empty object. In particular, do not enable temporary_assistance unless explicitly requested. Present the entire display_text, translating only its natural-language prose into the user's language. Do not paraphrase, summarize, add, omit, or reorder any content. Preserve all sections and code blocks. Copy commands, URLs, device tokens, and short codes verbatim. Show each original URL as visible text; do not replace it with a Markdown link label. Show the expiry deadline (expires_at) in the user's time zone if known, or UTC otherwise, and label the zone. Keep control_token private and reuse it across turns, including after a wait times out. After presenting the invitation, wait for the device with list_client.",
-    "zh-CN": "创建 Agenterm 远程连接令牌和邀请。每个可选参数都使用默认值，除非用户明确要求其他值。不要根据任务自行推断或选择非默认设置。用户未指定任何设置时，使用空对象调用。尤其不要在用户未明确要求时启用 temporary_assistance。完整展示 display_text，只将其中的自然语言翻译成用户使用的语言。不得改写、摘要、增删或重排内容。保留所有段落和代码块，逐字复制命令、URL、设备令牌和短码。每个原始 URL 都必须作为可见文本显示，不得替换为 Markdown 链接标题。已知用户时区时，按该时区显示过期时间（expires_at），否则用 UTC，并标注时区。私密保管 control_token 并跨轮复用，等待超时后也要保留。展示邀请后调用 list_client 等待设备。"
+    "en": "Create an Agenterm remote connection token and invitation. For each optional parameter, use its default unless the user explicitly requests a different value. Do not infer non-default settings from the task or choose them independently. If the user specifies no settings, call with an empty object. Present the entire display_text, translating only its natural-language prose into the user's language. Do not paraphrase, summarize, add, omit, or reorder any content. Preserve all sections and code blocks. Copy commands, URLs, device tokens, and short codes verbatim. Show each original URL as visible text; do not replace it with a Markdown link label. Show the expiry deadline (expires_at) in the user's time zone if known, or UTC otherwise, and label the zone. Keep control_token private and reuse it across turns, including after a wait times out. After presenting the invitation, wait for the device with list_client.",
+    "zh-CN": "创建 Agenterm 远程连接令牌和邀请。每个可选参数都使用默认值，除非用户明确要求其他值。不要根据任务自行推断或选择非默认设置。用户未指定任何设置时，使用空对象调用。完整展示 display_text，只将其中的自然语言翻译成用户使用的语言。不得改写、摘要、增删或重排内容。保留所有段落和代码块，逐字复制命令、URL、设备令牌和短码。每个原始 URL 都必须作为可见文本显示，不得替换为 Markdown 链接标题。已知用户时区时，按该时区显示过期时间（expires_at），否则用 UTC，并标注时区。私密保管 control_token 并跨轮复用，等待超时后也要保留。展示邀请后调用 list_client 等待设备。"
   },
   "mcp.invitation.timeout.seconds": {
     "en": "Invitation lifetime in seconds, as a positive integer. Default 900 (15 minutes). Expiry prevents invitation redemption; it does not disconnect devices that have already connected.",
@@ -664,12 +648,8 @@
     "zh-CN": "缺少下载地址"
   },
   "installer.client.authorization.version": {
-    "en": "Agenterm CLI 0.20.15 or newer is required for local authorization.",
-    "zh-CN": "本地授权需要 Agenterm CLI 0.20.15 或更新版本。"
-  },
-  "installer.missing.home": {
-    "en": "HOME is not set",
-    "zh-CN": "未设置 HOME"
+    "en": "Agenterm CLI 0.20.16 or newer is required for local authorization.",
+    "zh-CN": "本地授权需要 Agenterm CLI 0.20.16 或更新版本。"
   },
   "dialog.allow": {
     "en": "Allow",
@@ -858,10 +838,6 @@
   "mcp.result.control_token": {
     "en": "Private scoped control credential in token:key format; never share with the target device.",
     "zh-CN": "私密控制凭证，格式为 token:密钥；不得分享给目标设备。"
-  },
-  "mcp.result.temporary_assistance": {
-    "en": "Use a temporary installation for terminal assistance and remove it after disconnecting. Defaults to false. Run the invitation's one-click installer on the target device. P2P is unavailable for this mode.",
-    "zh-CN": "使用临时安装进行终端协助，断开后移除本次安装。默认 false。请在受助设备上运行邀请提供的一键安装命令。此模式不支持 P2P。"
   },
   "mcp.result.multi_device": {
     "en": "True permits multiple simultaneous devices and reuses the invitation until expiry. False allows one device and a single-use invitation.",

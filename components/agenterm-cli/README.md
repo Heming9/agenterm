@@ -40,8 +40,8 @@ agenterm-cli://authorize?url=https%3A%2F%2Fexample.com%2Fagenterm%2Fc%2FABC123
 The CLI displays the destination server and waits for approval before redeeming
 the code or connecting. Legacy `connect` links still open in the updated CLI, but
 their mode is ignored. Older clients reject the new browser link. The installer
-requires CLI 0.20.15 or newer before passing connection credentials. After
-upgrading, launch the new CLI normally at least once to refresh the registered handler.
+requires CLI 0.20.16 or newer before passing connection credentials. After
+upgrading, authorize a persistent connection from the new CLI to refresh the registered handler.
 The former GUI's `agenterm:` scheme is not claimed by this terminal client.
 
 The handler keeps a checksum-verified, content-addressed executable under the
@@ -58,10 +58,15 @@ skip registration to avoid replacing an active handler.
 
 All connection entry points require local authorization. The CLI lists temporary,
 persistent, then deny, with temporary selected initially in the terminal menu.
-Temporary-assistance invitations only offer temporary or deny. The legacy
-`-connection-mode` argument does not select a mode.
-Temporary connections disconnect after five minutes of inactivity, excluding
-time spent running commands. The interactive interface
+Pass `-connection-mode temporary` or `-connection-mode persistent` to request
+a mode explicitly. The user must still approve it locally.
+
+Temporary connections exit when assistance ends or after five idle minutes,
+excluding time spent running commands. The one-click installer downloads to
+the system temporary directory and removes
+its copy when the client exits. Temporary connections stream output in memory
+and support terminal access. Persistent authorization installs a reusable copy
+for browser links. The interactive interface
 is the default when both stdin and stdout are terminals; `-plain` or redirected
 input/output selects plain output. Ctrl+C disconnects and stops owned shells.
 

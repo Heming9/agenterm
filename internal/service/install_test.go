@@ -4,6 +4,7 @@ import (
 	"agenterm/internal/protocol"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -60,7 +61,7 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 		}
 	}
 	name := "agenterm-client-cli-linux-amd64"
-	client := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then printf '0.20.15\\n'; exit 0; fi\nprintf 'arg=%s token=%s\\n' \"$1\" \"$2\"\nif [ -t 0 ]; then printf 'client-input: '; read -r answer; printf 'received:%s\\n' \"$answer\"; fi\n")
+	client := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then printf '0.20.16\\n'; exit 0; fi\nprintf 'arg=%s token=%s\\n' \"$1\" \"$2\"\nif [ -t 0 ]; then printf 'client-input: '; read -r answer; printf 'received:%s\\n' \"$answer\"; fi\n")
 	archive := name + ".tar.xz"
 	for filename, data := range installerFixture(t, client) {
 		write(filepath.Join(assets, filename), data, 0o600)
@@ -112,7 +113,7 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	run := func() string {
 		t.Helper()
 		cmd := exec.Command("sh", "-c", command)
-		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CONFIG_HOME="+cache)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("command failed: %v\n%s", err, out)
@@ -129,6 +130,15 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	if output := run(); !strings.Contains(output, "正在下载客户端") {
 		t.Fatalf("first run: %s", output)
 	}
+	cached := filepath.Join(cache, "Agenterm", "cli", fmt.Sprintf("agenterm-cli-%x", sha256.Sum256(client)))
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("bootstrap should not create a persistent install: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the reusable copy created by the client after persistent approval.
+	write(cached, client, 0o700)
 	if output := run(); !strings.Contains(output, "本地客户端校验通过，跳过下载") {
 		t.Fatalf("second run: %s", output)
 	}
@@ -139,7 +149,6 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	if count := strings.Count(string(logContent), archive+"\n"); count != 1 {
 		t.Fatalf("archive downloaded %d times", count)
 	}
-	cached := filepath.Join(cache, "agenterm", installerTestTag, "linux-amd64", name)
 	write(cached, []byte("corrupted"), 0o700)
 	if output := run(); !strings.Contains(output, "正在下载客户端") {
 		t.Fatalf("corrupted cache: %s", output)
@@ -168,7 +177,7 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	write(cached, []byte("corrupted"), 0o700)
 	write(filepath.Join(assets, archive), []byte("corrupted archive"), 0o600)
 	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CONFIG_HOME="+cache)
 	cmd.Stdin = strings.NewReader("2\n")
 	out, err := cmd.CombinedOutput()
 	if err == nil || strings.Contains(string(out), "arg=-token") {
@@ -185,7 +194,7 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	for _, tc := range []struct{ input, want string }{{"1\r", "received:1"}, {"2\r", "received:2"}} {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		cmd := exec.CommandContext(ctx, "sh", "-c", pipeline)
-		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+filepath.Join(root, "pty-cache"), "TERM=xterm")
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CONFIG_HOME="+filepath.Join(root, "pty-cache"), "TERM=xterm")
 		terminal, err := pty.Start(cmd)
 		if err != nil {
 			cancel()
@@ -224,7 +233,7 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	state.cleanupTokensLocked(time.Now())
 	state.mu.Unlock()
 	cmd = exec.Command("sh", "-c", command)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CONFIG_HOME="+cache)
 	cmd.Stdin = strings.NewReader("2\n")
 	out, err = cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "401") || strings.Contains(string(out), "arg=-token") {

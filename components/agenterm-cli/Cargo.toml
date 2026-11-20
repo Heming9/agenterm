@@ -1,6 +1,6 @@
 [package]
 name = "agenterm-cli"
-version = "0.20.15"
+version = "0.20.16"
 edition = "2024"
 publish = false
 

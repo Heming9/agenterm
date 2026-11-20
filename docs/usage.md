@@ -52,25 +52,25 @@ Short links and codes are available for single-device invitations when the serve
 
 While a single device is connected, its short link, code, and connection token cannot start another connection. They become available again after disconnection if the token is still valid. The tenth successful short-code redemption retires the link and code. Opening the invitation page does not count toward that limit.
 
-After a successful connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, paste the short-code address as issued. The CLI uses HTTP for addresses without a scheme. For HTTPS, keep the `https://` prefix.
+After a successful persistent connection, the client saves the server address locally. Entering a six-character code opens a list of saved servers; choose the one that issued it. The client contacts only the selected server and preserves its HTTP or HTTPS scheme. With no history, paste the short-code address as issued. The CLI uses HTTP for addresses without a scheme. For HTTPS, keep the `https://` prefix.
 
 ## 💻 Client controls
 
-The maintained client is the [Rust CLI](../components/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to scroll and drag to select and copy text. Press Esc to clear a selection, then Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
+The maintained client is the [Rust CLI](../components/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to scroll and drag to select and copy text. Press Esc to clear a selection, then Ctrl+C to disconnect. Temporary connections exit, while persistent connections return to the connection form.
 
-Temporary connections disconnect after five minutes of inactivity, excluding time spent running commands. Persistent connections stay open until disconnected. Regardless of how you open the invitation, choose the mode in the CLI's authorization prompt. See [how the Rust CLI registers browser links](../components/agenterm-cli/README.md#protocol-links).
+Temporary connections disconnect after five minutes of inactivity, excluding time spent running commands. Persistent connections stay open until disconnected. Regardless of how you open the invitation, choose the mode in the CLI's authorization prompt, which preselects temporary. See [how the Rust CLI registers browser links](../components/agenterm-cli/README.md#protocol-links).
 
-The one-command connection stores a client in a local cache. You can delete it after closing the client:
+Persistent authorization keeps a reusable client in the following directories:
 
 | OS | Cache directory |
 | --- | --- |
-| macOS | `~/Library/Caches/Agenterm` |
-| Linux | `${XDG_CACHE_HOME:-~/.cache}/agenterm` |
-| Windows | `%LOCALAPPDATA%\Agenterm\cache` |
+| macOS | `~/Library/Application Support/Agenterm/cli` |
+| Linux | `${XDG_CONFIG_HOME:-~/.config}/Agenterm/cli` |
+| Windows | `%APPDATA%\Agenterm\cli` |
 
-### Temporary assistance invitations
+### Temporary connections
 
-Run the command supplied with the invitation and approve the connection. The installer downloads and runs the client in the system temporary directory. Agenterm streams terminal output without creating a local session log. It can write temporary scripts to run commands. On normal exit the installer removes the downloaded client and its temporary files. Changes made by the assistance task are preserved. If the installer and client are both forcibly stopped, or the device loses power, temporary files can remain.
+Use CLI 0.20.16 or later. Run the one-click command from the invitation and select temporary authorization. The installer downloads and runs the client in the system temporary directory. Agenterm streams terminal output without creating a local session log. It can write temporary scripts to run commands. On normal exit the installer removes its downloaded copy and temporary files. Changes made by the assistance task and any existing client installation are preserved. If the installer is forcibly stopped or the device loses power, temporary files can remain.
 
 ## ❓ Troubleshooting
 
@@ -88,7 +88,7 @@ Agenterm provides terminal assistance, not a remote desktop. Windows supports si
 
 ### How do I transfer files?
 
-Use `p2p_transfer_start` through MCP to start a direct connection to a device connected with the Rust CLI. Once both ends are connected, you can copy files in either direction over the same connection, one file per copy. Closing the client stops its P2P helper. See the [P2P component guide](../components/p2p-cli/README.md).
+Use `p2p_transfer_start` through MCP to start a direct connection to a device using a persistent Rust CLI connection. Once both ends are connected, you can copy files in either direction over the same connection, one file per copy. Closing the client stops its P2P helper. See the [P2P component guide](../components/p2p-cli/README.md).
 
 ### Permissions and privacy
 

@@ -35,40 +35,46 @@ pub fn input(prompt: &str) -> Result<String> {
 pub fn authorization_prompt(server: &str) -> String {
     tr("remote.control.authorization.prompt").replace("%s", server)
 }
-pub fn consent_choices(temporary_only: bool) -> &'static [&'static str] {
-    const CHOICES: &[&str] = &[
-        "installer.consent.temporary",
-        "installer.consent.persistent",
-        "installer.consent.no",
-    ];
-    if temporary_only {
-        &["installer.consent.temporary", "installer.consent.no"]
-    } else {
-        CHOICES
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ConnectionMode {
+    #[default]
+    Temporary,
+    Persistent,
+}
+
+pub fn consent_choices(mode: Option<ConnectionMode>) -> &'static [Option<ConnectionMode>] {
+    use ConnectionMode::{Persistent, Temporary};
+    match mode {
+        None => &[Some(Temporary), Some(Persistent), None],
+        Some(Temporary) => &[Some(Temporary), None],
+        Some(Persistent) => &[Some(Persistent), None],
     }
 }
-pub fn consent_mode(selected: usize, temporary_only: bool) -> Option<bool> {
-    match selected {
-        0 => Some(true),
-        1 if !temporary_only => Some(false),
-        _ => None,
-    }
+
+pub fn consent_label(mode: Option<ConnectionMode>) -> &'static str {
+    tr(match mode {
+        Some(ConnectionMode::Temporary) => "installer.consent.temporary",
+        Some(ConnectionMode::Persistent) => "installer.consent.persistent",
+        None => "installer.consent.no",
+    })
 }
-pub fn consent(server: &str, temporary_only: bool) -> Result<Option<bool>> {
+
+pub fn consent(server: &str, mode: Option<ConnectionMode>) -> Result<Option<ConnectionMode>> {
     print!("{}", authorization_prompt(server));
     if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        return crate::tui::consent(temporary_only);
+        return crate::tui::consent(mode);
     }
     println!("\n{}", tr("installer.consent.menu"));
-    for (index, choice) in consent_choices(temporary_only).iter().enumerate() {
-        println!("{}. {}", index + 1, tr(choice));
+    let choices = consent_choices(mode);
+    for (index, choice) in choices.iter().enumerate() {
+        println!("{}. {}", index + 1, consent_label(*choice));
     }
     let answer = input(text("Enter a choice: ", "请输入选项编号："))?;
-    Ok(match answer.as_str() {
-        "1" => consent_mode(0, temporary_only),
-        "2" => consent_mode(1, temporary_only),
-        _ => None,
-    })
+    Ok(answer
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| n.checked_sub(1))
+        .and_then(|index| choices.get(index).copied().flatten()))
 }
 fn dim(s: &str) -> String {
     if io::stdout().is_terminal()
@@ -111,17 +117,13 @@ pub fn output(data: &[u8]) {
 #[derive(Default, Clone)]
 pub struct Options {
     pub token: String,
-    pub temporary: bool,
+    pub mode: Option<ConnectionMode>,
     pub plain: bool,
     pub token_provided: bool,
-    pub temporary_assistance: bool,
 }
 impl Options {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Self>> {
-        let mut o = Self {
-            temporary: true,
-            ..Self::default()
-        };
+        let mut o = Self::default();
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -134,7 +136,7 @@ impl Options {
             match flag {
                 "h" | "help" => {
                     println!(
-                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token VALUE]\n       agenterm-cli \"agenterm-cli://authorize?url=ENCODED_URL\"\n\n  -token VALUE              Connection token, short code, or invitation URL\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nRemote control must be authorized locally before connecting.\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
+                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token VALUE] [-connection-mode MODE]\n       agenterm-cli \"agenterm-cli://authorize?url=ENCODED_URL\"\n\n  -token VALUE              Connection token, short code, or invitation URL\n  -connection-mode MODE     temporary or persistent\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nRemote control must be authorized locally before connecting.\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
                     );
                     return Ok(None);
                 }
@@ -145,9 +147,6 @@ impl Options {
                 "plain" => {
                     o.plain = boolean(inline.as_deref())?;
                 }
-                "temporary-assistance" => {
-                    o.temporary_assistance = boolean(inline.as_deref())?;
-                }
                 "token" | "connection-mode" => {
                     let v = inline
                         .or_else(|| args.next())
@@ -157,15 +156,13 @@ impl Options {
                             o.token_provided = true;
                             o.token = v.trim().into();
                         }
-                        _ if matches!(v.as_str(), "temporary" | "persistent") => {}
+                        _ if v == "temporary" => o.mode = Some(ConnectionMode::Temporary),
+                        _ if v == "persistent" => o.mode = Some(ConnectionMode::Persistent),
                         _ => return Err("-connection-mode must be temporary or persistent".into()),
                     }
                 }
                 _ => return Err(format!("unknown argument: {flag}")),
             }
-        }
-        if o.temporary_assistance && !o.token.starts_with("Agenterm_") {
-            return Err(tr("temporary.assistance.requires.installer").into());
         }
         Ok(Some(o))
     }
@@ -179,23 +176,19 @@ fn boolean(value: Option<&str>) -> Result<bool> {
     }
 }
 
-#[cfg(test)]
 #[test]
-fn temporary_assistance_without_installer_returns_localized_error() {
-    let result = Options::parse(vec!["-temporary-assistance".into()]);
+fn connection_mode_limits_choices_without_bypassing_consent() {
+    use ConnectionMode::{Persistent, Temporary};
+    let options = Options::parse(["-connection-mode".into(), "persistent".into()])
+        .unwrap()
+        .unwrap();
+    assert_eq!(consent_choices(options.mode), &[Some(Persistent), None]);
+    let options = Options::parse(["-connection-mode=temporary".into()])
+        .unwrap()
+        .unwrap();
+    assert_eq!(consent_choices(options.mode), &[Some(Temporary), None]);
     assert_eq!(
-        result.err().as_deref(),
-        Some(tr("temporary.assistance.requires.installer"))
+        consent_choices(None),
+        &[Some(Temporary), Some(Persistent), None]
     );
-}
-
-#[cfg(test)]
-#[test]
-fn removed_arguments_are_rejected() {
-    for flag in ["invite", "consent-confirmed", "local-authorization"] {
-        assert_eq!(
-            Options::parse([format!("-{flag}")]).err(),
-            Some(format!("unknown argument: {flag}"))
-        );
-    }
 }

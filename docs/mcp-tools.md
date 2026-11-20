@@ -21,7 +21,7 @@ The connected server's `tools/list` publishes the schemas and behavior annotatio
 
 Keep `control_token` in the host's private storage for the connection so later turns can reuse it, including after a wait times out. Keep it out of logs, user-facing messages and invitation material. The recipient uses the link or commands from `display_text`.
 
-Use each optional `create_client` parameter's default unless the user explicitly requests a different value; when no settings are specified, call it with an empty object. The invitation lifetime defaults to 900 seconds. Set `multi_device: true` to allow simultaneous devices. A single-device invitation uses a short-code link when enabled. See the [invitation and short-code rules](usage.md#invitation-lifetime-and-short-codes) for reuse and redemption. The browser link also serves the installer with the `.sh` or `.ps1` suffix. Set `temporary_assistance: true` only when explicitly requested for a temporary installation with terminal access only.
+Use each optional `create_client` parameter's default unless the user explicitly requests a different value; when no settings are specified, call it with an empty object. The invitation lifetime defaults to 900 seconds. Set `multi_device: true` to allow simultaneous devices. A single-device invitation uses a short-code link when enabled. See the [invitation and short-code rules](usage.md#invitation-lifetime-and-short-codes) for reuse and redemption. The browser link also serves the installer with the `.sh` or `.ps1` suffix. The recipient chooses the connection mode during local authorization.
 
 ### Wait for a device
 
@@ -76,4 +76,4 @@ For input, interrupt and EOF, `ok: true` confirms receipt by the client. Check o
 
 ## File transfer
 
-Use `p2p_transfer_start` with a standard invitation. Pass `client_id` for multi-device tokens. `waiting_for_agent` means the remote helper registered. Run the private script for the Agent's execution environment, then use the returned `executable` path to check for `connected` before copying. See the [P2P component guide](../components/p2p-cli/README.md).
+Use `p2p_transfer_start` with a persistent connection. Pass `client_id` for multi-device tokens. `waiting_for_agent` means the remote helper registered. Run the private script for the Agent's execution environment, then use the returned `executable` path to check for `connected` before copying. See the [P2P component guide](../components/p2p-cli/README.md).
