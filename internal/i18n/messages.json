@@ -223,6 +223,26 @@
     "en": "Temporary",
     "zh-CN": "临时连接"
   },
+  "connection.mode.temporary.required": {
+    "en": "This invitation requires a temporary connection.",
+    "zh-CN": "此邀请只允许临时连接。"
+  },
+  "mcp.connection.mode": {
+    "en": "Leave empty to let the recipient choose a mode. Set to temporary to allow only temporary connections.",
+    "zh-CN": "留空时由受助端选择连接模式。设为 temporary 时只允许临时连接。"
+  },
+  "mcp.connection.mode.invalid": {
+    "en": "connection_mode must be empty or temporary.",
+    "zh-CN": "connection_mode 必须留空或设为 temporary。"
+  },
+  "mcp.connection.mode.runtime.required": {
+    "en": "The running Agenterm runtime must be upgraded to issue temporary-only invitations.",
+    "zh-CN": "运行中的 Agenterm runtime 需要升级后才能创建仅限临时连接的邀请。"
+  },
+  "mcp.connection.mode.temporary.notice": {
+    "en": "This invitation only allows temporary connections. Approve the temporary connection in Agenterm CLI.",
+    "zh-CN": "此邀请只允许临时连接。请在 Agenterm CLI 中确认临时授权。"
+  },
   "connection.mode.persistent": {
     "en": "Persistent",
     "zh-CN": "持久连接"
@@ -240,8 +260,8 @@
     "zh-CN": "选择连接模式："
   },
   "connection.mode.help": {
-    "en": "Arrow keys select  ·  Enter connect  ·  Esc back",
-    "zh-CN": "方向键选择  ·  Enter 连接  ·  Esc 返回"
+    "en": "Esc back",
+    "zh-CN": "Esc 返回"
   },
   "connection.mode.flag": {
     "en": "connection mode: temporary or persistent",
@@ -335,9 +355,17 @@
     "en": "use plain text output",
     "zh-CN": "使用纯文本输出"
   },
-  "remote.control.authorization.prompt": {
-    "en": "⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n",
-    "zh-CN": "⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n"
+  "remote.control.authorization.title": {
+    "en": "⚠️ Warning: Remote control authorization",
+    "zh-CN": "⚠️ 警告：远程控制授权提醒"
+  },
+  "remote.control.authorization.server": {
+    "en": "Server: ",
+    "zh-CN": "服务器："
+  },
+  "remote.control.authorization.details": {
+    "en": "If you authorize the connection, the other party can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.",
+    "zh-CN": "当您授权连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。"
   },
   "connection.cancelled": {
     "en": "Connection cancelled.",
@@ -648,8 +676,8 @@
     "zh-CN": "缺少下载地址"
   },
   "installer.client.authorization.version": {
-    "en": "Agenterm CLI 0.20.16 or newer is required for local authorization.",
-    "zh-CN": "本地授权需要 Agenterm CLI 0.20.16 或更新版本。"
+    "en": "Agenterm CLI 0.20.17 or newer is required for local authorization.",
+    "zh-CN": "本地授权需要 Agenterm CLI 0.20.17 或更新版本。"
   },
   "dialog.allow": {
     "en": "Allow",
@@ -1040,8 +1068,8 @@
     "zh-CN": "系统临时目录必须使用绝对路径。"
   },
   "installer.consent.menu": {
-    "en": "Choose authorization (↑/↓/←/→, Enter):",
-    "zh-CN": "选择授权方式（↑/↓/←/→，回车确认）："
+    "en": "Choose authorization (↑/↓ to select, Enter to confirm):",
+    "zh-CN": "请选择授权方式（↑/↓选择，回车确认）："
   },
   "installer.consent.allow": {
     "en": "Agree to authorization",

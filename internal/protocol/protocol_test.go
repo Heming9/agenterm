@@ -264,3 +264,22 @@ func TestDecodeEmptyTokenMessage(t *testing.T) {
 		t.Fatalf("unexpected empty token error: %v", err)
 	}
 }
+
+func TestTemporaryOnlyTokenRoundTrip(t *testing.T) {
+	for _, scheme := range []string{"ws", "wss"} {
+		original := Token{
+			URL:           scheme + "://example.com:1234/staging/client",
+			Secret:        base64.RawURLEncoding.EncodeToString([]byte("0123456789")),
+			Identifier:    "abc123",
+			TemporaryOnly: true,
+		}
+		encoded, err := Encode(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := Decode(encoded)
+		if err != nil || decoded != original {
+			t.Fatalf("got %+v, want %+v (%v)", decoded, original, err)
+		}
+	}
+}

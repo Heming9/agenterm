@@ -31,8 +31,8 @@ fn run() -> Result<()> {
     let startup_target = !options.token.is_empty() && !protocol::short_code(&options.token);
     let mut authorized = None;
     if startup_target {
-        let address = connection::target_address(&options.token)?;
-        authorized = ui::consent(&address.server(), options.mode)?;
+        let (address, mode) = connection::authorization(&options.token, options.mode)?;
+        authorized = ui::consent(&address.server(), mode)?;
         if authorized.is_none() {
             ui::line("Connection cancelled.", "已取消连接。");
             return Ok(());
@@ -70,8 +70,8 @@ fn run() -> Result<()> {
                 .ok_or("invalid server number")?;
             options.token = format!("{server}/c/{}", options.token.to_ascii_uppercase());
         }
-        let address = connection::target_address(&options.token)?;
-        let Some(mode) = ui::consent(&address.server(), options.mode)? else {
+        let (address, mode) = connection::authorization(&options.token, options.mode)?;
+        let Some(mode) = ui::consent(&address.server(), mode)? else {
             ui::line("Connection cancelled.", "已取消连接。");
             return Ok(());
         };

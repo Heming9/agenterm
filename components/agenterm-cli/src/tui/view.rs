@@ -236,6 +236,32 @@ impl App {
         let palette = self.palette;
         let default = Style::default();
         let mut form = Form::new(self.body_width(), self.metrics);
+        if let Menu::Mode(selected) = self.menu {
+            if let Ok(address) = connection::target_address(self.input.value.trim()) {
+                let server = address.server();
+                let prompt = ui::authorization_prompt(&server, true);
+                form.line(vec![(prompt.title.into(), palette.text(colors::WARNING))]);
+                form.line(vec![
+                    (prompt.server_label.into(), default),
+                    (prompt.server.into(), palette.text(colors::PRIMARY)),
+                ]);
+                form.line(vec![(prompt.details.into(), default)]);
+                form.blank();
+                form.line(vec![(prompt.instruction.into(), default)]);
+            }
+            for (index, choice) in ui::consent_choices(self.allowed_mode).iter().enumerate() {
+                let is_selected = index == selected;
+                let style = if is_selected {
+                    palette
+                        .text(colors::PRIMARY)
+                        .add_modifier(Modifier::REVERSED)
+                } else {
+                    default
+                };
+                form.line(vec![(ui::consent_row(*choice, is_selected), style)]);
+            }
+            return form;
+        }
         form.line(vec![(format!(" {}", tr("connection.token")), default)]);
         let available = self.body_width().saturating_sub(4).max(1);
         let cursor = self.metrics.width(&self.input.value[..self.input.cursor]);
@@ -268,55 +294,25 @@ impl App {
             ],
             input_cursor,
         );
-        match self.menu {
-            Menu::Mode(selected) => {
-                form.blank();
-                if let Ok(address) = connection::target_address(self.input.value.trim()) {
-                    for line in ui::authorization_prompt(&address.server())
-                        .lines()
-                        .filter(|line| !line.is_empty())
-                    {
-                        form.line(vec![(format!(" {line}"), default)]);
-                    }
-                }
-                for (index, choice) in ui::consent_choices(self.requested_mode).iter().enumerate() {
-                    let (marker, style) = if index == selected {
-                        (
-                            " ▶ ",
-                            palette
-                                .text(colors::PRIMARY)
-                                .add_modifier(Modifier::REVERSED),
-                        )
-                    } else {
-                        ("   ", default)
-                    };
-                    form.line(vec![(
-                        format!(" {marker}{} ", ui::consent_label(*choice)),
-                        style,
-                    )]);
-                }
-            }
-            Menu::Server(selected) => {
-                form.blank();
-                form.line(vec![(format!(" {}", tr("select.history.server")), default)]);
-                let count = self.body_height().saturating_sub(5).max(1);
-                let start = (selected + 1).saturating_sub(count);
-                for (i, server) in self.servers.iter().enumerate().skip(start).take(count) {
-                    form.line(vec![(
-                        format!(
-                            " {}{}",
-                            if i == selected { "> " } else { "  " },
-                            clean(server)
-                        ),
-                        default,
-                    )]);
-                }
+        if let Menu::Server(selected) = self.menu {
+            form.blank();
+            form.line(vec![(format!(" {}", tr("select.history.server")), default)]);
+            let count = self.body_height().saturating_sub(5).max(1);
+            let start = (selected + 1).saturating_sub(count);
+            for (i, server) in self.servers.iter().enumerate().skip(start).take(count) {
                 form.line(vec![(
-                    format!(" {}", tr("history.server.select.help")),
+                    format!(
+                        " {}{}",
+                        if i == selected { "> " } else { "  " },
+                        clean(server)
+                    ),
                     default,
                 )]);
             }
-            _ => {}
+            form.line(vec![(
+                format!(" {}", tr("history.server.select.help")),
+                default,
+            )]);
         }
         if !self.message.is_empty() {
             form.blank();

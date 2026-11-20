@@ -64,9 +64,13 @@ fn stream(a: &Address) -> Result<MaybeTlsStream<TcpStream>> {
     }
 }
 
-pub fn redeem(a: &Address) -> Result<(Token, Option<String>)> {
+fn invitation_request<T>(
+    a: &Address,
+    method: &str,
+    decode: impl FnOnce(u16, &[httparse::Header<'_>], &[u8]) -> Result<T>,
+) -> Result<T> {
     let mut stream = stream(a)?;
-    write!(stream,"POST {} HTTP/1.1\r\nHost: {}\r\nX-Agenterm-Version: {WIRE_VERSION}\r\nX-Agenterm-Release-Version: {VERSION}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",a.path,a.authority).map_err(|e|e.to_string())?;
+    write!(stream,"{method} {} HTTP/1.1\r\nHost: {}\r\nX-Agenterm-Version: {WIRE_VERSION}\r\nX-Agenterm-Release-Version: {VERSION}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",a.path,a.authority).map_err(|e|e.to_string())?;
     // The endpoint returns at most a small JSON token. Bound headers and body;
     // redirects are rejected so credentials never follow an untrusted Location.
     let mut bytes = Vec::new();
@@ -87,39 +91,58 @@ pub fn redeem(a: &Address) -> Result<(Token, Option<String>)> {
         httparse::Status::Complete(n) => n,
         _ => return Err("incomplete HTTP response".into()),
     };
-    let status = response.code.unwrap_or(0);
-    let header = |key: &str| {
-        response
-            .headers
-            .iter()
-            .find(|h| h.name.eq_ignore_ascii_case(key))
-            .and_then(|h| std::str::from_utf8(h.value).ok())
-            .unwrap_or("")
-    };
-    if status == 200 || status == 426 {
-        protocol::check_version(header("X-Agenterm-Version"))?;
-    }
-    if status != 200 {
-        return Err(format!("invitation or short code rejected (HTTP {status})"));
-    }
-    let release = header("X-Agenterm-Release-Version").trim();
-    let body = if header("Transfer-Encoding").eq_ignore_ascii_case("chunked") {
-        unchunk(&bytes[start..])?
-    } else {
-        let raw = &bytes[start..];
-        if !header("Content-Length").is_empty()
-            && header("Content-Length").parse::<usize>().ok() != Some(raw.len())
-        {
-            return Err("incomplete HTTP body".into());
+    decode(
+        response.code.unwrap_or(0),
+        response.headers,
+        &bytes[start..],
+    )
+}
+
+fn header_value<'a>(headers: &[httparse::Header<'a>], key: &str) -> &'a str {
+    headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case(key))
+        .and_then(|h| std::str::from_utf8(h.value).ok())
+        .unwrap_or("")
+}
+
+pub fn invitation_temporary_only(a: &Address) -> Result<bool> {
+    // Reading the invitation metadata does not redeem the short code.
+    invitation_request(a, "HEAD", |status, headers, _| match status {
+        200 => Ok(header_value(headers, protocol::CONNECTION_MODE_HEADER)
+            == protocol::TEMPORARY_CONNECTION_MODE),
+        405 => Ok(false),
+        _ => Err(format!("invitation or short code rejected (HTTP {status})")),
+    })
+}
+
+pub fn redeem(a: &Address) -> Result<(Token, Option<String>)> {
+    invitation_request(a, "POST", |status, headers, raw| {
+        let header = |key: &str| header_value(headers, key);
+        if status == 200 || status == 426 {
+            protocol::check_version(header("X-Agenterm-Version"))?;
         }
-        raw.to_vec()
-    };
-    if body.len() > 4096 {
-        return Err("token response too large".into());
-    }
-    let value: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
-    let token = Token::decode(value["token"].as_str().ok_or("missing connection token")?)?;
-    Ok((token, (!release.is_empty()).then(|| release.to_owned())))
+        if status != 200 {
+            return Err(format!("invitation or short code rejected (HTTP {status})"));
+        }
+        let release = header("X-Agenterm-Release-Version").trim();
+        let body = if header("Transfer-Encoding").eq_ignore_ascii_case("chunked") {
+            unchunk(raw)?
+        } else {
+            if !header("Content-Length").is_empty()
+                && header("Content-Length").parse::<usize>().ok() != Some(raw.len())
+            {
+                return Err("incomplete HTTP body".into());
+            }
+            raw.to_vec()
+        };
+        if body.len() > 4096 {
+            return Err("token response too large".into());
+        }
+        let value: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+        let token = Token::decode(value["token"].as_str().ok_or("missing connection token")?)?;
+        Ok((token, (!release.is_empty()).then(|| release.to_owned())))
+    })
 }
 fn unchunk(mut data: &[u8]) -> Result<Vec<u8>> {
     let mut out = vec![];
@@ -238,6 +261,7 @@ pub fn run(
     manager: &Manager,
     stopped: &Arc<AtomicBool>,
     started: Instant,
+    mut register_link: bool,
 ) -> Result<()> {
     let idle = IdleTracker::new(
         manager,
@@ -249,7 +273,15 @@ pub fn run(
     let mut attempt = 0;
     let mut started = started;
     while !stopped.load(Ordering::SeqCst) {
-        match once(t, manager, stopped, &idle, &mut resume, started) {
+        match once(
+            t,
+            manager,
+            stopped,
+            &idle,
+            &mut resume,
+            started,
+            &mut register_link,
+        ) {
             Ok(()) => return Ok(()),
             Err(e) if stopped.load(Ordering::SeqCst) => {
                 let _ = e;
@@ -293,6 +325,7 @@ fn once(
     idle: &IdleTracker,
     resume: &mut String,
     started: Instant,
+    register_link: &mut bool,
 ) -> Attempt {
     let temporary = manager.temporary();
     let mut request = t
@@ -342,7 +375,12 @@ fn once(
         "x-agenterm-session-controls",
         if cfg!(unix) { "interrupt,eof" } else { "eof" },
     )?;
-    if p2p::SUPPORTED && !temporary {
+    if temporary {
+        add(
+            protocol::CONNECTION_MODE_HEADER,
+            protocol::TEMPORARY_CONNECTION_MODE,
+        )?;
+    } else if p2p::SUPPORTED {
         add("x-agenterm-p2p", "1")?;
     }
     if !resume.is_empty() {
@@ -360,7 +398,15 @@ fn once(
             if let tungstenite::HandshakeError::Failure(tungstenite::Error::Http(r)) = &e {
                 let status = r.status().as_u16();
                 return Failure {
-                    message: format!("server rejected connection (HTTP {status})"),
+                    message: if status == 403
+                        && r.headers()
+                            .get(protocol::CONNECTION_MODE_HEADER)
+                            .is_some_and(|mode| mode == protocol::TEMPORARY_CONNECTION_MODE)
+                    {
+                        ui::tr("connection.mode.temporary.required").into()
+                    } else {
+                        format!("server rejected connection (HTTP {status})")
+                    },
                     permanent: !(status == 408 || status == 429 || status >= 500),
                     online: Duration::ZERO,
                     retry_after: r
@@ -401,6 +447,16 @@ fn once(
             online: Duration::ZERO,
         });
     }
+    let temporary_only =
+        header(protocol::CONNECTION_MODE_HEADER) == protocol::TEMPORARY_CONNECTION_MODE;
+    if (t.temporary_only && !temporary_only) || (temporary_only && !temporary) {
+        return Err(Failure {
+            message: ui::tr("connection.mode.temporary.required").into(),
+            permanent: true,
+            retry_after: 0,
+            online: Duration::ZERO,
+        });
+    }
     *resume = header("x-agenterm-resume-credential").into();
     let heartbeat = header("x-agenterm-heartbeat") == "1";
     match ws.get_mut() {
@@ -412,6 +468,11 @@ fn once(
     }
     .map_err(|e| e.to_string())?;
     if !temporary {
+        if std::mem::take(register_link)
+            && let Err(error) = crate::deeplink::register()
+        {
+            eprintln!("Agenterm link registration: {error}");
+        }
         let _ = crate::storage::remember(&t.address);
     }
     manager.reporter().connected(started.elapsed());

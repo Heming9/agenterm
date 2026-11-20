@@ -10,7 +10,7 @@ use crate::{
     connection,
     protocol::{self, Result},
     storage,
-    ui::{self, ConnectionMode, Event as ClientEvent, Options, Reporter, tr},
+    ui::{self, AuthorizationPrompt, ConnectionMode, Event as ClientEvent, Options, Reporter, tr},
 };
 use clipboard::Clipboard;
 use crossterm::{
@@ -20,11 +20,16 @@ use crossterm::{
         MouseEventKind,
     },
     execute,
+    style::Stylize,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use input::Input;
 use log::{Log, LogOptions, Logger, StreamOptions, clean};
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{
+    Terminal,
+    backend::{CrosstermBackend, IntoCrossterm},
+    style::Color,
+};
 use std::{
     io::{self, Write},
     sync::{
@@ -125,41 +130,63 @@ impl Drop for TerminalGuard {
     }
 }
 
-pub fn consent(mode: Option<ConnectionMode>) -> Result<Option<ConnectionMode>> {
-    println!("\n{}", tr("installer.consent.menu"));
+pub fn consent(
+    prompt: &AuthorizationPrompt<'_>,
+    mode: Option<ConnectionMode>,
+) -> Result<Option<ConnectionMode>> {
+    let color = view::Palette::current().color;
+    if color {
+        println!(
+            "{}",
+            prompt.formatted(
+                prompt
+                    .title
+                    .with(Color::from_u32(colors::WARNING).into_crossterm()),
+                prompt
+                    .server
+                    .with(Color::from_u32(colors::PRIMARY).into_crossterm()),
+            ),
+        );
+    } else {
+        println!("{}", prompt.formatted(prompt.title, prompt.server));
+    }
     let _guard = TerminalGuard::enter(false).map_err(|e| e.to_string())?;
     let mut out = io::stdout();
     let mut selected = 0usize;
     let choices = ui::consent_choices(mode);
     let mut lines = 0;
+    let metrics = Metrics {
+        legacy: std::env::var("TERM_PROGRAM").unwrap_or_default() == "Apple_Terminal",
+    };
     loop {
         if lines > 1 {
             execute!(out, cursor::MoveUp(lines - 1)).map_err(|e| e.to_string())?;
         }
-        let width = terminal::size().map_or(80, |s| s.0);
-        let separator = if width < 120 { "\r\n" } else { "    " };
-        let color = std::env::var_os("NO_COLOR").is_none()
-            && std::env::var("TERM").unwrap_or_default() != "dumb";
-        let labels: Vec<String> = choices
+        let columns = match terminal::size() {
+            Ok((width, _)) if width > 0 => usize::from(width),
+            _ => 80,
+        };
+        let rows: Vec<_> = choices
             .iter()
-            .map(|choice| ui::consent_label(*choice))
             .enumerate()
-            .map(|(i, s)| {
-                if i == selected {
-                    if color {
-                        format!("\x1b[7m ▶ {s} \x1b[0m")
-                    } else {
-                        format!(" ▶ {s} ")
-                    }
-                } else {
-                    format!("   {s} ")
-                }
-            })
+            .map(|(index, choice)| ui::consent_row(*choice, index == selected))
             .collect();
-        write!(out, "\r\x1b[J{}", labels.join(separator))
-            .and_then(|_| out.flush())
-            .map_err(|e| e.to_string())?;
-        lines = if width < 120 { choices.len() as u16 } else { 1 };
+        lines = rows
+            .iter()
+            .map(|row| metrics.width(row).div_ceil(columns) as u16)
+            .sum();
+        write!(out, "\r\x1b[J").map_err(|e| e.to_string())?;
+        for (index, row) in rows.into_iter().enumerate() {
+            if index != 0 {
+                write!(out, "\r\n").map_err(|e| e.to_string())?;
+            }
+            if color && index == selected {
+                write!(out, "\x1b[7m{row}\x1b[0m").map_err(|e| e.to_string())?;
+            } else {
+                write!(out, "{row}").map_err(|e| e.to_string())?;
+            }
+        }
+        out.flush().map_err(|e| e.to_string())?;
         match event::read().map_err(|e| e.to_string())? {
             Event::Key(k) if k.kind != KeyEventKind::Release => match k.code {
                 KeyCode::Up | KeyCode::Left => selected = selected.saturating_sub(1),
@@ -217,6 +244,7 @@ struct Worker {
 struct App {
     input: Input,
     requested_mode: Option<ConnectionMode>,
+    allowed_mode: Option<ConnectionMode>,
     mode: ConnectionMode,
     palette: view::Palette,
     state: State,
@@ -255,6 +283,7 @@ impl App {
         Self {
             input: Input::new(options.token),
             requested_mode: options.mode,
+            allowed_mode: options.mode,
             mode: ConnectionMode::default(),
             palette: view::Palette::current(),
             state: State::Disconnected,
@@ -304,7 +333,7 @@ impl App {
     fn refresh(&mut self) {
         let height = self.body_height();
         let welcome = match self.state {
-            State::Disconnected => {
+            State::Disconnected if !matches!(self.menu, Menu::Mode(_)) => {
                 let space = height.saturating_sub(self.connection_form().height());
                 (space > 0).then_some(space)
             }
@@ -355,8 +384,14 @@ impl App {
             self.message = tr("invalid.agenterm.connection.address.or.token").into();
             return;
         }
-        self.message.clear();
-        self.menu = Menu::Mode(0);
+        match connection::authorization(value, self.requested_mode) {
+            Ok((_, mode)) => {
+                self.allowed_mode = mode;
+                self.message.clear();
+                self.menu = Menu::Mode(0);
+            }
+            Err(error) => self.message = error,
+        }
     }
     fn connect(&mut self) {
         if self.worker.is_some() {
@@ -589,14 +624,14 @@ impl App {
                     KeyCode::Up | KeyCode::Left => selected = selected.saturating_sub(1),
                     KeyCode::Down | KeyCode::Right => {
                         selected =
-                            (selected + 1).min(ui::consent_choices(self.requested_mode).len() - 1)
+                            (selected + 1).min(ui::consent_choices(self.allowed_mode).len() - 1)
                     }
                     KeyCode::Esc => {
                         self.menu = Menu::Input;
                         return;
                     }
                     KeyCode::Enter => {
-                        let mode = ui::consent_choices(self.requested_mode)[selected];
+                        let mode = ui::consent_choices(self.allowed_mode)[selected];
                         let visible =
                             mode.is_none() || self.connection_form().height() <= self.body_height();
                         self.menu = Menu::Input;

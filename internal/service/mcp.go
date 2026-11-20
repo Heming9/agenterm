@@ -2,6 +2,7 @@ package service
 
 import (
 	"agenterm/internal/i18n"
+	"agenterm/internal/protocol"
 	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"context"
@@ -87,8 +88,9 @@ type sessionActionArgs struct {
 	terminal.ControlRequest
 }
 type createClientArgs struct {
-	MultiDevice    bool  `json:"multi_device,omitempty"`
-	TimeoutSeconds int64 `json:"timeout_seconds,omitempty"`
+	MultiDevice    bool   `json:"multi_device,omitempty"`
+	TimeoutSeconds int64  `json:"timeout_seconds,omitempty"`
+	ConnectionMode string `json:"connection_mode,omitempty"`
 }
 
 func addTargetTool[In interface{ targetToken() string }, Out any](s *frontend, ms *mcp.Server, admin bool, name, description string, handle func(context.Context, string, In) (*mcp.CallToolResult, Out, error)) {
@@ -259,6 +261,10 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 		}
 		input.Properties["multi_device"].Description = serverText("mcp.result.multi_device")
 		input.Properties["multi_device"].Default = json.RawMessage("false")
+		mode := input.Properties["connection_mode"]
+		mode.Description = serverText("mcp.connection.mode")
+		mode.Default = json.RawMessage(`""`)
+		mode.Enum = []any{"", protocol.TemporaryConnectionMode}
 		timeout := input.Properties["timeout_seconds"]
 		timeout.Description = serverText("mcp.invitation.timeout.seconds")
 		timeout.Minimum = new(float64(1))
@@ -268,6 +274,15 @@ func (s *frontend) newMCPServer(admin bool) *mcp.Server {
 			principal := ctx.Value(mcpAuthKey{}).(mcpPrincipal)
 			if a.TimeoutSeconds == 0 {
 				a.TimeoutSeconds = defaultInvitationTimeoutSeconds
+			}
+			if a.ConnectionMode != "" {
+				config, err := controlCall[runtimeConfig](ctx, s.control, "config", struct{}{})
+				if err != nil {
+					return nil, createClientResult{}, err
+				}
+				if !config.ConnectionModePolicy {
+					return nil, createClientResult{}, i18n.NewError("mcp.connection.mode.runtime.required")
+				}
 			}
 			credentials, err := controlCall[createClientCredentials](ctx, s.control, "create", createRequest{IP: principal.IP, Args: a})
 			if err != nil {
@@ -301,6 +316,9 @@ func connectionDisplayText(token, code string, args createClientArgs, expires ti
 	}
 	connectionSection := label + "\n```\n" + token + "\n```\n\nBrowser invitation link:\nAgenterm invites you to a remote assistance session (open the invitation link in a computer browser): " + link
 	text := fmt.Sprintf(i18n.Text("en", "connection.display.text"), powershell, shell, connectionSection, "open the browser invitation link above or run the command for your system.", tokenAlternative, args.TimeoutSeconds, expiry)
+	if args.ConnectionMode == protocol.TemporaryConnectionMode {
+		text += "\n\n" + i18n.Text("en", "mcp.connection.mode.temporary.notice")
+	}
 	if args.MultiDevice {
 		text += "\n\n" + i18n.Text("en", "multi.device.display.notice")
 	}

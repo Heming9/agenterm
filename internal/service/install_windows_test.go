@@ -26,7 +26,7 @@ func TestPowerShellInvitationInstaller(t *testing.T) {
 	source := filepath.Join(root, "main.go")
 	if err := os.WriteFile(source, []byte(`package main
 import ("fmt"; "os"; "strconv")
-func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { version := os.Getenv("AGENTERM_TEST_CLIENT_VERSION"); if version == "" { version = "0.20.16" }; fmt.Println(version); return }; fmt.Printf("arg=%s token=%s lang=%s\n", args[0], args[1], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
+func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { version := os.Getenv("AGENTERM_TEST_CLIENT_VERSION"); if version == "" { version = "0.20.17" }; fmt.Println(version); return }; fmt.Printf("arg=%s token=%s lang=%s\n", args[0], args[1], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { ve
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())
 	}
 	customPrefix = "$env:AGENTERM_LANG = 'en'; $env:AGENTERM_TEST_CLIENT_VERSION = '0.20.12'; "
-	if out, err := run(); err == nil || !strings.Contains(out, "0.20.16 or newer is required") || strings.Contains(out, "arg=-token") {
+	if out, err := run(); err == nil || !strings.Contains(out, "0.20.17 or newer is required") || strings.Contains(out, "arg=-token") {
 		t.Fatalf("old client must not receive any credentials: %v\n%s", err, out)
 	}
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; [Threading.Thread]::CurrentThread.CurrentCulture = 'zh-CN'; $env:AGENTERM_LANG = 'auto'; `

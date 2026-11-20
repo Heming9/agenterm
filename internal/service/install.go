@@ -147,6 +147,14 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusUnauthorized)
 			return
 		}
+		source, decodeErr := protocol.Decode(entry.Token)
+		if decodeErr != nil {
+			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
+			return
+		}
+		if source.TemporaryOnly {
+			w.Header().Set(protocol.ConnectionModeHeader, protocol.TemporaryConnectionMode)
+		}
 		if redeem {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.Token})
@@ -158,11 +166,6 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 		}
 		if extension == "" {
 			serveInvitationPage(w, r, entry, code)
-			return
-		}
-		source, decodeErr := protocol.Decode(entry.Token)
-		if decodeErr != nil {
-			http.Error(w, i18n.Text(i18n.Terminal(), "invalid.invitation"), http.StatusInternalServerError)
 			return
 		}
 		value := entry.Token

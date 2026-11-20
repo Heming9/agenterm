@@ -3,6 +3,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const WIRE_VERSION: &str = env!("AGENTERM_WIRE_VERSION");
+pub const CONNECTION_MODE_HEADER: &str = "x-agenterm-connection-mode";
+pub const TEMPORARY_CONNECTION_MODE: &str = "temporary";
 pub type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, Debug)]
@@ -100,6 +102,7 @@ pub struct Token {
     pub address: Address,
     pub secret: String,
     pub identifier: String,
+    pub temporary_only: bool,
 }
 
 impl Token {
@@ -149,9 +152,11 @@ impl Token {
         if flags & 16 == 0 && identifier.is_empty() {
             return Err("unsupported token format".into());
         }
-        let scheme = match flags & 3 {
-            1 => "ws",
-            2 => "wss",
+        let (scheme, temporary_only) = match flags & 3 {
+            1 => ("ws", false),
+            2 => ("wss", false),
+            0 if !identifier.is_empty() => ("ws", true),
+            3 if !identifier.is_empty() => ("wss", true),
             _ => return Err("invalid token scheme".into()),
         };
         let secret = B64.encode(&data[1..11]);
@@ -198,6 +203,7 @@ impl Token {
             address,
             secret,
             identifier,
+            temporary_only,
         })
     }
     pub fn connection_url(&self) -> String {

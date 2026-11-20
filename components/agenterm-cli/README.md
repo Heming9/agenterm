@@ -40,7 +40,7 @@ agenterm-cli://authorize?url=https%3A%2F%2Fexample.com%2Fagenterm%2Fc%2FABC123
 The CLI displays the destination server and waits for approval before redeeming
 the code or connecting. Legacy `connect` links still open in the updated CLI, but
 their mode is ignored. Older clients reject the new browser link. The installer
-requires CLI 0.20.16 or newer before passing connection credentials. After
+requires CLI 0.20.17 or newer before passing connection credentials. After
 upgrading, authorize a persistent connection from the new CLI to refresh the registered handler.
 The former GUI's `agenterm:` scheme is not claimed by this terminal client.
 

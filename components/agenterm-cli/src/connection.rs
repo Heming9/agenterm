@@ -1,11 +1,10 @@
 //! Shared connection lifecycle for plain output and the interactive UI.
 use crate::{
-    deeplink,
     protocol::{self, Address, Result, Token},
     storage,
     terminal::Manager,
     transport,
-    ui::{ConnectionMode, Event, Reporter},
+    ui::{self, ConnectionMode, Event, Reporter},
 };
 use std::{
     sync::{
@@ -28,6 +27,31 @@ pub fn target_address(value: &str) -> Result<Address> {
     } else {
         Ok(connection_target(&protocol::connection_address(value)?))
     }
+}
+
+pub fn authorization(
+    value: &str,
+    requested: Option<ConnectionMode>,
+) -> Result<(Address, Option<ConnectionMode>)> {
+    let (target, temporary_only) = if value.starts_with("Agenterm_") {
+        let token = Token::decode(value)?;
+        (token.address, token.temporary_only)
+    } else {
+        let address = protocol::connection_address(value)?;
+        (
+            connection_target(&address),
+            transport::invitation_temporary_only(&address)?,
+        )
+    };
+    let allowed = if temporary_only {
+        if requested == Some(ConnectionMode::Persistent) {
+            return Err(ui::tr("connection.mode.temporary.required").into());
+        }
+        Some(ConnectionMode::Temporary)
+    } else {
+        requested
+    };
+    Ok((target, allowed))
 }
 
 pub fn display_address(value: &str) -> Result<String> {
@@ -53,6 +77,9 @@ pub fn run(
     let reserve = |address: &Address| (!temporary).then(|| storage::lock(address)).transpose();
     let (token, reservation, validation) = if value.starts_with("Agenterm_") {
         let token = Token::decode(value)?;
+        if token.temporary_only && !temporary {
+            return Err(ui::tr("connection.mode.temporary.required").into());
+        }
         let reservation = reserve(&token.address)?;
         (token, reservation, None)
     } else {
@@ -66,6 +93,9 @@ pub fn run(
         let (token, server_version) = transport::redeem(&address)?;
         if token.address.url() != target.url() {
             return Err("connection URL resolved to a different server".into());
+        }
+        if token.temporary_only && !temporary {
+            return Err(ui::tr("connection.mode.temporary.required").into());
         }
         (
             token,
@@ -86,15 +116,9 @@ pub fn run(
     if stopped.load(Ordering::SeqCst) {
         return Ok(());
     }
-    if !temporary
-        && register_link
-        && let Err(error) = deeplink::register()
-    {
-        eprintln!("Agenterm link registration: {error}");
-    }
     let workspace = temporary.then(storage::installer_workspace).flatten();
     let manager = Manager::with_reporter(stopped.clone(), reporter, temporary, workspace);
-    let result = transport::run(&token, &manager, &stopped, started);
+    let result = transport::run(&token, &manager, &stopped, started, register_link);
     manager.close();
     drop(reservation);
     result

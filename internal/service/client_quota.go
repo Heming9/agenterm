@@ -3,6 +3,7 @@ package service
 import "time"
 
 type clientOwner struct {
+	temporaryOnly  bool
 	ip, token      string
 	controlKeyHash [32]byte
 	order          uint64

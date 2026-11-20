@@ -117,7 +117,7 @@ try {
   try {
     $env:AGENTERM_SKIP_LINK_REGISTRATION = '1'
     $clientVersion = & $program -version
-    if ($LASTEXITCODE -ne 0 -or $clientVersion -isnot [string] -or $clientVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$clientVersion -lt [version]'0.20.16') {
+    if ($LASTEXITCODE -ne 0 -or $clientVersion -isnot [string] -or $clientVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$clientVersion -lt [version]'0.20.17') {
       throw (Text 'installer.client.authorization.version')
     }
   } finally {

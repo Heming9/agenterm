@@ -125,7 +125,7 @@ else
   say installer.client.verified
 fi
 if ! client_version=$(AGENTERM_SKIP_LINK_REGISTRATION=1 "$binary" -version) ||
-   ! printf '%s\n' "$client_version" | awk -F. 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($1 > 0 || $2 > 20 || ($2 == 20 && $3 >= 16)) { supported = 1 } END { exit !(NR == 1 && supported) }'; then
+   ! printf '%s\n' "$client_version" | awk -F. 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($1 > 0 || $2 > 20 || ($2 == 20 && $3 >= 17)) { supported = 1 } END { exit !(NR == 1 && supported) }'; then
   say installer.client.authorization.version >&2
   exit 1
 fi

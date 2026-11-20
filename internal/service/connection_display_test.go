@@ -19,6 +19,12 @@ type legacyDisplayControl struct {
 }
 
 func (c *legacyDisplayControl) call(ctx context.Context, method string, in, out any) error {
+	if method == "config" {
+		config, err := controlCall[runtimeConfig](ctx, c.control, method, in)
+		config.ConnectionModePolicy = false
+		*out.(*runtimeConfig) = config
+		return err
+	}
 	if method != "create" {
 		return c.control.call(ctx, method, in, out)
 	}
@@ -49,6 +55,16 @@ func TestFrontendFormatsInstructionsFromRetainedRuntime(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(front.mcp))
 			defer server.Close()
 			session := connectMCPClient(t, &multiHarness{s: state, ts: server}, "admin-test")
+			restricted, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_client", Arguments: map[string]any{"connection_mode": "temporary"}})
+			if err != nil || !restricted.IsError {
+				t.Fatalf("a retained runtime must reject temporary-only issuance: %v", err)
+			}
+			state.mu.Lock()
+			pending := len(state.tokens)
+			state.mu.Unlock()
+			if pending != 0 {
+				t.Fatal("temporary-only issuance must not create an unrestricted token")
+			}
 			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_client", Arguments: map[string]any{"multi_device": multi, "timeout_seconds": 120}})
 			if err != nil || result.IsError {
 				t.Fatalf("frontend create failed: %v", err)

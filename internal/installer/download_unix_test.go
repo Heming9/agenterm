@@ -23,7 +23,7 @@ func TestShellInstallerRetriesTimedOutDownload(t *testing.T) {
 		t.Skip("curl is required to exercise installer retries")
 	}
 	const name = "agenterm-client-cli-linux-amd64"
-	payload := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then echo \"${AGENTERM_TEST_CLIENT_VERSION:-0.20.16}\"; exit 0; fi\nprintf 'client:%s\\n' \"$*\"\n")
+	payload := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then echo \"${AGENTERM_TEST_CLIENT_VERSION:-0.20.17}\"; exit 0; fi\nprintf 'client:%s\\n' \"$*\"\n")
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -74,7 +74,7 @@ func TestShellInstallerRetriesTimedOutDownload(t *testing.T) {
 	old := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
 	old.Env = append(cmd.Env, "AGENTERM_TEST_CLIENT_VERSION=0.20.12")
 	output, err = old.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "0.20.16 or newer is required") || strings.Contains(string(output), "client:") {
+	if err == nil || !strings.Contains(string(output), "0.20.17 or newer is required") || strings.Contains(string(output), "client:") {
 		t.Fatalf("old client must not receive any credentials: %v\n%s", err, output)
 	}
 }

@@ -47,6 +47,9 @@ const ClientAPIHeader = "X-Agenterm-Client-API"
 // ResumeCredentialHeader carries a private, process-local reconnect credential.
 const ResumeCredentialHeader = "X-Agenterm-Resume-Credential"
 
+const ConnectionModeHeader = "X-Agenterm-Connection-Mode"
+const TemporaryConnectionMode = "temporary"
+
 const P2PCapabilityHeader = "X-Agenterm-P2P"
 
 // Advertised by servers that send Ping frames and latency measurements.
@@ -56,9 +59,10 @@ const HeartbeatTimeout = 60 * time.Second
 const WriteTimeout = 10 * time.Second
 
 type Token struct {
-	URL        string
-	Secret     string
-	Identifier string
+	URL           string
+	Secret        string
+	Identifier    string
+	TemporaryOnly bool
 }
 
 func Encode(t Token) (string, error) {
@@ -75,6 +79,14 @@ func Encode(t Token) (string, error) {
 	b[0] = tokenFormat | 1
 	if u.Scheme == "wss" {
 		b[0] = tokenFormat | 2
+	}
+	if t.TemporaryOnly {
+		if t.Identifier == "" {
+			return "", i18n.NewError("invalid.token.unsupported.format")
+		}
+		// Reserved scheme values mark temporary-only tokens without changing
+		// the payload layout. Older clients reject these tokens.
+		b[0] ^= 1
 	}
 	b = append(b, secret...)
 	prefix := strings.TrimSuffix(u.Path, "/client")
@@ -152,11 +164,18 @@ func Decode(s string) (Token, error) {
 		return t, i18n.NewError("invalid.token.unsupported.format.update.server.and.client")
 	}
 	scheme := "ws"
+	var temporaryOnly bool
 	switch b[0] & 3 {
 	case 1:
 	case 2:
 		scheme = "wss"
-	default:
+	case 0:
+		temporaryOnly = true
+	case 3:
+		scheme = "wss"
+		temporaryOnly = true
+	}
+	if temporaryOnly && identifier == "" {
 		return t, i18n.NewError("invalid.token.unsupported.format")
 	}
 	address := b[1+TokenSecretSize:]
@@ -223,7 +242,7 @@ func Decode(s string) (Token, error) {
 	if u.Host != host || u.Hostname() != hostname {
 		return t, i18n.NewError("invalid.token.malformed.host")
 	}
-	return Token{URL: rawURL, Secret: base64.RawURLEncoding.EncodeToString(b[1 : 1+TokenSecretSize]), Identifier: identifier}, nil
+	return Token{URL: rawURL, Secret: base64.RawURLEncoding.EncodeToString(b[1 : 1+TokenSecretSize]), Identifier: identifier, TemporaryOnly: temporaryOnly}, nil
 }
 
 // Packed hosts use six-bit symbols; zero is reserved for padding.

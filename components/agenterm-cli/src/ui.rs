@@ -1,4 +1,5 @@
 use crate::protocol::{Result, VERSION};
+use std::fmt::Display;
 use std::io::{self, IsTerminal, Write};
 use std::sync::OnceLock;
 
@@ -32,9 +33,37 @@ pub fn input(prompt: &str) -> Result<String> {
     }
     Ok(s.trim().into())
 }
-pub fn authorization_prompt(server: &str) -> String {
-    tr("remote.control.authorization.prompt").replace("%s", server)
+pub struct AuthorizationPrompt<'a> {
+    pub title: &'static str,
+    pub server_label: &'static str,
+    pub server: &'a str,
+    pub details: &'static str,
+    pub instruction: &'static str,
 }
+
+impl AuthorizationPrompt<'_> {
+    pub fn formatted(&self, title: impl Display, server: impl Display) -> String {
+        format!(
+            "{title}\n{}{server}\n{}\n\n{}",
+            self.server_label, self.details, self.instruction
+        )
+    }
+}
+
+pub fn authorization_prompt(server: &str, interactive: bool) -> AuthorizationPrompt<'_> {
+    AuthorizationPrompt {
+        title: tr("remote.control.authorization.title"),
+        server_label: tr("remote.control.authorization.server"),
+        server,
+        details: tr("remote.control.authorization.details"),
+        instruction: if interactive {
+            tr("installer.consent.menu")
+        } else {
+            text("Choose authorization:", "请选择授权方式：")
+        },
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ConnectionMode {
     #[default]
@@ -59,12 +88,18 @@ pub fn consent_label(mode: Option<ConnectionMode>) -> &'static str {
     })
 }
 
+pub fn consent_row(mode: Option<ConnectionMode>, selected: bool) -> String {
+    let marker = if selected { " ▶ " } else { "   " };
+    format!("{marker}{} ", consent_label(mode))
+}
+
 pub fn consent(server: &str, mode: Option<ConnectionMode>) -> Result<Option<ConnectionMode>> {
-    print!("{}", authorization_prompt(server));
-    if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        return crate::tui::consent(mode);
+    let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+    let prompt = authorization_prompt(server, interactive);
+    if interactive {
+        return crate::tui::consent(&prompt, mode);
     }
-    println!("\n{}", tr("installer.consent.menu"));
+    println!("{}", prompt.formatted(prompt.title, prompt.server));
     let choices = consent_choices(mode);
     for (index, choice) in choices.iter().enumerate() {
         println!("{}. {}", index + 1, consent_label(*choice));

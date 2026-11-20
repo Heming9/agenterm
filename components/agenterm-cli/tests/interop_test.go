@@ -55,11 +55,14 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/prototype/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
-		f.redemptions.Add(1)
-		if r.Method != "POST" {
+		if r.Method == http.MethodHead {
+			return
+		}
+		if r.Method != http.MethodPost {
 			http.Error(w, "method", 405)
 			return
 		}
+		f.redemptions.Add(1)
 		w.Header().Set(version.Header, version.Protocol)
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
 	})

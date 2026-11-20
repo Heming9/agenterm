@@ -113,6 +113,7 @@ fn screens_match_reference() {
                             .unwrap(),
                             secret: "test-secret".into(),
                             identifier: "abc123".into(),
+                            temporary_only: false,
                         },
                         server_version: Some("0.20.8".into()),
                         elapsed: Duration::from_millis(86),
@@ -193,6 +194,35 @@ fn screens_match_reference() {
 }
 
 #[test]
+fn authorization_uses_warning_and_primary_colors() {
+    use ratatui::style::Color;
+
+    let mut app = app();
+    app.input.set("example.com/c/ABC123".into());
+    app.menu = Menu::Mode(0);
+    app.resize(100, 16);
+    let server = ui::authorization_prompt("http://example.com", true);
+    let url_column = app.metrics.width(server.server_label) as u16;
+    let mut terminal = Terminal::new(TestBackend::new(app.width, app.height)).unwrap();
+    for color in [true, false] {
+        app.palette.color = color;
+        terminal.draw(|frame| app.render(frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let expected = |rgb| {
+            if color {
+                Color::from_u32(rgb)
+            } else {
+                Color::Reset
+            }
+        };
+        assert_eq!(buffer[(0, 2)].fg, expected(colors::WARNING));
+        assert_eq!(buffer[(0, 3)].fg, Color::Reset);
+        assert_eq!(buffer[(url_column, 3)].fg, expected(colors::PRIMARY));
+        assert_eq!(buffer[(0, 4)].fg, Color::Reset);
+    }
+}
+
+#[test]
 fn long_identity_fits_the_footer_divider() {
     let mut app = app();
     app.identity = "用户@工作站-abcdefghijklmnopqrstuvwxyz".into();
@@ -269,7 +299,8 @@ fn startup_banner_is_selectable_in_the_log() {
 #[test]
 fn mode_cancel_and_ctrl_c_match_go() {
     let mut app = app();
-    app.input.set("example.com/c/ABC123".into());
+    app.input
+        .set("Agenterm_RdyC9iLkuB4b8blFcH8AAAE_abc123".into());
     app.key(key(KeyCode::Enter));
     assert_eq!(app.menu, Menu::Mode(0));
     assert!(app.worker.is_none());

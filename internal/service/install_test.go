@@ -61,7 +61,7 @@ func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 		}
 	}
 	name := "agenterm-client-cli-linux-amd64"
-	client := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then printf '0.20.16\\n'; exit 0; fi\nprintf 'arg=%s token=%s\\n' \"$1\" \"$2\"\nif [ -t 0 ]; then printf 'client-input: '; read -r answer; printf 'received:%s\\n' \"$answer\"; fi\n")
+	client := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then printf '0.20.17\\n'; exit 0; fi\nprintf 'arg=%s token=%s\\n' \"$1\" \"$2\"\nif [ -t 0 ]; then printf 'client-input: '; read -r answer; printf 'received:%s\\n' \"$answer\"; fi\n")
 	archive := name + ".tar.xz"
 	for filename, data := range installerFixture(t, client) {
 		write(filepath.Join(assets, filename), data, 0o600)

@@ -70,6 +70,8 @@ Persistent authorization keeps a reusable client in the following directories:
 
 ### Temporary connections
 
+The sender can set `create_client.connection_mode` to `"temporary"` so the authorization menu offers temporary approval or denial. This requires CLI 0.20.17 or later.
+
 Use CLI 0.20.16 or later. Run the one-click command from the invitation and select temporary authorization. The installer downloads and runs the client in the system temporary directory. Agenterm streams terminal output without creating a local session log. It can write temporary scripts to run commands. On normal exit the installer removes its downloaded copy and temporary files. Changes made by the assistance task and any existing client installation are preserved. If the installer is forcibly stopped or the device loses power, temporary files can remain.
 
 ## ❓ Troubleshooting

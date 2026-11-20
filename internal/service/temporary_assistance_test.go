@@ -2,11 +2,13 @@ package service
 
 import (
 	"agenterm/internal/protocol"
+	"agenterm/internal/version"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -18,9 +20,68 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/gorilla/websocket"
 )
 
+func TestTemporaryAssistanceInvitationPolicy(t *testing.T) {
+	h := newMultiHarness(t, 0)
+	h.call(t, "admin-test", "create_client", map[string]any{"connection_mode": "persistent"}, true)
+	ordinary := h.call(t, "admin-test", "create_client", map[string]any{"connection_mode": ""}, false).(map[string]any)
+	token, err := protocol.Decode(deviceTokenFromControl(ordinary["control_token"].(string)))
+	if err != nil || token.TemporaryOnly {
+		t.Fatalf("empty mode must leave the connection mode open: %v", err)
+	}
+	issued := h.call(t, "admin-test", "create_client", map[string]any{"connection_mode": "temporary"}, false).(map[string]any)
+	token, err = protocol.Decode(deviceTokenFromControl(issued["control_token"].(string)))
+	if err != nil || !token.TemporaryOnly {
+		t.Fatalf("device token must carry the temporary-only policy: %v", err)
+	}
+	display := issued["display_text"].(string)
+	code := displayShortCode(t, display)
+	for _, credential := range []string{code, token.Secret} {
+		request := httptest.NewRequest(http.MethodHead, "/c/"+credential, nil)
+		response := httptest.NewRecorder()
+		h.s.installWrapper(installerTestTag).ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Header().Get(protocol.ConnectionModeHeader) != "temporary" {
+			t.Fatalf("invitation preflight returned %d without the temporary-only policy", response.Code)
+		}
+	}
+	h.s.mu.Lock()
+	redemptions := h.s.shortCodes[code].redemptions
+	h.s.mu.Unlock()
+	if redemptions != 0 {
+		t.Fatal("checking the invitation mode redeemed the short code")
+	}
+	headers := http.Header{"Authorization": {"Bearer " + token.Secret}, version.Header: {version.Protocol}}
+	for _, mode := range []string{"", "persistent", "temporary"} {
+		headers.Set(protocol.ConnectionModeHeader, mode)
+		conn, response, err := websocket.DefaultDialer.Dial(token.ConnectionURL(), headers)
+		if response == nil {
+			t.Fatalf("missing handshake response for mode %q: %v", mode, err)
+		}
+		if mode == "temporary" {
+			if err != nil || response.Header.Get(protocol.ConnectionModeHeader) != mode {
+				t.Fatalf("temporary handshake failed: %v", err)
+			}
+			conn.Close()
+		} else {
+			if conn != nil {
+				conn.Close()
+			}
+			response.Body.Close()
+			if err == nil || response.StatusCode != http.StatusForbidden {
+				t.Fatalf("mode %q must be rejected: HTTP %d (%v)", mode, response.StatusCode, err)
+			}
+		}
+	}
+}
+
 func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
+	t.Run("user-selects-temporary", func(t *testing.T) { testTemporaryAssistanceInstallerCleanup(t, "") })
+	t.Run("temporary-only-invitation", func(t *testing.T) { testTemporaryAssistanceInstallerCleanup(t, "temporary") })
+}
+
+func testTemporaryAssistanceInstallerCleanup(t *testing.T, mode string) {
 	binary, err := rustClientBinary()
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +107,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	defer ts.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
 	h := &multiHarness{s: s, ts: ts}
-	issued := h.call(t, "admin-test", "create_client", map[string]any{}, false).(map[string]any)
+	issued := h.call(t, "admin-test", "create_client", map[string]any{"connection_mode": mode}, false).(map[string]any)
 	control := issued["control_token"].(string)
 	token, err := protocol.Decode(deviceTokenFromControl(control))
 	if err != nil {
@@ -97,7 +158,30 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	if err := denied.Run(); err != nil || !strings.Contains(deniedOutput.String(), "cancelled") {
 		t.Fatalf("declining consent: %v\n%s", err, deniedOutput)
 	}
-	for _, want := range []string{"Choose authorization", "1. Allow authorization (temporary)", "2. Allow authorization (persistent)", "3. Deny authorization", "Enter a choice:"} {
+	wantChoices := []string{"Choose authorization", "1. Allow authorization (temporary)", "Enter a choice:"}
+	if mode == "temporary" {
+		wantChoices = append(wantChoices, "2. Deny authorization")
+		if strings.Contains(deniedOutput.String(), "Allow authorization (persistent)") {
+			t.Fatal("restricted invitation offered persistent approval")
+		}
+		for _, value := range []string{deviceTokenFromControl(control), ts.URL + protocol.PathPrefix + "/c/" + displayShortCode(t, issued["display_text"].(string))} {
+			direct := exec.CommandContext(ctx, binary, "-plain", "-token", value)
+			direct.Env = denied.Env
+			direct.Stdin = strings.NewReader("2\n")
+			if output, err := direct.CombinedOutput(); err != nil || !strings.Contains(string(output), "2. Deny authorization") ||
+				strings.Contains(string(output), "Allow authorization (persistent)") {
+				t.Fatalf("restricted token/address authorization: %v\n%s", err, output)
+			}
+			persistent := exec.CommandContext(ctx, binary, "-plain", "-token", value, "-connection-mode", "persistent")
+			persistent.Env = denied.Env
+			if output, err := persistent.CombinedOutput(); err == nil || !strings.Contains(string(output), "requires a temporary connection") {
+				t.Fatalf("forcing persistent mode with a restricted token/address: %v\n%s", err, output)
+			}
+		}
+	} else {
+		wantChoices = append(wantChoices, "2. Allow authorization (persistent)", "3. Deny authorization")
+	}
+	for _, want := range wantChoices {
 		if !strings.Contains(deniedOutput.String(), want) {
 			t.Errorf("consent prompt missing %q:\n%s", want, deniedOutput)
 		}
@@ -110,7 +194,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	var readDone chan struct{}
 	authorizationReady := make(chan struct{})
 	if interactive {
-		terminal, err = pty.Start(cmd)
+		terminal, err = pty.StartWithSize(cmd, &pty.Winsize{Cols: 140, Rows: 24})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,6 +305,12 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 		}
 	case <-time.After(8 * time.Second):
 		t.Fatal("temporary installer failed to exit after assistance ended")
+	}
+	if interactive {
+		beforeDeny, _, found := strings.Cut(output.String(), "Deny authorization")
+		if !found || !strings.HasSuffix(beforeDeny, "\r\n   ") {
+			t.Fatal("the interactive authorization choices must be vertical on a wide terminal")
+		}
 	}
 	assertEmpty(temp)
 	assertEmpty(home)

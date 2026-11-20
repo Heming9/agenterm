@@ -16,6 +16,10 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	if timeoutSeconds < 1 || timeoutSeconds > maxInvitationTimeoutSeconds {
 		return nil, i18n.NewError("invitation.timeout.invalid", maxInvitationTimeoutSeconds)
 	}
+	temporaryOnly := args.ConnectionMode == protocol.TemporaryConnectionMode
+	if args.ConnectionMode != "" && !temporaryOnly {
+		return nil, i18n.NewError("mcp.connection.mode.invalid")
+	}
 	secret := randomBytes(protocol.TokenSecretSize)
 	controlKey := randomBytes(32)
 	controlHash := sha256.Sum256([]byte(controlKey))
@@ -52,7 +56,7 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 			break
 		}
 	}
-	token, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret, Identifier: identifier})
+	token, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret, Identifier: identifier, TemporaryOnly: temporaryOnly})
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +80,7 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 		s.clientOwners = make(map[string]*clientOwner)
 	}
 	s.nextClientOrder++
-	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires}
+	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires, temporaryOnly: temporaryOnly}
 	deadline := expires.UTC().Format(time.RFC3339)
 	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "expires_at": deadline, "token_initial_expires_at": deadline}
 	if code != "" {

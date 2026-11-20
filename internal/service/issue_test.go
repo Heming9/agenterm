@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,7 @@ func TestCreateClientTimeoutSchema(t *testing.T) {
 			Properties map[string]struct {
 				Type, Description string
 				Default           json.RawMessage
+				Enum              []string
 				Minimum, Maximum  int64
 			}
 		}
@@ -114,15 +116,17 @@ func TestCreateClientTimeoutSchema(t *testing.T) {
 		if timeout.Type != "integer" || timeout.Description == "" || string(timeout.Default) != "900" || timeout.Minimum != 1 || timeout.Maximum != maxInvitationTimeoutSeconds {
 			t.Fatalf("incorrect timeout schema: %s", data)
 		}
-		if _, exists := schema.Properties["temporary_assistance"]; exists {
-			t.Fatalf("mode must be selected by the client: %s", data)
+		mode := schema.Properties["connection_mode"]
+		if mode.Type != "string" || mode.Description == "" || string(mode.Default) != `""` ||
+			!slices.Equal(mode.Enum, []string{"", "temporary"}) {
+			t.Fatalf("incorrect connection mode schema: %s", data)
 		}
 		multiDevice := schema.Properties["multi_device"]
 		if multiDevice.Type != "boolean" || multiDevice.Description == "" || string(multiDevice.Default) != "false" {
 			t.Fatalf("incorrect multi-device schema: %s", data)
 		}
 		for _, required := range schema.Required {
-			if required == "timeout_seconds" || required == "multi_device" {
+			if required == "timeout_seconds" || required == "multi_device" || required == "connection_mode" {
 				t.Fatalf("%s must be optional", required)
 			}
 		}

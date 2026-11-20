@@ -191,6 +191,9 @@ func newLiveTUI(t *testing.T, shortCode bool, linkMode string, controllingTermin
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
+		if r.Method == http.MethodHead {
+			return
+		}
 		f.redemptions.Add(1)
 		w.Header().Set(version.Header, version.Protocol)
 		w.Header().Set(version.ReleaseHeader, tuiServerRelease)
