@@ -179,7 +179,7 @@ type liveTUI struct {
 
 const tuiServerRelease = "0.20.42"
 
-func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal bool) *liveTUI {
+func newLiveTUI(t *testing.T, shortCode bool, linkMode string, controllingTerminal bool) *liveTUI {
 	t.Helper()
 	binary := os.Getenv("AGENTERM_RUST_CLI")
 	if binary == "" {
@@ -189,13 +189,6 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal 
 	secret := base64.RawURLEncoding.EncodeToString([]byte("device-key"))
 	tokenReady := make(chan struct{})
 	mux := http.NewServeMux()
-	mux.HandleFunc("/agenterm/invite/redeem", func(w http.ResponseWriter, r *http.Request) {
-		<-tokenReady
-		f.redemptions.Add(1)
-		w.Header().Set(version.Header, version.Protocol)
-		w.Header().Set(version.ReleaseHeader, tuiServerRelease)
-		json.NewEncoder(w).Encode(map[string]string{"token": f.token})
-	})
 	mux.HandleFunc("/agenterm/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
 		f.redemptions.Add(1)
@@ -224,21 +217,21 @@ func newLiveTUI(t *testing.T, invite bool, linkMode string, controllingTerminal 
 		t.Fatal(err)
 	}
 	close(tokenReady)
-	args := []string{"-token", f.token, "-connection-mode", "persistent"}
-	if invite {
-		args = []string{"-invite", f.token}
+	args := []string{"-token", f.token}
+	address := server.URL + "/agenterm/c/ABC123"
+	if shortCode {
+		args = []string{"-token", address}
 	}
 	if linkMode != "" {
-		query := neturl.Values{"url": {server.URL + "/agenterm/c/ABC123"}}
-		if linkMode != "default" {
+		query := neturl.Values{"url": {address}}
+		if linkMode == "authorize" {
+			args = []string{"agenterm-cli://authorize?" + query.Encode()}
+		} else {
 			query.Set("mode", linkMode)
+			args = []string{"agenterm-cli://connect?" + query.Encode()}
 		}
-		args = []string{"agenterm-cli://connect?" + query.Encode()}
 	}
 	if controllingTerminal {
-		// Match the one-click installer: authorization is already complete,
-		// and the client reads terminal input from /dev/tty after curl | sh.
-		args = []string{"-invite", f.token, "-consent-confirmed", "-connection-mode=temporary"}
 		f.command = exec.Command("sh", append([]string{"-c", `exec "$@" </dev/tty`, "sh", binary}, args...)...)
 	} else {
 		f.command = exec.Command(binary, args...)
@@ -318,6 +311,8 @@ func (f *liveTUI) checkConnectionLog(t *testing.T, redeemed bool) {
 
 func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 	f := newLiveTUI(t, false, "", false)
+	f.capture.wait(t, "Deny authorization")
+	f.write(t, "\x1b[C\r")
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (persistent)")
 	f.checkConnectionLog(t, false)
@@ -383,7 +378,7 @@ func TestRustTUIConnectionLogsAndMouse(t *testing.T) {
 	f.capture.wait(t, "Paste connection token")
 }
 
-func TestRustTUIInvitationAndReusableCredential(t *testing.T) {
+func TestRustTUIShortCodeAndReusableCredential(t *testing.T) {
 	f := newLiveTUI(t, true, "", false)
 	// Consent is rendered in the normal terminal before the alternate screen.
 	deadline := time.Now().Add(5 * time.Second)
@@ -415,7 +410,7 @@ func TestRustTUIInvitationAndReusableCredential(t *testing.T) {
 	f.peer.Close()
 	f.capture.wait(t, "Token or code:")
 	f.write(t, "\r")
-	f.capture.wait(t, "Choose connection mode:")
+	f.capture.wait(t, "Deny authorization")
 	f.write(t, "\r")
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (temporary)")
@@ -461,6 +456,8 @@ func TestRustPlainPromptInterrupt(t *testing.T) {
 
 func TestRustTUIControllingTerminalStdin(t *testing.T) {
 	f := newLiveTUI(t, true, "", true)
+	f.capture.wait(t, "Deny authorization")
+	f.write(t, "\r")
 	f.nextPeer(t)
 	f.capture.wait(t, "Connected (temporary)")
 	if f.redemptions.Load() != 1 {
@@ -471,21 +468,46 @@ func TestRustTUIControllingTerminalStdin(t *testing.T) {
 }
 
 func TestRustTUIProtocolLinkModes(t *testing.T) {
-	for _, mode := range []string{"default", "temporary", "persistent"} {
+	for _, mode := range []string{"authorize", "temporary", "persistent"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newLiveTUI(t, false, mode, false)
-			f.nextPeer(t)
-			expected := mode
-			if mode == "default" {
-				expected = "temporary"
+			f.capture.wait(t, "Deny authorization")
+			if f.redemptions.Load() != 0 {
+				t.Fatal("short code was redeemed before authorization")
 			}
-			f.capture.wait(t, "Connected ("+expected+")")
+			f.write(t, "\r")
+			f.nextPeer(t)
+			f.capture.wait(t, "Connected (temporary)")
 			f.checkConnectionLog(t, true)
 			if f.redemptions.Load() != 1 {
 				t.Fatal("short code was not redeemed exactly once")
 			}
 			f.execute(t, "printf 'linked terminal works\\n'")
 			f.capture.wait(t, "linked terminal works")
+		})
+	}
+}
+
+func TestRustTUIProtocolLinkDenial(t *testing.T) {
+	for _, mode := range []string{"authorize", "persistent"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newLiveTUI(t, false, mode, false)
+			f.capture.wait(t, "Deny authorization")
+			f.write(t, "\x1b[C\x1b[C\r")
+			select {
+			case err := <-f.done:
+				f.done <- err
+				if err != nil {
+					t.Fatalf("deny should exit cleanly: %v", err)
+				}
+			case <-f.peers:
+				t.Fatal("denying authorization opened a connection")
+			case <-time.After(5 * time.Second):
+				t.Fatal("denying authorization did not exit")
+			}
+			if f.redemptions.Load() != 0 {
+				t.Fatal("denying authorization redeemed the short code")
+			}
 		})
 	}
 }

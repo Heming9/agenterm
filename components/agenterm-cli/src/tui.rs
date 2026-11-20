@@ -126,13 +126,12 @@ impl Drop for TerminalGuard {
     }
 }
 
-// Go displays authorization in the main terminal before opening its alternate
-// screen. Match its 120-column horizontal/vertical menu and safe default.
-pub fn consent() -> Result<Option<bool>> {
+pub fn consent(temporary_only: bool) -> Result<Option<bool>> {
     println!("\n{}", tr("installer.consent.menu"));
     let _guard = TerminalGuard::enter(false).map_err(|e| e.to_string())?;
     let mut out = io::stdout();
-    let mut selected = 0;
+    let mut selected = 0usize;
+    let choices = ui::consent_choices(temporary_only);
     let mut lines = 0;
     loop {
         if lines > 1 {
@@ -142,13 +141,9 @@ pub fn consent() -> Result<Option<bool>> {
         let separator = if width < 120 { "\r\n" } else { "    " };
         let color = std::env::var_os("NO_COLOR").is_none()
             && std::env::var("TERM").unwrap_or_default() != "dumb";
-        let choices = [
-            tr("installer.consent.temporary"),
-            tr("installer.consent.persistent"),
-            tr("installer.consent.no"),
-        ];
-        let choices: Vec<String> = choices
+        let labels: Vec<String> = choices
             .iter()
+            .map(|choice| tr(choice))
             .enumerate()
             .map(|(i, s)| {
                 if i == selected {
@@ -162,21 +157,17 @@ pub fn consent() -> Result<Option<bool>> {
                 }
             })
             .collect();
-        write!(out, "\r\x1b[J{}", choices.join(separator))
+        write!(out, "\r\x1b[J{}", labels.join(separator))
             .and_then(|_| out.flush())
             .map_err(|e| e.to_string())?;
-        lines = if width < 120 { 3 } else { 1 };
+        lines = if width < 120 { choices.len() as u16 } else { 1 };
         match event::read().map_err(|e| e.to_string())? {
             Event::Key(k) if k.kind != KeyEventKind::Release => match k.code {
                 KeyCode::Up | KeyCode::Left => selected = selected.saturating_sub(1),
-                KeyCode::Down | KeyCode::Right => selected = (selected + 1).min(2),
+                KeyCode::Down | KeyCode::Right => selected = (selected + 1).min(choices.len() - 1),
                 KeyCode::Enter => {
                     write!(out, "\r\n").map_err(|e| e.to_string())?;
-                    return Ok(match selected {
-                        0 => Some(true),
-                        1 => Some(false),
-                        _ => None,
-                    });
+                    return Ok(ui::consent_mode(selected, temporary_only));
                 }
                 KeyCode::Esc => return Ok(None),
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -226,15 +217,11 @@ struct Worker {
 }
 struct App {
     input: Input,
-    invitation: String,
     temporary: bool,
-    mode_provided: bool,
-    progress: bool,
     palette: view::Palette,
     state: State,
     menu: Menu,
     servers: Vec<String>,
-    select_mode_after_server: bool,
     address: String,
     identity: String,
     message: String,
@@ -259,11 +246,6 @@ struct App {
 }
 impl App {
     fn new(options: Options) -> Self {
-        let value = if options.invite.is_empty() {
-            options.token
-        } else {
-            options.invite.clone()
-        };
         let mut identity = format!(
             "{}@{}",
             crate::terminal::username(),
@@ -271,16 +253,12 @@ impl App {
         );
         identity.retain(|c| !c.is_control());
         Self {
-            input: Input::new(value),
-            invitation: options.invite.clone(),
+            input: Input::new(options.token),
             temporary: options.temporary,
-            mode_provided: options.mode_provided,
-            progress: false,
             palette: view::Palette::current(),
             state: State::Disconnected,
             menu: Menu::Input,
             servers: vec![],
-            select_mode_after_server: false,
             address: String::new(),
             identity,
             message: String::new(),
@@ -354,7 +332,7 @@ impl App {
         self.height = height;
         self.refresh();
     }
-    fn begin(&mut self, choose_mode: bool) {
+    fn begin(&mut self) {
         let value = self.input.value.trim();
         if protocol::short_code(value) {
             self.servers = match storage::history() {
@@ -369,20 +347,15 @@ impl App {
                 }
             };
             self.menu = Menu::Server(0);
-            self.select_mode_after_server = choose_mode;
             self.message.clear();
             return;
         }
-        if connection::display_address(value).is_err() {
+        if connection::target_address(value).is_err() {
             self.message = tr("invalid.agenterm.connection.address.or.token").into();
             return;
         }
         self.message.clear();
-        if choose_mode {
-            self.menu = Menu::Mode(0);
-        } else {
-            self.connect();
-        }
+        self.menu = Menu::Mode(0);
     }
     fn connect(&mut self) {
         if self.worker.is_some() {
@@ -396,8 +369,6 @@ impl App {
                 return;
             }
         };
-        let invited = !self.invitation.is_empty() && value == self.invitation;
-        self.progress = invited;
         self.input.set(value.clone());
         self.address = clean(&address);
         self.state = State::Connecting;
@@ -419,7 +390,7 @@ impl App {
         let temporary = self.temporary;
         let workspace = self.workspace.clone();
         let thread = std::thread::spawn(move || {
-            connection::run(&value, invited, temporary, stop, reporter, workspace)
+            connection::run(&value, temporary, stop, reporter, workspace)
         });
         self.worker = Some(Worker {
             stopped,
@@ -443,7 +414,6 @@ impl App {
             } => {
                 self.address = clean(&token.connection_url());
                 self.input.set(token.encoded);
-                self.invitation.clear();
                 let release = server_version.map_or_else(
                     || tr("tui.connection.unknown_version").into(),
                     |version| format!("v{}", version.strip_prefix('v').unwrap_or(&version)),
@@ -615,15 +585,29 @@ impl App {
         match self.menu {
             Menu::Mode(mut selected) => {
                 match key.code {
-                    KeyCode::Up | KeyCode::Left => selected = 0,
-                    KeyCode::Down | KeyCode::Right => selected = 1,
+                    KeyCode::Up | KeyCode::Left => selected = selected.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Right => {
+                        selected = (selected + 1).min(ui::consent_choices(false).len() - 1)
+                    }
                     KeyCode::Esc => {
                         self.menu = Menu::Input;
                         return;
                     }
                     KeyCode::Enter => {
-                        self.temporary = selected == 0;
-                        self.connect();
+                        let temporary = ui::consent_mode(selected, false);
+                        let visible = temporary.is_none()
+                            || self.connection_form().height() <= self.body_height();
+                        self.menu = Menu::Input;
+                        if !visible {
+                            self.message = ui::text(
+                                "Enlarge the terminal to review authorization.",
+                                "请放大终端窗口后查看并确认授权。",
+                            )
+                            .into();
+                        } else if let Some(temporary) = temporary {
+                            self.temporary = temporary;
+                            self.connect();
+                        }
                         return;
                     }
                     _ if ctrl_c => {
@@ -652,7 +636,7 @@ impl App {
                             self.input.value.trim().to_ascii_uppercase()
                         ));
                         self.menu = Menu::Input;
-                        self.begin(self.select_mode_after_server);
+                        self.begin();
                         return;
                     }
                     _ if ctrl_c => {
@@ -692,7 +676,6 @@ impl App {
                     self.exiting = true;
                 } else {
                     self.input.set(String::new());
-                    self.invitation.clear();
                     self.message.clear();
                 }
             } else {
@@ -702,7 +685,7 @@ impl App {
         }
         if self.state == State::Disconnected {
             if key.code == KeyCode::Enter {
-                self.begin(!self.mode_provided);
+                self.begin();
             } else {
                 self.input.key(key);
             }
@@ -902,9 +885,12 @@ impl App {
     }
 }
 
-pub fn run(options: Options, shutdown: Arc<AtomicBool>, workspace: Option<PathBuf>) -> Result<()> {
-    let auto_connect =
-        !options.token.is_empty() || !options.invite.is_empty() || options.token_provided;
+pub fn run(
+    options: Options,
+    shutdown: Arc<AtomicBool>,
+    workspace: Option<PathBuf>,
+    authorized: bool,
+) -> Result<()> {
     let guard = TerminalGuard::enter(true).map_err(|e| e.to_string())?;
     let mut terminal =
         Terminal::new(CrosstermBackend::new(io::stdout())).map_err(|e| e.to_string())?;
@@ -913,8 +899,10 @@ pub fn run(options: Options, shutdown: Arc<AtomicBool>, workspace: Option<PathBu
     if let Ok((w, h)) = terminal::size() {
         app.resize(w, h);
     }
-    if auto_connect {
-        app.begin(false);
+    if authorized {
+        app.connect();
+    } else if !app.input.value.is_empty() {
+        app.begin();
     }
     let result = (|| -> io::Result<()> {
         app.refresh();

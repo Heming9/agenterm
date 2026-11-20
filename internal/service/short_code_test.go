@@ -42,14 +42,7 @@ func TestShortCodeLifetimeMatchesToken(t *testing.T) {
 			t.Fatal(err)
 		}
 		code := issued["short_code"].(string)
-		decoded, err := protocol.Decode(issued["invitation"].(string))
-		if err != nil {
-			t.Fatal(err)
-		}
-		expiry := s.invitations[decoded.Secret].expires
-		if !s.clientOwners[s.tokens[issued["client_token"].(string)]].expires.Equal(expiry) {
-			t.Fatal("expiry mismatch")
-		}
+		expiry := s.clientOwners[s.tokens[issued["client_token"].(string)]].expires
 		s.cleanupTokensLocked(expiry)
 		if _, ok := s.shortCodes[code]; ok {
 			t.Fatal("expired short code retained")

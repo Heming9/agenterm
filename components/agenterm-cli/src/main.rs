@@ -8,7 +8,7 @@ mod transport;
 mod tui;
 mod ui;
 
-use protocol::{Result, Token};
+use protocol::Result;
 use std::{
     io::{self, IsTerminal},
     sync::{
@@ -35,41 +35,26 @@ fn run() -> Result<()> {
     let Some(mut options) = options else {
         return Ok(());
     };
+    let startup_target = !options.token.is_empty() && !protocol::short_code(&options.token);
+    if startup_target {
+        let address = connection::target_address(&options.token)?;
+        let Some(temporary) = ui::consent(&address.server(), options.temporary_assistance)? else {
+            ui::line("Connection cancelled.", "已取消连接。");
+            return Ok(());
+        };
+        options.temporary = temporary;
+    }
     let workspace = options
         .temporary_assistance
         .then(storage::assistance_workspace)
         .transpose()?;
-    if workspace.is_some() {
-        Token::decode(&options.token)?;
-    }
-    if !options.invite.is_empty() {
-        let invitation = Token::decode(&options.invite)?;
-        if !options.consent {
-            match ui::consent(&invitation.address.http().server())? {
-                Some(temporary) => options.temporary = temporary,
-                None => {
-                    ui::line("Connection cancelled.", "已取消连接。");
-                    return Ok(());
-                }
-            }
-        }
-    }
     let stopped = Arc::new(AtomicBool::new(false));
     if !options.plain && io::stdin().is_terminal() && io::stdout().is_terminal() {
         install_signal(stopped.clone())?;
-        return tui::run(options, stopped, workspace);
-    }
-    if !options.invite.is_empty() {
-        ui::line(
-            "[3/4] Verifying invitation and connecting…",
-            "[3/4] 正在验证邀请并连接服务器…",
-        );
+        return tui::run(options, stopped, workspace, startup_target);
     }
     ui::heading();
-    let invited = !options.invite.is_empty();
-    if invited {
-        options.token = options.invite;
-    } else {
+    if !startup_target {
         if options.token.is_empty() && !options.token_provided {
             options.token = ui::input(ui::text(
                 "Connection token, short code, or short-code address: ",
@@ -93,15 +78,16 @@ fn run() -> Result<()> {
                 .ok_or("invalid server number")?;
             options.token = format!("{server}/c/{}", options.token.to_ascii_uppercase());
         }
-        ui::line(
-            "Connecting. Once connected, the server can execute commands with your current user permissions. Close this program to disconnect.",
-            "正在连接。连接后，服务器可使用当前用户权限执行命令。关闭程序即可断开连接。",
-        );
+        let address = connection::target_address(&options.token)?;
+        let Some(temporary) = ui::consent(&address.server(), false)? else {
+            ui::line("Connection cancelled.", "已取消连接。");
+            return Ok(());
+        };
+        options.temporary = temporary;
     }
     install_signal(stopped.clone())?;
     connection::run(
         &options.token,
-        invited,
         options.temporary,
         stopped,
         ui::Reporter::default(),

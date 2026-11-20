@@ -42,7 +42,7 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 
 1. 告诉 Agent 要完成的任务，让它为目标电脑创建邀请。
 2. 将邀请短链接私下发给目标电脑的使用者。服务端未提供短链接时，发送适合对方系统的连接命令。管理密钥和 `control_token` 由 Agent 保管。
-3. 在目标电脑上打开邀请链接，或直接运行收到的连接命令。首次使用时，在受邀页面选择「没有」，运行对应系统的命令并按提示授权。以前在这台电脑上运行过 Rust CLI 时，选择「用过」和「打开终端版并连接」，再确认授权方式。若浏览器无法打开客户端，可运行页面上的命令，或将连接令牌粘贴到 CLI。
+3. 在目标电脑上打开邀请链接，或直接运行收到的连接命令。已安装新版 Rust CLI 时，可在受邀页选择「用过」和「打开终端版」；首次使用或网页无法打开新版客户端时，运行对应系统的命令。核对服务器并允许或拒绝远控的操作都在 CLI 内完成，不在网页上授权。
 4. 保持 Agent 对话进行，等待设备上线后开始任务。对方可在客户端查看命令和输出，随时断开连接。
 5. 完成后关闭客户端或断开连接。
 
@@ -58,7 +58,7 @@ gemini mcp add --transport http --scope user agenterm https://agenterm.net/mcp
 
 目前维护的客户端为 [Rust CLI](../components/agenterm-cli/README.md)。粘贴连接令牌或短码地址即可连接。使用方向键或鼠标滚轮浏览，拖选文字复制。选中文字后可按 Esc 取消选择，再按 Ctrl+C 断开并返回连接界面。在连接界面中，Ctrl+C 先清空令牌，再按一次退出。
 
-临时连接空闲五分钟后自动断开，执行命令的时间不计入空闲时长。持久连接会保持到主动断开。通过受邀页面或安装命令连接时，以授权步骤中选择的模式为准。用令牌直接启动 CLI 时，可用 `-connection-mode=temporary` 或 `-connection-mode=persistent`，默认为 `temporary`。详见 [Rust CLI 的浏览器协议注册说明](../components/agenterm-cli/README.md#protocol-links)。
+临时连接空闲五分钟后自动断开，执行命令的时间不计入空闲时长。持久连接会保持到主动断开。无论从哪种入口打开邀请，都在 CLI 的授权提示中选择连接模式。详见 [Rust CLI 的浏览器协议注册说明](../components/agenterm-cli/README.md#protocol-links)。
 
 一键连接下载的客户端会保留在本机缓存中；关闭客户端后可以删除：
 

@@ -40,7 +40,7 @@ exec '` + strings.ReplaceAll(realTar, "'", "'\"'\"'") + `' "$@"
 	}
 }
 
-func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
+func TestShellInvitationDelegatesAuthorizationToClient(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires a POSIX shell")
 	}
@@ -60,7 +60,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 		}
 	}
 	name := "agenterm-client-cli-linux-amd64"
-	client := []byte("#!/bin/sh\nprintf 'arg=%s invitation=%s consent=%s\\n' \"$1\" \"$2\" \"$3\"\n")
+	client := []byte("#!/bin/sh\nif [ \"$1\" = -version ]; then printf '0.20.15\\n'; exit 0; fi\nprintf 'arg=%s token=%s\\n' \"$1\" \"$2\"\nif [ -t 0 ]; then printf 'client-input: '; read -r answer; printf 'received:%s\\n' \"$answer\"; fi\n")
 	archive := name + ".tar.xz"
 	for filename, data := range installerFixture(t, client) {
 		write(filepath.Join(assets, filename), data, 0o600)
@@ -103,58 +103,26 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invitation := issued["invitation"].(string)
 	decodedToken, err := protocol.Decode(issued["client_token"].(string))
 	if err != nil {
 		t.Fatal(err)
 	}
 	command := fmt.Sprintf("s=$(curl -fsSL %s)&&sh -c \"$s\"", shQuote(publicURL+prefix+"/c/"+decodedToken.Secret+".sh"))
 	cache := filepath.Join(root, "cache")
-	// Cancellation must happen before probing, creating a cache, or downloading.
-	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
-		before, _ := os.ReadFile(log)
-		cmd := exec.Command("sh", "-c", command)
-		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-		cmd.Stdin = strings.NewReader(answer)
-		out, err := cmd.CombinedOutput()
-		if err != nil || !strings.Contains(string(out), "已取消连接。") || strings.Contains(string(out), "连接进度") {
-			t.Fatalf("cancel with %q: %v\n%s", answer, err, out)
-		}
-		after, _ := os.ReadFile(log)
-		requests := string(after[len(before):])
-		if strings.Contains(requests, "/client") || strings.Contains(requests, "/downloads/") {
-			t.Fatalf("requests after cancellation: %s", requests)
-		}
-		if _, err := os.Stat(cache); !os.IsNotExist(err) {
-			t.Fatalf("cache created before consent: %v", err)
-		}
-	}
 	run := func() string {
 		t.Helper()
 		cmd := exec.Command("sh", "-c", command)
 		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-		cmd.Stdin = strings.NewReader("2\n")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("command failed: %v\n%s", err, out)
 		}
-		if !strings.Contains(string(out), "arg=-token invitation="+issued["client_token"].(string)) {
+		if !strings.Contains(string(out), "arg=-token token="+issued["client_token"].(string)) {
 			t.Fatalf("unexpected client output: %s", out)
 		}
-		if !strings.Contains(string(out), "consent=-connection-mode=persistent") {
-			t.Fatalf("persistent choice was not passed to client: %s", out)
-		}
 		output := string(out)
-		if strings.Count(output, "选择授权方式（↑/↓/←/→，回车确认）：") != 1 || !strings.Contains(output, "请确保你信任对方") {
-			t.Fatalf("missing or duplicate consent prompt: %s", output)
-		}
-		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "选择授权方式（↑/↓/←/→，回车确认）：", "连接进度", "[2/4]", "arg=-token"} {
-			index := strings.Index(output, stage)
-			if index <= previous {
-				t.Fatalf("unexpected stage order: %s", output)
-			}
-			previous = index
+		if strings.Contains(output, "选择授权方式") || strings.Contains(output, "-connection-mode") {
+			t.Fatalf("installer must leave authorization to the CLI: %s", output)
 		}
 		return output
 	}
@@ -163,12 +131,6 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	}
 	if output := run(); !strings.Contains(output, "本地客户端校验通过，跳过下载") {
 		t.Fatalf("second run: %s", output)
-	}
-	cmdTemporary := exec.Command("sh", "-c", command)
-	cmdTemporary.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+cache)
-	cmdTemporary.Stdin = strings.NewReader("1\n")
-	if out, err := cmdTemporary.CombinedOutput(); err != nil || !strings.Contains(string(out), "arg=-token invitation="+issued["client_token"].(string)+" consent=-connection-mode=temporary") {
-		t.Fatalf("temporary choice was not passed to client: %v\n%s", err, out)
 	}
 	logContent, err := os.ReadFile(log)
 	if err != nil {
@@ -220,7 +182,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	if pipeline != wantPipeline {
 		t.Fatalf("pipeline = %q, want %q", pipeline, wantPipeline)
 	}
-	for _, tc := range []struct{ input, want string }{{"3\r", "已取消连接。"}, {"2\r", "consent=-connection-mode=persistent"}} {
+	for _, tc := range []struct{ input, want string }{{"1\r", "received:1"}, {"2\r", "received:2"}} {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		cmd := exec.CommandContext(ctx, "sh", "-c", pipeline)
 		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+root, "XDG_CACHE_HOME="+filepath.Join(root, "pty-cache"), "TERM=xterm")
@@ -237,7 +199,7 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 			for {
 				n, err := terminal.Read(buffer)
 				output.Write(buffer[:n])
-				if !sent && strings.Contains(output.String(), "▶") {
+				if !sent && strings.Contains(output.String(), "client-input: ") {
 					sent = true
 					_, _ = terminal.Write([]byte(tc.input))
 				}
@@ -257,7 +219,6 @@ func TestShellInvitationConfirmsBeforePreparingClient(t *testing.T) {
 	}
 	// An expired token is rejected before an installer can be downloaded.
 	write(cached, client, 0o700)
-	_, _ = protocol.Decode(invitation)
 	state.mu.Lock()
 	state.clientOwners[state.tokens[issued["client_token"].(string)]].expires = time.Now().Add(-time.Second)
 	state.cleanupTokensLocked(time.Now())

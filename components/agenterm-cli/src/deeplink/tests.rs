@@ -43,7 +43,7 @@ fn private_file(path: &Path, contents: &str) {
 }
 
 #[test]
-fn links_normalize_to_the_same_options_as_go() {
+fn links_discard_legacy_mode_and_require_local_authorization() {
     for address in [
         "https://example.com/base/c/ab1234",
         "https://example.com/base/c/cHpg16F9g4-14A",
@@ -60,7 +60,6 @@ fn links_normalize_to_the_same_options_as_go() {
                     parse(&raw).unwrap(),
                     Link {
                         address: address.into(),
-                        mode: mode.map(String::from)
                     }
                 );
                 let args = vec![raw];
@@ -69,11 +68,11 @@ fn links_normalize_to_the_same_options_as_go() {
                 let options = Options::parse(normalized).unwrap().unwrap();
                 assert_eq!(options.token, address);
                 assert!(options.token_provided);
-                assert!(options.invite.is_empty());
-                assert_eq!(options.temporary, mode != Some("persistent"));
-                assert_eq!(options.mode_provided, mode.is_some());
+                assert!(options.temporary);
             }
         }
+        let raw = link(address, None).replacen("connect?", "authorize?", 1);
+        assert_eq!(arguments(vec![raw]).unwrap(), ["-token", address]);
     }
     let args = vec!["-token".into(), "test".into()];
     assert!(!is_launch(&args));
@@ -122,7 +121,7 @@ fn malformed_or_injected_links_never_become_command_flags() {
 }
 
 #[test]
-fn private_link_file_is_consumed_once_and_preserves_mode() {
+fn private_link_file_is_consumed_once() {
     let dir = Temp::new();
     let path = dir.0.join("agenterm-link.12345");
     let raw = link("https://example.com/base/c/ab1234", Some("persistent"));

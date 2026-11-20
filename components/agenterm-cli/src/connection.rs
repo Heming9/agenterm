@@ -22,17 +22,24 @@ pub fn connection_target(address: &Address) -> Address {
     target
 }
 
+pub fn target_address(value: &str) -> Result<Address> {
+    if value.starts_with("Agenterm_") {
+        Ok(Token::decode(value)?.address)
+    } else {
+        Ok(connection_target(&protocol::connection_address(value)?))
+    }
+}
+
 pub fn display_address(value: &str) -> Result<String> {
     if value.starts_with("Agenterm_") {
         Ok(Token::decode(value)?.connection_url())
     } else {
-        Ok(connection_target(&protocol::connection_address(value)?).url())
+        Ok(target_address(value)?.url())
     }
 }
 
 pub fn run(
     value: &str,
-    invited: bool,
     temporary: bool,
     stopped: Arc<AtomicBool>,
     reporter: Reporter,
@@ -51,24 +58,7 @@ pub fn run(
             .then(|| storage::lock(address))
             .transpose()
     };
-    let (token, reservation, validation) = if invited {
-        let invitation = Token::decode(value)?;
-        let reservation = reserve(&invitation.address)?;
-        if stopped.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        let validation_started = Instant::now();
-        let (token, server_version) =
-            transport::redeem(&invitation.invitation_url(), Some(&invitation.secret))?;
-        if token.address.url() != invitation.address.url() {
-            return Err("invitation resolved to a different server".into());
-        }
-        (
-            token,
-            reservation,
-            Some((server_version, validation_started.elapsed())),
-        )
-    } else if value.starts_with("Agenterm_") {
+    let (token, reservation, validation) = if value.starts_with("Agenterm_") {
         let token = Token::decode(value)?;
         let reservation = reserve(&token.address)?;
         (token, reservation, None)
@@ -80,7 +70,7 @@ pub fn run(
             return Ok(());
         }
         let validation_started = Instant::now();
-        let (token, server_version) = transport::redeem(&address, None)?;
+        let (token, server_version) = transport::redeem(&address)?;
         if token.address.url() != target.url() {
             return Err("connection URL resolved to a different server".into());
         }
@@ -104,7 +94,7 @@ pub fn run(
         return Ok(());
     }
     let manager = Manager::with_reporter(stopped.clone(), reporter, workspace);
-    let result = transport::run(&token, &manager, &stopped, temporary, invited, started);
+    let result = transport::run(&token, &manager, &stopped, temporary, started);
     manager.close();
     drop(reservation);
     result

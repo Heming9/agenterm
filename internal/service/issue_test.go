@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"context"
 
@@ -37,34 +36,25 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 			created := h.call(t, "admin-test", "create_client", tc.args, false).(map[string]any)
 			after := time.Now()
 			token := deviceTokenFromControl(created["control_token"].(string))
-			value := h.s.legacyInvitationForToken(t, token)
-			decoded, err := protocol.Decode(value)
-			if err != nil {
-				t.Fatal(err)
-			}
 			h.s.mu.Lock()
-			entry := h.s.invitations[decoded.Secret]
 			ownerExpiry := h.s.clientOwners[h.s.tokens[token]].expires
 			h.s.mu.Unlock()
-			if entry.expires.Before(before.Add(tc.want)) || entry.expires.After(after.Add(tc.want)) || ownerExpiry.Before(entry.expires) {
-				t.Fatalf("invitation expiry %s, owner expiry %s, want lifetime %s", entry.expires, ownerExpiry, tc.want)
-			}
-			if isMulti(tc.args) && !ownerExpiry.Equal(entry.expires) {
-				t.Fatal("multi-device token expiry was extended for a nonexistent short code")
+			if ownerExpiry.Before(before.Add(tc.want)) || ownerExpiry.After(after.Add(tc.want)) {
+				t.Fatalf("token expiry %s, want lifetime %s", ownerExpiry, tc.want)
 			}
 			expires, err := time.Parse(time.RFC3339, created["expires_at"].(string))
-			if err != nil || !expires.Equal(entry.expires.Truncate(time.Second)) {
+			if err != nil || !expires.Equal(ownerExpiry.Truncate(time.Second)) {
 				t.Fatalf("expires_at: %v %v", created["expires_at"], err)
 			}
 			if !strings.Contains(created["display_text"].(string), fmt.Sprintf("Invitation validity: %d seconds", int64(tc.want/time.Second))) || !strings.Contains(created["display_text"].(string), expires.UTC().Format("2006-01-02 15:04:05")+" UTC") {
 				t.Fatalf("display does not show configured lifetime and deadline: %v", created["display_text"])
 			}
-			// Expiry revokes the pending credential while installer links remain usable.
+			// A pending credential is usable until its deadline.
 			h.s.mu.Lock()
-			h.s.cleanupTokensLocked(entry.expires.Add(-time.Nanosecond))
-			_, retained := h.s.invitations[decoded.Secret]
+			h.s.cleanupTokensLocked(ownerExpiry.Add(-time.Nanosecond))
+			_, retained := h.s.tokens[token]
 			h.s.cleanupTokensLocked(ownerExpiry)
-			remaining := len(h.s.invitations) + len(h.s.shortCodes) + len(h.s.tokens) + len(h.s.clientOwners)
+			remaining := len(h.s.shortCodes) + len(h.s.tokens) + len(h.s.clientOwners)
 			h.s.mu.Unlock()
 			if !retained || remaining != 0 {
 				t.Fatalf("expiry cleanup: retained before=%v remaining at deadline=%d", retained, remaining)
@@ -74,13 +64,10 @@ func TestCreateClientInvitationTimeout(t *testing.T) {
 				for _, suffix := range []string{"", ".sh", ".ps1"} {
 					w := httptest.NewRecorder()
 					h.s.installWrapper(installerTestTag).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil))
-					if w.Code != http.StatusUnauthorized || strings.Contains(w.Body.String(), value) {
+					if w.Code != http.StatusUnauthorized {
 						t.Fatalf("expired installer %q: HTTP %d", suffix, w.Code)
 					}
 				}
-			}
-			if _, err := invite.Redeem(context.Background(), value); err == nil {
-				t.Fatal("expired invitation could still be redeemed")
 			}
 		})
 	}
@@ -95,7 +82,7 @@ func TestCreateClientRejectsInvalidTimeout(t *testing.T) {
 	}
 	h.s.mu.Lock()
 	defer h.s.mu.Unlock()
-	if len(h.s.tokens)+len(h.s.invitations)+len(h.s.shortCodes)+len(h.s.clientOwners) != 0 {
+	if len(h.s.tokens)+len(h.s.shortCodes)+len(h.s.clientOwners) != 0 {
 		t.Fatal("invalid timeout created credentials")
 	}
 }
@@ -282,10 +269,9 @@ func TestCreateClientDisplayLocalesAndModes(t *testing.T) {
 }
 
 func TestManagementCreatesAndUsesClient(t *testing.T) {
-	s := &runtimeState{enableShortCode: true, adminKey: "admin-test", tokens: map[string]string{}, clients: map[string]*client{}, invitations: map[string]invitation{}}
+	s := &runtimeState{enableShortCode: true, adminKey: "admin-test", tokens: map[string]string{}, clients: map[string]*client{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agenterm/mcp", s.mcp)
-	mux.HandleFunc("/agenterm/invite/redeem", s.redeemInvitation)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	s.clientURL = "ws" + ts.URL[4:] + "/agenterm/client"
@@ -331,15 +317,6 @@ func TestManagementCreatesAndUsesClient(t *testing.T) {
 		t.Fatalf("create: %v", created)
 	}
 	control := created["control_token"].(string)
-	token := deviceTokenFromControl(control)
-	invitation := s.legacyInvitationForToken(t, token)
-	got, err := invite.Redeem(context.Background(), invitation)
-	if err != nil || got != token {
-		t.Fatalf("redeem: %q %v", got, err)
-	}
-	if _, err := invite.Redeem(context.Background(), invitation); err == nil {
-		t.Fatal("invitation redeemed twice")
-	}
 	status, denied := call(control, "create_client", `{}`)
 	if status != http.StatusBadRequest {
 		t.Fatalf("client may create: status=%d %v", status, denied)

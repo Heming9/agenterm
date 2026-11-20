@@ -1,7 +1,6 @@
 package service
 
 import (
-	"agenterm/internal/protocol"
 	"agenterm/internal/version"
 	"context"
 	"encoding/json"
@@ -71,26 +70,4 @@ func redeemBrowserInvitation(ctx context.Context, link string) (string, error) {
 	}
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Token, err
-}
-
-func (s *runtimeState) legacyInvitationForToken(t *testing.T, deviceToken string) string {
-	t.Helper()
-	token, err := protocol.Decode(deviceToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for secret, entry := range s.invitations {
-		if entry.token == deviceToken {
-			token.Secret = secret
-			value, err := protocol.Encode(token)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return value
-		}
-	}
-	t.Fatal("runtime did not register an invitation for the device")
-	return ""
 }

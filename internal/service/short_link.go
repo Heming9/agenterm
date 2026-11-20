@@ -53,7 +53,7 @@ func serveInvitationPage(w http.ResponseWriter, r *http.Request, entry installer
 	}
 	shell, windows := installCommandsForURL(pageURL)
 	query := url.Values{"url": {pageURL.String()}}.Encode()
-	cliURL := "agenterm-cli://connect?" + query
+	cliURL := "agenterm-cli://authorize?" + query
 	lang := shortLinkLanguage(r.Header.Get("Accept-Language"))
 	switch r.URL.Query().Get("lang") {
 	case "en":
@@ -61,10 +61,6 @@ func serveInvitationPage(w http.ResponseWriter, r *http.Request, entry installer
 	case "zh-CN":
 		lang = "zh-CN"
 	}
-	baseURL := *pageURL
-	baseURL.Path = baseURL.Path[:strings.LastIndex(baseURL.Path, "/c/")]
-	baseURL.RawPath = ""
-	serverAddress := baseURL.String()
 	validity := connectionValidity(entry)
 	label, remaining := countdown(entry, time.Now())
 	if lang == "en" {
@@ -79,14 +75,14 @@ func serveInvitationPage(w http.ResponseWriter, r *http.Request, entry installer
 	}
 	var rendered bytes.Buffer
 	if err := shortLinkPage.Execute(&rendered, struct {
-		Windows, Shell, Token, Version, Server string
-		Language                               string
-		Text                                   map[string]string
-		CountdownLabel, CountdownFallback      string
-		Remaining                              int64
-		CLIURL                                 template.URL
-		TemporaryAssistance                    bool
-	}{windows, shell, entry.Token, version.Current, serverAddress, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL), entry.TemporaryAssistance}); err != nil {
+		Windows, Shell, Token, Version    string
+		Language                          string
+		Text                              map[string]string
+		CountdownLabel, CountdownFallback string
+		Remaining                         int64
+		CLIURL                            template.URL
+		TemporaryAssistance               bool
+	}{windows, shell, entry.Token, version.Current, lang, shortLinkTexts[lang], label, fallback, remaining, template.URL(cliURL), entry.TemporaryAssistance}); err != nil {
 		http.Error(w, "Unable to render invitation page", http.StatusInternalServerError)
 		return
 	}

@@ -11,24 +11,27 @@ import (
 	"testing"
 )
 
-func TestShellAuthorizationLanguage(t *testing.T) {
+func TestShellInstallerLanguage(t *testing.T) {
 	for _, tc := range []struct{ locale, want string }{
-		{"zh-CN", "选择授权方式"}, {"en", "Choose authorization"}, {"ja-JP", "Choose authorization"}, {"zh-TW", "Choose authorization"},
+		{"zh-CN", "准备客户端"}, {"en", "Preparing client"}, {"ja-JP", "Preparing client"}, {"zh-TW", "Preparing client"},
 	} {
 		t.Run(tc.locale, func(t *testing.T) {
 			script, err := Script("install.sh")
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(t.TempDir(), "install.sh")
+			dir := t.TempDir()
+			path := filepath.Join(dir, "install.sh")
 			if err := os.WriteFile(path, script, 0600); err != nil {
 				t.Fatal(err)
 			}
+			if err := os.WriteFile(filepath.Join(dir, "curl"), []byte("#!/bin/sh\nexit 17\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
 			cmd := exec.Command("sh", path, "example", "https://example.test/downloads/v1")
-			cmd.Env = append(os.Environ(), "AGENTERM_LANG="+tc.locale)
-			cmd.Stdin = strings.NewReader("n\n")
+			cmd.Env = append(os.Environ(), "AGENTERM_LANG="+tc.locale, "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir, "XDG_CACHE_HOME="+dir)
 			out, err := cmd.CombinedOutput()
-			if err != nil || !strings.Contains(string(out), tc.want) {
+			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 17 || !strings.Contains(string(out), tc.want) {
 				t.Fatalf("output %q, error %v", out, err)
 			}
 			logo := theme.TerminalLogo()
@@ -39,8 +42,8 @@ func TestShellAuthorizationLanguage(t *testing.T) {
 				!strings.Contains(string(out), "  "+logo[2]+"  Agenterm") {
 				t.Fatalf("missing compact banner or terminal logo: %s", out)
 			}
-			if strings.Contains(string(out), "Connection progress") || strings.Contains(string(out), "连接进度") || regexp.MustCompile(`\[[0-9]+/[0-9]+\]`).Match(out) {
-				t.Fatalf("authorization is included in connection progress: %s", out)
+			if strings.Contains(string(out), "Choose authorization") || strings.Contains(string(out), "选择授权方式") {
+				t.Fatalf("installer prompted for authorization: %s", out)
 			}
 		})
 	}

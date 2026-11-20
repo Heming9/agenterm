@@ -156,7 +156,6 @@ func (s *runtimeState) ingress(serverSocket string) http.Handler {
 	prefix := pathPrefix(s.clientURL)
 	mux.HandleFunc(prefix+"/client", s.connect)
 	mux.HandleFunc(prefix+"/client/", s.connect)
-	mux.HandleFunc(prefix+"/invite/redeem", s.redeemInvitation)
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/", proxy)
 	return observeHTTP(mux, false, func(r *http.Request) string { return publicRoute(r.URL.Path, prefix) })

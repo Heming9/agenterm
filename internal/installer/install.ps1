@@ -2,7 +2,7 @@
 # Project: https://github.com/Heming9/agenterm
 # SPDX-License-Identifier: Apache-2.0
 # License: https://www.apache.org/licenses/LICENSE-2.0
-param([AllowEmptyString()][string]$Invitation, [Parameter(Mandatory=$true)][string]$Base, [string]$CredentialKind = "invitation", [string]$InstallMode = "cached")
+param([AllowEmptyString()][string]$Token, [Parameter(Mandatory=$true)][string]$Base, [string]$InstallMode = "cached")
 $ErrorActionPreference = 'Stop'
 $Version = '@RELEASE_TAG@'
 $language = if ($env:AGENTERM_LANG -and $env:AGENTERM_LANG -ne 'auto') { $env:AGENTERM_LANG } else { [System.Globalization.CultureInfo]::CurrentUICulture.Name }
@@ -23,7 +23,6 @@ function Write-Styled([string]$Message, [string]$Color = '') {
 }
 function Say([string]$Key) {
   $color = switch ($Key) {
-    'installer.connection.progress' { '@COLOR_PRIMARY@'; break }
     'installer.2.4.preparing.client' { '@COLOR_PRIMARY@'; break }
     'installer.cached.client.verified.skipping.download' { '@COLOR_SUCCESS@'; break }
     'installer.client.verified' { '@COLOR_SUCCESS@'; break }
@@ -47,61 +46,7 @@ function Show-Banner {
   Write-Host (Text 'installer.project.s' @('https://github.com/Heming9/agenterm'))
   Say 'installer.license'
 }
-$origin = $Base -replace '/downloads/[^/]+$', ''
 Show-Banner
-Write-Host ''
-Write-Styled (Text 'installer.remote.control.authorization') '@COLOR_WARNING@'
-Write-Host (Text 'installer.server.s' @($origin))
-Say 'installer.the.server.can.control.this.computer.with'
-Write-Host ''
-Say 'installer.consent.menu'
-$choice = 0
-$numberPrompt = 'installer.consent.number'
-if ($InstallMode -eq 'temporary-assistance') {
-  $choices = @((Text 'installer.consent.allow'), (Text 'installer.consent.no'))
-  $numberPrompt = 'installer.consent.binary.number'
-} else {
-  $choices = @((Text 'installer.consent.temporary'), (Text 'installer.consent.persistent'), (Text 'installer.consent.no'))
-}
-$lastChoice = $choices.Count - 1
-if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
-  $previousLines = 0
-  while ($true) {
-    $vertical = [Console]::WindowWidth -lt 120
-    if ($previousLines -gt 0) {
-      $top = [Math]::Max(0, [Console]::CursorTop - ($previousLines - 1))
-      for ($line = 0; $line -lt $previousLines; $line++) {
-        [Console]::SetCursorPosition(0, $top + $line)
-        Write-Host (' ' * [Math]::Max(0, [Console]::WindowWidth - 1)) -NoNewline
-      }
-      [Console]::SetCursorPosition(0, $top)
-    }
-    Write-Host "`r" -NoNewline
-    for ($i = 0; $i -lt $choices.Count; $i++) {
-      if ($i -eq $choice) {
-        if ($useColor) { Write-Host (" ▶ " + $choices[$i] + " ") -ForegroundColor Black -BackgroundColor White -NoNewline }
-        else { Write-Host (" ▶ " + $choices[$i] + " ") -NoNewline }
-      } else { Write-Host ("   " + $choices[$i] + " ") -NoNewline }
-      if ($vertical -and $i -lt $lastChoice) { Write-Host '   ' } else { Write-Host '   ' -NoNewline }
-    }
-    $previousLines = if ($vertical) { $choices.Count } else { 1 }
-    $key = [Console]::ReadKey($true)
-    if ($key.Key -eq 'Enter') { break }
-    if (($key.Key -eq 'LeftArrow' -or $key.Key -eq 'UpArrow') -and $choice -gt 0) { $choice-- }
-    if (($key.Key -eq 'RightArrow' -or $key.Key -eq 'DownArrow') -and $choice -lt $lastChoice) { $choice++ }
-  }
-  Write-Host ''
-} else {
-  $numberedChoices = for ($i = 0; $i -lt $choices.Count; $i++) { "{0}. {1}" -f ($i + 1), $choices[$i] }
-  Write-Host ($numberedChoices -join '    ')
-  Write-Host (Text $numberPrompt) -NoNewline
-  $answer = [Console]::ReadLine()
-  if ($answer -eq '1') { $choice = 0 } elseif ($answer -eq '2') { $choice = 1 } else { $choice = $lastChoice }
-}
-if ($choice -eq $lastChoice) { Say 'installer.connection.cancelled'; return }
-$clientOptions = @()
-if ($choice -eq 0) { $clientOptions += '-connection-mode=temporary' } else { $clientOptions += '-connection-mode=persistent' }
-Say 'installer.connection.progress'
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($architecture) { 'x64' { $arch = 'amd64' } 'arm64' { $arch = 'arm64' } default { throw (Text 'installer.unsupported.architecture') } }
 Say 'installer.2.4.preparing.client'
@@ -180,17 +125,25 @@ try {
     }
     Say 'installer.client.verified'
   }
-  # Keep the client in the language used for the authorization prompt, even
-  # when Windows display language and regional format are different.
+  $previousSkip = $env:AGENTERM_SKIP_LINK_REGISTRATION
+  try {
+    $env:AGENTERM_SKIP_LINK_REGISTRATION = '1'
+    $clientVersion = & $program -version
+    if ($LASTEXITCODE -ne 0 -or $clientVersion -isnot [string] -or $clientVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$clientVersion -lt [version]'0.20.15') {
+      throw (Text 'installer.client.authorization.version')
+    }
+  } finally {
+    $env:AGENTERM_SKIP_LINK_REGISTRATION = $previousSkip
+  }
   $previousLanguage = $env:AGENTERM_LANG
   try {
     $env:AGENTERM_LANG = if ($chinese) { 'zh-CN' } else { 'en' }
     if ($InstallMode -eq 'temporary-assistance') {
-      & $program -token $Invitation -temporary-assistance
-    } elseif ($Invitation) {
-      if ($CredentialKind -eq "token" -or $Invitation -match "^https?://") { & $program -token $Invitation @clientOptions } else { & $program -invite $Invitation -consent-confirmed @clientOptions }
+      & $program -token $Token -temporary-assistance
+    } elseif ($Token) {
+      & $program -token $Token
     } else {
-      & $program -token= @clientOptions
+      & $program -token=
     }
     $clientExitCode = $LASTEXITCODE
   } finally {

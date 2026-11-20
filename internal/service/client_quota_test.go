@@ -96,11 +96,7 @@ func TestQuotaReclaimsOldestUnusedAndExpired(t *testing.T) {
 			t.Fatal("valid token removed")
 		}
 	}
-	decoded, _ := protocol.Decode(third["invitation"].(string))
-	entry := s.invitations[decoded.Secret]
-	entry.expires = time.Now().Add(-time.Second)
-	s.invitations[decoded.Secret] = entry
-	s.clientOwners[s.tokens[third["client_token"].(string)]].expires = entry.expires
+	s.clientOwners[s.tokens[third["client_token"].(string)]].expires = time.Now().Add(-time.Second)
 	if _, err := s.createClient("192.0.2.2"); err != nil {
 		t.Fatal(err)
 	}
@@ -184,8 +180,8 @@ func TestQuotaConcurrentCreation(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if len(s.tokens) != 5 || len(s.invitations) != 5 {
-		t.Fatalf("got %d tokens, %d invitations", len(s.tokens), len(s.invitations))
+	if len(s.tokens) != 5 || len(s.clientOwners) != 5 {
+		t.Fatalf("got %d tokens, %d owners", len(s.tokens), len(s.clientOwners))
 	}
 }
 

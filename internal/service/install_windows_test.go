@@ -24,7 +24,7 @@ func TestPowerShellInvitationInstaller(t *testing.T) {
 	source := filepath.Join(root, "main.go")
 	if err := os.WriteFile(source, []byte(`package main
 import ("fmt"; "os"; "strconv")
-func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invitation=%s consent=%s lang=%s\n", args[0], args[1], args[2], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
+func main() { args := append(os.Args[1:], "", ""); if args[0] == "-version" { version := os.Getenv("AGENTERM_TEST_CLIENT_VERSION"); if version == "" { version = "0.20.15" }; fmt.Println(version); return }; fmt.Printf("arg=%s token=%s lang=%s\n", args[0], args[1], os.Getenv("AGENTERM_LANG")); code, _ := strconv.Atoi(os.Getenv("AGENTERM_TEST_CLIENT_EXIT")); os.Exit(code) }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,6 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := issued["invitation"].(string)
 	_, command := installCommands(issued["client_token"].(string), "")
 	forcedFormat := ""
 	customPrefix := ""
@@ -106,51 +105,26 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	for _, answer := range []string{"n\n", "\n", "", "yes\n"} {
-		out, err := runWithInput(answer)
-		if err != nil || !strings.Contains(out, "已取消连接。") || strings.Contains(out, "连接进度") {
-			t.Fatalf("cancel with %q: %v\n%s", answer, err, out)
-		}
-		if probeRequests.Load() != 0 || manifestRequests.Load() != 0 || archiveRequests.Load() != 0 {
-			t.Fatal("installer probed or downloaded before consent")
-		}
-		if _, err := os.Stat(filepath.Join(root, "local")); !os.IsNotExist(err) {
-			t.Fatalf("cache created before consent: %v", err)
-		}
-	}
-	run := func() (string, error) { return runWithInput("2\n") }
+	run := func() (string, error) { return runWithInput("") }
 	for i, message := range []string{"正在下载客户端", "本地客户端校验通过，跳过下载"} {
 		out, err := run()
-		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-token invitation="+issued["client_token"].(string)) {
+		if err != nil || !strings.Contains(out, message) || !strings.Contains(out, "arg=-token token="+issued["client_token"].(string)) || strings.Contains(out, "选择授权方式") {
 			t.Fatalf("run %d: %v\n%s", i, err, out)
 		}
-		if !strings.Contains(out, "consent=-connection-mode=persistent") {
-			t.Fatalf("persistent choice was not passed to client: %s", out)
-		}
-		if strings.Count(out, "选择授权方式（↑/↓/←/→，回车确认）：") != 1 || !strings.Contains(out, "请确保你信任对方") {
-			t.Fatalf("missing or duplicate consent prompt: %s", out)
-		}
-		previous := -1
-		for _, stage := range []string{"⚠️ 远程控制授权", "选择授权方式（↑/↓/←/→，回车确认）：", "连接进度", "[2/4]", "arg=-token"} {
-			index := strings.Index(out, stage)
-			if index <= previous {
-				t.Fatalf("unexpected stage order: %s", out)
-			}
-			previous = index
-		}
-	}
-	if out, err := runWithInput("1\n"); err != nil || !strings.Contains(out, "consent=-connection-mode=temporary ") {
-		t.Fatalf("temporary choice was not passed to client: %v\n%s", err, out)
 	}
 	if archiveRequests.Load() != 1 {
 		t.Fatalf("cache not reused: downloads=%d", archiveRequests.Load())
 	}
+	customPrefix = "$env:AGENTERM_LANG = 'en'; $env:AGENTERM_TEST_CLIENT_VERSION = '0.20.12'; "
+	if out, err := run(); err == nil || !strings.Contains(out, "0.20.15 or newer is required") || strings.Contains(out, "arg=-token") {
+		t.Fatalf("old client must not receive any credentials: %v\n%s", err, out)
+	}
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; [Threading.Thread]::CurrentThread.CurrentCulture = 'zh-CN'; $env:AGENTERM_LANG = 'auto'; `
-	if out, err := run(); err != nil || !strings.Contains(out, "Choose authorization") || !strings.Contains(out, "lang=en") || !strings.Contains(out, "restored-lang=auto") {
+	if out, err := run(); err != nil || !strings.Contains(out, "lang=en") || !strings.Contains(out, "restored-lang=auto") {
 		t.Fatalf("display language differs from regional format: %v\n%s", err, out)
 	}
 	customPrefix = `[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $env:AGENTERM_LANG = 'zh-CN'; `
-	if out, err := run(); err != nil || !strings.Contains(out, "选择授权方式") || !strings.Contains(out, "lang=zh-CN") || !strings.Contains(out, "restored-lang=zh-CN") {
+	if out, err := run(); err != nil || !strings.Contains(out, "lang=zh-CN") || !strings.Contains(out, "restored-lang=zh-CN") {
 		t.Fatalf("explicit language override: %v\n%s", err, out)
 	}
 	customPrefix = ""
@@ -177,12 +151,11 @@ func main() { args := append(os.Args[1:], "", "", ""); fmt.Printf("arg=%s invita
 		if err := os.WriteFile(cached, []byte("corrupted"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if out, err := run(); err != nil || !strings.Contains(out, "arg=-token invitation="+issued["client_token"].(string)) || choice.count.Load() != before+1 {
+		if out, err := run(); err != nil || !strings.Contains(out, "arg=-token token="+issued["client_token"].(string)) || choice.count.Load() != before+1 {
 			t.Fatalf("%s fallback failed: %v %s", choice.format, err, out)
 		}
 	}
 	forcedFormat = ""
-	_, _ = protocol.Decode(value)
 	state.mu.Lock()
 	state.clientOwners[state.tokens[issued["client_token"].(string)]].expires = time.Now().Add(-time.Second)
 	state.mu.Unlock()

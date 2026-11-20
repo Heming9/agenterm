@@ -103,7 +103,7 @@ func TestShortLinkPage(t *testing.T) {
 				if !strings.Contains(res.Header.Get("Content-Security-Policy"), "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'") {
 					t.Fatal("script CSP hash does not match response")
 				}
-				if !strings.Contains(content, `src="data:image/webp;base64,`) || !strings.Contains(content, "打开终端版并连接") {
+				if !strings.Contains(content, `src="data:image/webp;base64,`) || !strings.Contains(content, "打开终端版") {
 					t.Fatal("incorrect page content")
 				}
 			}
@@ -167,8 +167,8 @@ func TestShortLinkPage(t *testing.T) {
 				}
 				body := string(data)
 				english := html.UnescapeString(body)
-				if !strings.Contains(english, "Server: ") || !strings.Contains(english, "<strong>"+origin+prefix+"</strong>") || !strings.Contains(english, "accessing or modifying files") {
-					t.Fatal("missing English authorization details")
+				if !strings.Contains(english, "updated Agenterm terminal client to review and authorize remote control") || strings.Contains(english, `<dialog`) {
+					t.Fatal("invitation page should hand authorization off to the CLI")
 				}
 				if res.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="en">`) || !strings.Contains(body, "Request to connect to this computer") || !strings.Contains(body, "How to use?") || !strings.Contains(body, "Expires in ") || strings.Contains(body, "如何使用") || !strings.Contains(strings.Join(res.Header.Values("Vary"), ","), "Accept-Language") {
 					t.Fatalf("language %q: status=%d body=%s", languageHeader, res.StatusCode, body)
@@ -185,11 +185,8 @@ func TestShortLinkPage(t *testing.T) {
 				if !strings.Contains(text, theme.WebCSS()) {
 					t.Fatal("invitation page did not render the embedded theme")
 				}
-				if !strings.Contains(text, "允许授权（临时连接）") || !strings.Contains(text, "允许授权（持久连接）") || !strings.Contains(text, "拒绝授权") {
-					t.Fatal("missing authorization options")
-				}
-				if !strings.Contains(text, "服务器：") || !strings.Contains(text, "<strong>"+origin+prefix+"</strong>") || !strings.Contains(text, "访问和修改文件") {
-					t.Fatal("missing Chinese authorization details")
+				if !strings.Contains(text, "在客户端内确认是否允许远程控制") || strings.Contains(text, `<dialog`) || strings.Contains(text, `data-mode=`) {
+					t.Fatal("invitation page should not supply authorization or a connection mode")
 				}
 				if !strings.Contains(text, `src="data:image/webp;base64,`) || !strings.Contains(text, "<script>") || strings.Contains(text, "short-link-countdown.js") || !strings.Contains(res.Header.Get("Content-Security-Policy"), "'sha256-"+shortLinkScriptHash+"'") {
 					t.Fatal("page is not self-contained")
@@ -200,8 +197,8 @@ func TestShortLinkPage(t *testing.T) {
 				if strings.Contains(text, "agenterm://connect") || strings.Contains(text, "打开桌面版并连接") {
 					t.Fatal("invitation still advertises the discontinued GUI")
 				}
-				wantCLIURL := "agenterm-cli://connect?" + url.Values{"url": {link}}.Encode()
-				if !strings.Contains(text, `data-url="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版并连接") {
+				wantCLIURL := "agenterm-cli://authorize?" + url.Values{"url": {link}}.Encode()
+				if !strings.Contains(text, `href="`+wantCLIURL+`"`) || !strings.Contains(text, "打开终端版") {
 					t.Fatalf("missing CLI deep link %q", wantCLIURL)
 				}
 				if res.StatusCode != http.StatusOK || !strings.Contains(text, token) || !strings.Contains(text, powershell) || !strings.Contains(text, shell) || strings.Contains(text, issued["control_token"].(string)) {
@@ -413,13 +410,6 @@ func TestInvitationFormats(t *testing.T) {
 			if result := request(http.MethodPost, tokenPath, "curl/8.0"); result.Code != http.StatusOK ||
 				result.Header().Get("Content-Type") != "application/json" || !strings.Contains(result.Body.String(), token) {
 				t.Fatalf("installed client could not resolve the token link: %d", result.Code)
-			}
-			invitation, err := protocol.Decode(issued["invitation"].(string))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result := request(http.MethodPost, "/c/"+invitation.Secret, "curl/8.0"); result.Code != http.StatusUnauthorized {
-				t.Fatalf("one-time invitation secret accepted by the connection URL route: %d", result.Code)
 			}
 		})
 	}

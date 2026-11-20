@@ -1,12 +1,10 @@
 package service
 
 import (
-	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	terminal "agenterm/internal/terminalapi"
 	"agenterm/internal/version"
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -246,16 +244,9 @@ func TestMultiDeviceParallelRoutingAndIsolation(t *testing.T) {
 	}
 }
 
-func TestMultiDeviceInvitationsAndQuota(t *testing.T) {
+func TestMultiDeviceTokenReuseAndQuota(t *testing.T) {
 	h := newMultiHarness(t, 2)
 	token := h.create(t, true)
-	value := h.s.legacyInvitationForToken(t, token)
-	for i := 0; i < 2; i++ {
-		got, err := invite.Redeem(context.Background(), value)
-		if err != nil || got != token {
-			t.Fatalf("reusable redemption: %q %v", got, err)
-		}
-	}
 	ws, _ := h.connect(t, token, "one")
 	h.connect(t, token, "two")
 	if conn, resp, err := h.dial(token, "three"); err == nil {
@@ -267,15 +258,10 @@ func TestMultiDeviceInvitationsAndQuota(t *testing.T) {
 		}
 		resp.Body.Close()
 	}
-	decoded, _ := protocol.Decode(value)
+	decoded, _ := protocol.Decode(token)
 	h.s.mu.Lock()
-	entry := h.s.invitations[decoded.Secret]
-	entry.expires = time.Now().Add(-time.Second)
-	h.s.invitations[decoded.Secret] = entry
+	h.s.clientOwners[decoded.Secret].expires = time.Now().Add(-time.Second)
 	h.s.mu.Unlock()
-	if _, err := invite.Redeem(context.Background(), value); err == nil {
-		t.Fatal("expired invitation redeemed")
-	}
 	ws.Close()
 	tokenData, _ := protocol.Decode(token)
 	deadline := time.Now().Add(time.Second)
@@ -339,16 +325,12 @@ func TestMCPToolDiscoveryReplacesWaitTool(t *testing.T) {
 	}
 }
 
-func TestTokenIdentifierMatchesInvitationAndRoute(t *testing.T) {
+func TestTokenIdentifierMatchesRoute(t *testing.T) {
 	h := newMultiHarness(t, 0)
 	encoded := h.create(t, false)
 	token, err := protocol.Decode(encoded)
 	if err != nil || !protocol.ValidTokenIdentifier(token.Identifier) {
 		t.Fatalf("invalid identifier: %#v %v", token, err)
-	}
-	invitation, err := protocol.Decode(h.s.legacyInvitationForToken(t, encoded))
-	if err != nil || invitation.Identifier != token.Identifier || invitation.Secret == token.Secret {
-		t.Fatalf("invitation identifier or secret: %#v %v", invitation, err)
 	}
 	other := "aaaaaa"
 	if token.Identifier == other {

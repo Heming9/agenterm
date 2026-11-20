@@ -1,5 +1,5 @@
-//! Protocol launches follow the former Go CLI: connection URL + optional mode,
-//! per-user registration, a stable executable, and private macOS link files.
+//! Protocol launches use per-user registration, a stable executable, and private
+//! macOS link files. Legacy URL mode parameters do not select a connection mode.
 #[cfg(any(target_os = "linux", test))]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -28,7 +28,6 @@ const INVALID: &str = "invalid Agenterm link";
 #[derive(Debug, PartialEq, Eq)]
 pub struct Link {
     pub address: String,
-    pub mode: Option<String>,
 }
 
 pub fn parse(raw: &str) -> Result<Link> {
@@ -38,7 +37,10 @@ pub fn parse(raw: &str) -> Result<Link> {
     }
     let (endpoint, query) = raw.split_once('?').ok_or(INVALID)?;
     let endpoint = endpoint.strip_prefix(SCHEME).ok_or(INVALID)?;
-    if endpoint != "://connect" && endpoint != "://connect/" {
+    if !matches!(
+        endpoint,
+        "://authorize" | "://authorize/" | "://connect" | "://connect/"
+    ) {
         return Err(INVALID.into());
     }
     let mut address = None;
@@ -63,7 +65,7 @@ pub fn parse(raw: &str) -> Result<Link> {
     if !address.contains("://") || protocol::connection_address(address.trim()).is_err() {
         return Err(INVALID.into());
     }
-    Ok(Link { address, mode })
+    Ok(Link { address })
 }
 fn decode_query(raw: &str) -> Result<String> {
     fn hex(b: u8) -> Option<u8> {
@@ -109,11 +111,7 @@ pub fn arguments(args: Vec<String>) -> Result<Vec<String>> {
         return Ok(args);
     };
     let link = parse(&raw)?;
-    let mut args = vec!["-token".into(), link.address];
-    if let Some(mode) = link.mode {
-        args.extend(["-connection-mode".into(), mode]);
-    }
-    Ok(args)
+    Ok(vec!["-token".into(), link.address])
 }
 
 fn config_dir() -> Result<PathBuf> {

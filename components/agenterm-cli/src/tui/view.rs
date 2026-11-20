@@ -1,5 +1,9 @@
 use super::{App, Menu, State, clean, colors};
-use crate::{protocol::VERSION, ui::tr};
+use crate::{
+    connection,
+    protocol::VERSION,
+    ui::{self, tr},
+};
 use ratatui::{
     Frame,
     style::{Color, Modifier, Style},
@@ -44,12 +48,7 @@ impl App {
     fn status(&self) -> String {
         match self.state {
             State::Disconnected | State::Disconnecting => tr("disconnected.2").into(),
-            State::Connecting => tr(if self.progress {
-                "3.4.connecting"
-            } else {
-                "connecting"
-            })
-            .into(),
+            State::Connecting => tr("connecting").into(),
             State::Connected => tr(if self.temporary {
                 "connected.temporary"
             } else {
@@ -272,47 +271,26 @@ impl App {
         match self.menu {
             Menu::Mode(selected) => {
                 form.blank();
-                form.line(vec![(
-                    format!(" {}", tr("connection.mode.select")),
-                    default,
-                )]);
-                let labels: Vec<String> = [
-                    tr("connection.mode.temporary"),
-                    tr("connection.mode.persistent"),
-                ]
-                .iter()
-                .enumerate()
-                .map(|(i, s)| {
-                    if i == selected {
-                        format!(" ▶ {s} ")
-                    } else {
-                        format!("   {s} ")
+                if let Ok(address) = connection::target_address(self.input.value.trim()) {
+                    for line in ui::authorization_prompt(&address.server())
+                        .lines()
+                        .filter(|line| !line.is_empty())
+                    {
+                        form.line(vec![(format!(" {line}"), default)]);
                     }
-                })
-                .collect();
-                let horizontal = self.metrics.width(&labels.join("   ")) < self.body_width();
-                let styles: Vec<Style> = (0..2)
-                    .map(|i| {
-                        if i == selected {
+                }
+                for (index, choice) in ui::consent_choices(false).iter().enumerate() {
+                    let (marker, style) = if index == selected {
+                        (
+                            " ▶ ",
                             palette
                                 .text(colors::PRIMARY)
-                                .add_modifier(Modifier::REVERSED)
-                        } else {
-                            default
-                        }
-                    })
-                    .collect();
-                if horizontal {
-                    form.line(vec![
-                        (" ".into(), default),
-                        (labels[0].clone(), styles[0]),
-                        ("   ".into(), default),
-                        (labels[1].clone(), styles[1]),
-                    ]);
-                } else {
-                    for i in 0..2 {
-                        form.line(vec![(" ".into(), default), (labels[i].clone(), styles[i])]);
-                    }
+                                .add_modifier(Modifier::REVERSED),
+                        )
+                    } else {
+                        ("   ", default)
+                    };
+                    form.line(vec![(format!(" {marker}{} ", tr(choice)), style)]);
                 }
             }
             Menu::Server(selected) => {

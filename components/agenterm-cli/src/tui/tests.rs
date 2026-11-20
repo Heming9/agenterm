@@ -105,7 +105,6 @@ fn screens_match_reference() {
                     app.client_event(ClientEvent::Connecting(app.address.clone()));
                 }
                 if scenario == "invitation" {
-                    app.progress = true;
                     app.client_event(ClientEvent::Redeemed {
                         token: protocol::Token {
                             encoded: "test-token".into(),
@@ -275,6 +274,13 @@ fn mode_cancel_and_ctrl_c_match_go() {
     app.key(key(KeyCode::Enter));
     assert_eq!(app.menu, Menu::Mode(0));
     assert!(app.worker.is_none());
+    app.key(key(KeyCode::Right));
+    app.key(key(KeyCode::Right));
+    assert_eq!(app.menu, Menu::Mode(2));
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.menu, Menu::Input);
+    assert!(app.worker.is_none());
+    app.key(key(KeyCode::Enter));
     app.key(key(KeyCode::Right));
     assert_eq!(app.menu, Menu::Mode(1));
     app.key(key(KeyCode::Esc));

@@ -255,10 +255,6 @@
     "en": "connection mode: temporary or persistent",
     "zh-CN": "连接模式：temporary（临时）或 persistent（持久）"
   },
-  "3.4.connecting": {
-    "en": "[3/4] Connecting…",
-    "zh-CN": "[3/4] 正在连接…"
-  },
   "connection.token": {
     "en": "Token or code:",
     "zh-CN": "连接 Token / 短码："
@@ -347,14 +343,6 @@
     "en": "use plain text output",
     "zh-CN": "使用纯文本输出"
   },
-  "one.time.invitation": {
-    "en": "one-time invitation",
-    "zh-CN": "一次性邀请"
-  },
-  "connection.consent.already.obtained.by.the.installer": {
-    "en": "connection consent already obtained by the installer",
-    "zh-CN": "安装器已取得连接授权"
-  },
   "remote.control.authorization.prompt": {
     "en": "⚠️ Remote control authorization\n\nServer: %s\nThe server can control this computer with your current account permissions, including executing commands and accessing or modifying files. Make sure you trust the other party and understand the purpose of this connection.\n",
     "zh-CN": "⚠️ 远程控制授权\n\n服务器：%s\n连接后，对方将能够以你当前账户的权限控制本机，包括执行命令、访问和修改文件。请确保你信任对方，并了解此次连接的用途。\n"
@@ -362,10 +350,6 @@
   "connection.cancelled": {
     "en": "Connection cancelled.",
     "zh-CN": "已取消连接。"
-  },
-  "3.4.verifying.invitation.and.connecting": {
-    "en": "[3/4] Verifying invitation and connecting…",
-    "zh-CN": "[3/4] 正在验证邀请并连接服务器…"
   },
   "connection.token.2": {
     "en": "Connection token, short code, or invitation URL: ",
@@ -454,14 +438,6 @@
   "invalid.token.expected.a.websocket.origin.with.s": {
     "en": "invalid token: expected a WebSocket origin with %s path",
     "zh-CN": "无效 Token：应为路径为 %s 的 WebSocket 地址"
-  },
-  "redeem.invitation.w": {
-    "en": "redeem invitation: %w",
-    "zh-CN": "验证邀请失败：%w"
-  },
-  "invitation.invalid.expired.or.already.used.http.d": {
-    "en": "invitation invalid, expired, or already used (HTTP %d)",
-    "zh-CN": "邀请无效、已过期或已使用（HTTP %d）"
   },
   "connect.w.http.d": {
     "en": "connect: %w (HTTP %d)",
@@ -686,6 +662,10 @@
   "installer.missing.download.url": {
     "en": "Missing download URL",
     "zh-CN": "缺少下载地址"
+  },
+  "installer.client.authorization.version": {
+    "en": "Agenterm CLI 0.20.15 or newer is required for local authorization.",
+    "zh-CN": "本地授权需要 Agenterm CLI 0.20.15 或更新版本。"
   },
   "installer.missing.home": {
     "en": "HOME is not set",

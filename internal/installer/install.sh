@@ -5,11 +5,9 @@
 # License: https://www.apache.org/licenses/LICENSE-2.0
 set -eu
 version='@RELEASE_TAG@'
-invitation=${1:-}
+token=${1:-}
 base=${2:-}
-credential_kind=${3:-invitation}
-install_mode=${4:-cached}
-origin=${base%/downloads/*}
+install_mode=${3:-cached}
 locale=${AGENTERM_LANG:-}
 if [ -z "$locale" ] || [ "$locale" = auto ]; then
   locale=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
@@ -18,20 +16,19 @@ fi
 case "$locale" in '') if [ "$(uname -s)" = Darwin ]; then locale=$(defaults read -g AppleLanguages 2>/dev/null | tr -d '"(), ' | head -n 1 || true); fi;; esac
 case "$locale" in zh_CN*|zh-SG*|zh_SG*|zh-CN*|zh-Hans*|zh_Hans*|zh|zh.*) chinese=1;; *) chinese=0;; esac
 @TRANSLATIONS@
-reset='' primary='' warning='' success=''
+reset='' primary='' success=''
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
   reset=$(printf '\033[0m')
   case "${COLORTERM:-}:${TERM_PROGRAM:-}:${WT_SESSION:-}" in
     truecolor:*|24bit:*|*:Apple_Terminal:*|*:vscode:*|*:*:?*) primary=$(printf '\033[@COLOR_PRIMARY_SGR@m') ;;
     *) primary=$(printf '\033[1;@COLOR_PRIMARY@m') ;;
   esac
-  warning=$(printf '\033[1;@COLOR_WARNING@m')
   success=$(printf '\033[1;@COLOR_SUCCESS@m')
 fi
 say() {
   color=''
   case "$1" in
-    installer.connection.progress|installer.2.4.preparing.client) color=$primary ;;
+    installer.2.4.preparing.client) color=$primary ;;
     installer.cached.client.verified.skipping.download|installer.client.verified) color=$success ;;
   esac
   format=$(text "$1"); shift
@@ -48,82 +45,6 @@ banner() {
 }
 [ -n "$base" ] || { say installer.missing.download.url >&2; exit 1; }
 banner
-printf '\n%s%s%s\n' "$warning" "$(text installer.remote.control.authorization)" "$reset"
-say installer.server.s "$origin"
-say installer.the.server.can.control.this.computer.with
-printf '\n'
-choice=1
-choose_consent() {
-  deny_label=$(text installer.consent.no)
-  if [ "$install_mode" = temporary-assistance ]; then
-    number_prompt=$(text installer.consent.binary.number)
-    set -- "$(text installer.consent.allow)" "$deny_label"
-  else
-    number_prompt=$(text installer.consent.number)
-    set -- "$(text installer.consent.temporary)" "$(text installer.consent.persistent)" "$deny_label"
-  fi
-  last_choice=$#
-say installer.consent.menu
-if [ -t 0 ] && [ -t 1 ] && command -v stty >/dev/null 2>&1; then
-  old_tty=$(stty -g)
-  stty -echo -icanon min 1 time 0
-  trap 'stty "$old_tty"; exit 130' HUP INT TERM
-  previous_lines=0
-  while :; do
-    columns=$(stty size 2>/dev/null | awk '{print $2}')
-    case "$columns" in ''|*[!0-9]*) columns=80;; esac
-    if [ "$columns" -lt 120 ]; then vertical=1; else vertical=0; fi
-    if [ "$previous_lines" -gt 1 ]; then printf '\033[%sA' "$((previous_lines - 1))"; fi
-    printf '\r\033[J'
-    index=0
-    for label do
-      index=$((index + 1))
-      if [ "$index" -eq "$choice" ]; then
-        if [ -n "$reset" ]; then printf '\033[7m ▶ %s \033[0m' "$label"; else printf ' ▶ %s ' "$label"; fi
-      else
-        printf '   %s ' "$label"
-      fi
-      if [ "$vertical" -eq 1 ] && [ "$index" -lt "$last_choice" ]; then printf '\n'; else printf '   '; fi
-    done
-    if [ "$vertical" -eq 1 ]; then previous_lines=$last_choice; else previous_lines=1; fi
-    key=$(dd bs=1 count=1 2>/dev/null || true; printf '.')
-    case "$key" in
-      .) choice=$last_choice; break ;;
-      "$(printf '\n.')"|"$(printf '\r.')") break ;;
-      "$(printf '\003.')"|"$(printf '\004.')") choice=$last_choice; break ;;
-      "$(printf '\033.')")
-        sequence=$(dd bs=1 count=2 2>/dev/null || true)
-        case "$sequence" in '[C'|'[B') [ "$choice" -ge "$last_choice" ] || choice=$((choice + 1));; '[D'|'[A') [ "$choice" -le 1 ] || choice=$((choice - 1));; esac ;;
-      1.|2.|3.) [ "${key%.}" -gt "$last_choice" ] || choice=${key%.} ;;
-    esac
-  done
-  stty "$old_tty"
-  trap - HUP INT TERM
-  printf '\n'
-else
-  index=0
-  for label do
-    index=$((index + 1))
-    if [ "$index" -gt 1 ]; then printf '    '; fi
-    printf '%s. %s' "$index" "$label"
-  done
-  printf '\n%s' "$number_prompt"
-  read -r choice || choice=$last_choice
-fi
-}
-terminal_input=0
-if [ ! -t 0 ] && [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
-  terminal_input=1
-  choose_consent </dev/tty
-else
-  choose_consent
-fi
-if [ "$install_mode" = temporary-assistance ] && [ "$choice" != 1 ]; then
-  say installer.connection.cancelled
-  exit 0
-fi
-case "$choice" in 1) connection_mode=temporary;; 2) connection_mode=persistent;; *) say installer.connection.cancelled; exit 0;; esac
-say installer.connection.progress
 case "$(uname -s)" in Darwin) os=macos;; Linux) os=linux;; *) say installer.unsupported.system >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) say installer.unsupported.architecture >&2; exit 1;; esac
 umask 077
@@ -204,15 +125,22 @@ else
   if [ "$work" != "$destination" ]; then mv -f "$work/$name" "$binary"; fi
   say installer.client.verified
 fi
+if ! client_version=$(AGENTERM_SKIP_LINK_REGISTRATION=1 "$binary" -version) ||
+   ! printf '%s\n' "$client_version" | awk -F. 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($1 > 0 || $2 > 20 || ($2 == 20 && $3 >= 15)) { supported = 1 } END { exit !(NR == 1 && supported) }'; then
+  say installer.client.authorization.version >&2
+  exit 1
+fi
 run_client() {
-if [ "$install_mode" = temporary-assistance ]; then
-  TMPDIR="$temp_root" "$binary" -token "$invitation" -temporary-assistance
-  return
-fi
-if [ -n "$invitation" ]; then
-  case "$credential_kind:$invitation" in token:*|*:http://*|*:https://*) "$binary" -token "$invitation" "-connection-mode=$connection_mode";; *) "$binary" -invite "$invitation" -consent-confirmed "-connection-mode=$connection_mode";; esac
-else
-  "$binary" -token "" "-connection-mode=$connection_mode"
-fi
+  if [ "$install_mode" = temporary-assistance ]; then
+    TMPDIR="$temp_root" "$binary" -token "$token" -temporary-assistance
+  elif [ -n "$token" ]; then
+    "$binary" -token "$token"
+  else
+    "$binary" -token ""
+  fi
 }
-if [ "$terminal_input" -eq 1 ]; then run_client </dev/tty; else run_client; fi
+if [ ! -t 0 ] && [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
+  run_client </dev/tty
+else
+  run_client
+fi

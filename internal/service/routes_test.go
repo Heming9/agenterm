@@ -1,10 +1,8 @@
 package service
 
 import (
-	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -86,7 +84,6 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			value := issued["invitation"].(string)
 			base := origin + prefix
 			decoded, _ := protocol.Decode(issued["client_token"].(string))
 			shell, powershell := installCommands(issued["client_token"].(string), "")
@@ -119,23 +116,13 @@ func TestURLPrefixEndToEnd(t *testing.T) {
 			if res.StatusCode != 200 {
 				t.Fatalf("download status: %d", res.StatusCode)
 			}
-			probe, _, err := websocket.DefaultDialer.Dial(s.clientURL+"?probe=1", http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + value}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			probe.Close()
-			token, err := invite.Redeem(context.Background(), value)
-			if err != nil || token != issued["client_token"] {
-				t.Fatalf("redeem with prefix: %v", err)
-			}
-			credential, _ := protocol.Decode(token)
-			ws, _, err := websocket.DefaultDialer.Dial(credential.ConnectionURL(), http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + credential.Secret}})
+			ws, _, err := websocket.DefaultDialer.Dial(decoded.ConnectionURL(), http.Header{version.Header: {version.Protocol}, "Authorization": {"Bearer " + decoded.Secret}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer ws.Close()
 			deadline := time.Now().Add(time.Second)
-			for len(s.listClients(credential.Secret)) != 1 {
+			for len(s.listClients(decoded.Secret)) != 1 {
 				if time.Now().After(deadline) {
 					t.Fatal("client did not connect through prefix")
 				}
@@ -164,7 +151,7 @@ func TestOnlyNamespacedRoutesAreExposed(t *testing.T) {
 	}{
 		{"POST", "/agenterm/mcp", 401},
 		{"GET", "/agenterm/client", 401},
-		{"GET", "/agenterm/invite/redeem", 405},
+		{"POST", "/agenterm/invite/redeem", 404},
 		{"GET", "/agenterm/downloads/v1.2.3/SHA256SUMS", 200},
 		{"GET", "/agenterm/c/unknown", 404},
 		{"POST", "/mcp", 404},

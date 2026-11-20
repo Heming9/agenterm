@@ -30,11 +30,6 @@ func (s *runtimeState) cleanupTokensLocked(now time.Time) {
 		online[c.secret] = true
 	}
 	expired := make(map[string]bool)
-	for key, entry := range s.invitations {
-		if !now.Before(entry.expires) {
-			delete(s.invitations, key)
-		}
-	}
 	for secret, owner := range s.clientOwners {
 		if !online[secret] && !owner.expires.IsZero() && !now.Before(owner.expires) {
 			expired[secret] = true
@@ -53,11 +48,6 @@ func (s *runtimeState) deleteTokensLocked(secrets map[string]bool) {
 
 // Revoke before disconnecting clients to prevent a concurrent reconnect.
 func (s *runtimeState) revokeTokensLocked(secrets map[string]bool) {
-	for key, entry := range s.invitations {
-		if secrets[s.tokens[entry.token]] {
-			delete(s.invitations, key)
-		}
-	}
 	for code, entry := range s.shortCodes {
 		if secrets[s.tokens[entry.token]] {
 			delete(s.shortCodes, code)

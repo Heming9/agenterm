@@ -67,7 +67,7 @@ func publicRoute(path, prefix string) string {
 		return "unmatched"
 	}
 	switch suffix {
-	case "mcp", "client", "invite/redeem":
+	case "mcp", "client":
 		return "/" + suffix
 	}
 	if strings.HasPrefix(suffix, "client/") {

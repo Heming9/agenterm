@@ -34,6 +34,7 @@ type fixture struct {
 	command        *exec.Cmd
 	done           chan error
 	resumes        atomic.Int32
+	redemptions    atomic.Int32
 }
 
 func newFixture(t *testing.T, tls bool, mode string) *fixture {
@@ -48,21 +49,12 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	}
 	f := &fixture{t: t, peers: make(chan *websocket.Conn, 4), done: make(chan error, 1)}
 	secret := base64.RawURLEncoding.EncodeToString([]byte("device-key"))
-	inviteSecret := base64.RawURLEncoding.EncodeToString([]byte("invite-key"))
 	var token string
 	tokenReady := make(chan struct{})
 	mux := http.NewServeMux()
-	mux.HandleFunc("/prototype/invite/redeem", func(w http.ResponseWriter, r *http.Request) {
-		<-tokenReady
-		if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer "+inviteSecret {
-			http.Error(w, "unauthorized", 401)
-			return
-		}
-		w.Header().Set(version.Header, version.Protocol)
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
-	})
 	mux.HandleFunc("/prototype/c/ABC123", func(w http.ResponseWriter, r *http.Request) {
 		<-tokenReady
+		f.redemptions.Add(1)
 		if r.Method != "POST" {
 			http.Error(w, "method", 405)
 			return
@@ -100,20 +92,11 @@ func newFixture(t *testing.T, tls bool, mode string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invitation, err := protocol.Encode(protocol.Token{URL: url, Secret: inviteSecret, Identifier: "abc123"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	close(tokenReady)
-	args := []string{"-token", token, "-connection-mode", "persistent"}
-	if mode == "invite" {
-		args = []string{"-invite", invitation}
-	}
-	if mode == "deny" {
-		args = []string{"-invite", invitation}
-	}
+	address := server.URL + "/prototype/c/ABC123"
+	args := []string{"-token", address}
 	if strings.HasPrefix(mode, "link-") {
-		query := neturl.Values{"url": {server.URL + "/prototype/c/ABC123"}}
+		query := neturl.Values{"url": {address}}
 		if mode != "link-default" {
 			query.Set("mode", strings.TrimPrefix(mode, "link-"))
 		}
@@ -202,7 +185,7 @@ func TestRustCLIProtocol(t *testing.T) {
 	}
 	for _, tls := range []bool{false, true} {
 		t.Run(fmt.Sprint("TLS=", tls), func(t *testing.T) {
-			f := newFixture(t, tls, "invite")
+			f := newFixture(t, tls, "short-code")
 			// Ping/pong must remain responsive even with a waiting terminal call.
 			pong := false
 			f.peer.SetPongHandler(func(value string) error { pong = value == "probe"; return nil })
@@ -259,13 +242,16 @@ func TestRustCLIProtocol(t *testing.T) {
 	}
 }
 
-func TestRustCLIDeniesInvitation(t *testing.T) {
+func TestRustCLIDeniesShortCodeURL(t *testing.T) {
 	f := newFixture(t, false, "deny")
 	select {
 	case p := <-f.peers:
 		_ = p.Close()
 		t.Fatal("denied invitation connected")
 	case <-time.After(200 * time.Millisecond):
+	}
+	if f.redemptions.Load() != 0 {
+		t.Fatal("denying authorization redeemed the short code")
 	}
 	// Cleanup waits for the process and checks its exit status.
 }

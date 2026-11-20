@@ -56,8 +56,6 @@ func (s *runtimeState) routes(tag string, assets fs.FS) http.Handler {
 		switch r.URL.Path {
 		case pathPrefixForTest(s.clientURL) + "/client":
 			s.connect(w, r)
-		case pathPrefixForTest(s.clientURL) + "/invite/redeem":
-			s.redeemInvitation(w, r)
 		default:
 			business.ServeHTTP(w, r)
 		}

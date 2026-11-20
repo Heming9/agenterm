@@ -26,10 +26,6 @@ func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
 	if !strings.HasPrefix(control, token+":") {
 		t.Fatal("control credential missing")
 	}
-	_, err = protocol.Decode(issued["invitation"].(string))
-	if err != nil {
-		t.Fatal(err)
-	}
 	w := httptest.NewRecorder()
 	s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+issued["short_code"].(string), nil))
 	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), strings.TrimPrefix(control, token+":")) {
@@ -49,7 +45,7 @@ func TestControlCredentialSeparatesDeviceAuthority(t *testing.T) {
 	}
 	otherToken := other["client_token"].(string)
 	otherKey := strings.TrimPrefix(other["control_token"].(string), otherToken+":")
-	for _, invalid := range []string{token, control + "x", token + ":", ":" + strings.TrimPrefix(control, token+":"), issued["invitation"].(string), token + ":" + otherKey} {
+	for _, invalid := range []string{token, control + "x", token + ":", ":" + strings.TrimPrefix(control, token+":"), token + ":" + otherKey} {
 		if status := call(invalid); status != http.StatusUnauthorized {
 			t.Fatalf("unprivileged credential accepted: %d", status)
 		}

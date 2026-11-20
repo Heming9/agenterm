@@ -32,28 +32,43 @@ pub fn input(prompt: &str) -> Result<String> {
     }
     Ok(s.trim().into())
 }
-pub fn consent(server: &str) -> Result<Option<bool>> {
-    print!(
-        "{}",
-        tr("remote.control.authorization.prompt").replace("%s", server)
-    );
+pub fn authorization_prompt(server: &str) -> String {
+    tr("remote.control.authorization.prompt").replace("%s", server)
+}
+pub fn consent_choices(temporary_only: bool) -> &'static [&'static str] {
+    const CHOICES: &[&str] = &[
+        "installer.consent.temporary",
+        "installer.consent.persistent",
+        "installer.consent.no",
+    ];
+    if temporary_only {
+        &["installer.consent.temporary", "installer.consent.no"]
+    } else {
+        CHOICES
+    }
+}
+pub fn consent_mode(selected: usize, temporary_only: bool) -> Option<bool> {
+    match selected {
+        0 => Some(true),
+        1 if !temporary_only => Some(false),
+        _ => None,
+    }
+}
+pub fn consent(server: &str, temporary_only: bool) -> Result<Option<bool>> {
+    print!("{}", authorization_prompt(server));
     if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        return crate::tui::consent();
+        return crate::tui::consent(temporary_only);
     }
     println!("\n{}", tr("installer.consent.menu"));
-    println!(
-        "1. {}    2. {}    3. {}",
-        tr("installer.consent.temporary"),
-        tr("installer.consent.persistent"),
-        tr("installer.consent.no")
-    );
-    Ok(
-        match input(text("Enter 1, 2 or 3: ", "请输入 1、2 或 3："))?.as_str() {
-            "1" => Some(true),
-            "2" => Some(false),
-            _ => None,
-        },
-    )
+    for (index, choice) in consent_choices(temporary_only).iter().enumerate() {
+        println!("{}. {}", index + 1, tr(choice));
+    }
+    let answer = input(text("Enter a choice: ", "请输入选项编号："))?;
+    Ok(match answer.as_str() {
+        "1" => consent_mode(0, temporary_only),
+        "2" => consent_mode(1, temporary_only),
+        _ => None,
+    })
 }
 fn dim(s: &str) -> String {
     if io::stdout().is_terminal()
@@ -96,12 +111,9 @@ pub fn output(data: &[u8]) {
 #[derive(Default, Clone)]
 pub struct Options {
     pub token: String,
-    pub invite: String,
     pub temporary: bool,
-    pub consent: bool,
     pub plain: bool,
     pub token_provided: bool,
-    pub mode_provided: bool,
     pub temporary_assistance: bool,
 }
 impl Options {
@@ -113,7 +125,7 @@ impl Options {
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
-                return Err("unexpected positional argument; use -token or -invite".into());
+                return Err("unexpected positional argument; use -token".into());
             }
             let (flag, inline) = arg
                 .split_once('=')
@@ -122,7 +134,7 @@ impl Options {
             match flag {
                 "h" | "help" => {
                     println!(
-                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token TOKEN | -invite INVITATION]\n       agenterm-cli \"agenterm-cli://connect?url=ENCODED_URL[&mode=temporary|persistent]\"\n\n  -token VALUE              Connection token, short code, or invitation URL\n  -invite VALUE             One-time invitation (asks for authorization)\n  -connection-mode MODE     temporary (default) or persistent\n  -consent-confirmed        Installer has already obtained authorization\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
+                        "Agenterm {VERSION}\n\nUsage: agenterm-cli [-token VALUE]\n       agenterm-cli \"agenterm-cli://authorize?url=ENCODED_URL\"\n\n  -token VALUE              Connection token, short code, or invitation URL\n  -plain                    Plain output (automatic without a terminal)\n  -version                  Print version\n\nRemote control must be authorized locally before connecting.\nAGENTERM_LANG=zh-CN selects Chinese. NO_COLOR disables colors."
                     );
                     return Ok(None);
                 }
@@ -136,10 +148,7 @@ impl Options {
                 "temporary-assistance" => {
                     o.temporary_assistance = boolean(inline.as_deref())?;
                 }
-                "consent-confirmed" => {
-                    o.consent = boolean(inline.as_deref())?;
-                }
-                "token" | "invite" | "connection-mode" => {
+                "token" | "connection-mode" => {
                     let v = inline
                         .or_else(|| args.next())
                         .ok_or_else(|| format!("-{flag} requires a value"))?;
@@ -148,31 +157,14 @@ impl Options {
                             o.token_provided = true;
                             o.token = v.trim().into();
                         }
-                        "invite" => o.invite = v.trim().into(),
-                        _ => {
-                            o.mode_provided = true;
-                            o.temporary = match v.as_str() {
-                                "temporary" => true,
-                                "persistent" => false,
-                                _ => {
-                                    return Err(
-                                        "-connection-mode must be temporary or persistent".into()
-                                    );
-                                }
-                            }
-                        }
+                        _ if matches!(v.as_str(), "temporary" | "persistent") => {}
+                        _ => return Err("-connection-mode must be temporary or persistent".into()),
                     }
                 }
                 _ => return Err(format!("unknown argument: {flag}")),
             }
         }
-        if !o.token.is_empty() && !o.invite.is_empty() {
-            return Err("-token and -invite cannot be used together".into());
-        }
-        if o.consent && o.invite.is_empty() {
-            return Err("-consent-confirmed requires -invite".into());
-        }
-        if o.temporary_assistance && (!o.temporary || !o.token.starts_with("Agenterm_")) {
+        if o.temporary_assistance && !o.token.starts_with("Agenterm_") {
             return Err(tr("temporary.assistance.requires.installer").into());
         }
         Ok(Some(o))
@@ -195,4 +187,15 @@ fn temporary_assistance_without_installer_returns_localized_error() {
         result.err().as_deref(),
         Some(tr("temporary.assistance.requires.installer"))
     );
+}
+
+#[cfg(test)]
+#[test]
+fn removed_arguments_are_rejected() {
+    for flag in ["invite", "consent-confirmed", "local-authorization"] {
+        assert_eq!(
+            Options::parse([format!("-{flag}")]).err(),
+            Some(format!("unknown argument: {flag}"))
+        );
+    }
 }

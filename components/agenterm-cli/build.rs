@@ -79,7 +79,6 @@ fn main() {
         "connection.mode.persistent",
         "connection.mode.select",
         "connection.mode.help",
-        "3.4.connecting",
         "connection.token",
         "enter.connect.ctrl.c.quit",
         "tui.ctrl.c.quit",

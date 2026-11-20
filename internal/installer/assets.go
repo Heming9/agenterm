@@ -30,7 +30,6 @@ func Script(name string) ([]byte, error) {
 		"@COLOR_PRIMARY_SGR@", theme.PrimarySGR(),
 		"@COLOR_PRIMARY@", theme.InstallerColor("primary", powershell),
 		"@COLOR_SUCCESS@", theme.InstallerColor("success", powershell),
-		"@COLOR_WARNING@", theme.InstallerColor("warning", powershell),
 	).Replace(string(data))
 	unique := make(map[string]string)
 	for _, key := range resourceKey.FindAllString(template, -1) {

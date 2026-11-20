@@ -59,10 +59,6 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	if s.multiDevice == nil {
 		s.multiDevice = make(map[string]bool)
 	}
-	value, err := s.newInvitation(token, identifier, expires)
-	if err != nil {
-		return nil, err
-	}
 	var code string
 	if !multiDevice && s.enableShortCode {
 		if s.shortCodes == nil {
@@ -70,8 +66,6 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 		}
 		code, err = s.shortCodes.issue(token)
 		if err != nil {
-			decoded, _ := protocol.Decode(value)
-			delete(s.invitations, decoded.Secret)
 			return nil, err
 		}
 	}
@@ -84,8 +78,7 @@ func (s *runtimeState) createClientMode(owner string, args createClientArgs) (ma
 	s.nextClientOrder++
 	s.clientOwners[secret] = &clientOwner{ip: owner, token: token, controlKeyHash: controlHash, order: s.nextClientOrder, expires: expires, temporaryAssistance: args.TemporaryAssistance}
 	deadline := expires.UTC().Format(time.RFC3339)
-	// Older API 14 frontends still forward the invitation and lifetime fields.
-	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "invitation": value, "expires_at": deadline, "token_initial_expires_at": deadline}
+	result := map[string]any{"client_token": token, "control_token": token + ":" + controlKey, "token_identifier": identifier, "multi_device": multiDevice, "expires_at": deadline, "token_initial_expires_at": deadline}
 	if args.TemporaryAssistance {
 		result["temporary_assistance"] = true
 	}

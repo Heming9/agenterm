@@ -48,11 +48,6 @@ func TestCloseClientSelectionAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.s.mu.Lock()
-	for _, invitation := range h.s.invitations {
-		if invitation.token == token {
-			t.Error("invitation survived token revocation")
-		}
-	}
 	if h.s.validSecretLocked(decoded.Secret) {
 		t.Error("token survived revocation")
 	}

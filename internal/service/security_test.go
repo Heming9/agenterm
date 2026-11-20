@@ -92,7 +92,7 @@ func TestFailureLimiterExpiry(t *testing.T) {
 }
 
 func TestAuthenticationRequiresConfiguredIPHeaderAcrossEndpoints(t *testing.T) {
-	for _, endpoint := range []string{"mcp", "client", "probe", "redeem", "installer"} {
+	for _, endpoint := range []string{"mcp", "client", "installer"} {
 		for _, header := range []struct {
 			name   string
 			values []string
@@ -121,11 +121,6 @@ func TestAuthenticationRequiresConfiguredIPHeaderAcrossEndpoints(t *testing.T) {
 					s.mcp(w, r)
 				case "client":
 					s.connect(w, r)
-				case "probe":
-					r.URL.RawQuery = "probe=1"
-					s.connect(w, r)
-				case "redeem":
-					s.redeemInvitation(w, r)
 				case "installer":
 					r.Method, r.URL.Path = http.MethodGet, "/c/AAAAAA"
 					s.installWrapper("v1.2.3").ServeHTTP(w, r)

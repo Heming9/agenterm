@@ -96,7 +96,8 @@ func TestRustNativeMacProtocolLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(tokenReady)
-	raw := "agenterm-cli://connect?" + url.Values{"url": {server.URL + "/agenterm/c/ABC123"}, "mode": {"persistent"}}.Encode()
+	raw := "agenterm-cli://authorize?" + url.Values{"url": {server.URL + "/agenterm/c/ABC123"}}.Encode()
+	t.Log("In the Terminal window that opens, approve the loopback connection in the Agenterm CLI.")
 	if out, err := exec.Command("/usr/bin/open", raw).CombinedOutput(); err != nil {
 		t.Fatalf("open protocol URL: %v %s", err, out)
 	}
@@ -104,7 +105,7 @@ func TestRustNativeMacProtocolLaunch(t *testing.T) {
 	select {
 	case peer = <-peers:
 	case <-time.After(30 * time.Second):
-		t.Fatal("macOS did not launch and connect the Rust client (check the Terminal automation authorization dialog)")
+		t.Fatal("macOS did not connect the Rust client after local authorization")
 	}
 	defer peer.Close()
 	running := nativeLinkProcesses(t, stable)

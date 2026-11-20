@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -57,10 +56,10 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/c/"+code+suffix, nil)
 		w := httptest.NewRecorder()
 		h.s.installWrapper(installerTestTag).ServeHTTP(w, r)
-		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "'token' 'temporary-assistance'") {
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "'temporary-assistance'") {
 			t.Fatalf("short-code installer %q did not preserve temporary policy: %d", suffix, w.Code)
 		}
-		if !strings.Contains(get("/c/"+token.Secret+suffix), "'token' 'temporary-assistance'") {
+		if !strings.Contains(get("/c/"+token.Secret+suffix), "'temporary-assistance'") {
 			t.Fatalf("installer %q did not receive the invitation policy", suffix)
 		}
 	}
@@ -84,14 +83,9 @@ func TestTemporaryAssistanceInvitation(t *testing.T) {
 	if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
 		t.Fatalf("ordinary client should be rejected, got %v", err)
 	}
-	invitation, err := protocol.Decode(h.s.legacyInvitationForToken(t, deviceToken))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"/agenterm/c/" + code, "/agenterm/c/" + token.Secret, "/agenterm/invite/redeem"} {
+	for _, path := range []string{"/agenterm/c/" + code, "/agenterm/c/" + token.Secret} {
 		r := httptest.NewRequest(http.MethodPost, path, nil)
 		r.Header.Set(version.Header, version.Protocol)
-		r.Header.Set("Authorization", "Bearer "+invitation.Secret)
 		w := httptest.NewRecorder()
 		h.s.routes(installerTestTag, nil).ServeHTTP(w, r)
 		if w.Code != http.StatusForbidden {
@@ -177,7 +171,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	if err := denied.Run(); err != nil || !strings.Contains(deniedOutput.String(), "cancelled") {
 		t.Fatalf("declining consent: %v\n%s", err, deniedOutput)
 	}
-	for _, want := range []string{"Choose authorization (↑/↓/←/→, Enter):", "1. Agree to authorization    2. Deny authorization", "Enter 1 or 2:"} {
+	for _, want := range []string{"Choose authorization", "1. Allow authorization (temporary)", "2. Deny authorization", "Enter a choice:"} {
 		if !strings.Contains(deniedOutput.String(), want) {
 			t.Errorf("consent prompt missing %q:\n%s", want, deniedOutput)
 		}
@@ -188,6 +182,7 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 	cmd, output := runInstaller("1\n", interactive)
 	var terminal *os.File
 	var readDone chan struct{}
+	authorizationReady := make(chan struct{})
 	if interactive {
 		terminal, err = pty.Start(cmd)
 		if err != nil {
@@ -195,8 +190,20 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 		}
 		readDone = make(chan struct{})
 		go func() {
-			_, _ = io.Copy(output, terminal)
-			close(readDone)
+			defer close(readDone)
+			buffer := make([]byte, 4096)
+			ready := false
+			for {
+				count, err := terminal.Read(buffer)
+				output.Write(buffer[:count])
+				if !ready && bytes.Contains(output.Bytes(), []byte("Deny authorization")) {
+					close(authorizationReady)
+					ready = true
+				}
+				if err != nil {
+					return
+				}
+			}
 		}()
 	} else if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -223,7 +230,14 @@ func TestTemporaryAssistanceInstallerCleanup(t *testing.T) {
 		}
 	})
 	if interactive {
-		if _, err := terminal.Write([]byte("\n")); err != nil {
+		select {
+		case <-authorizationReady:
+		case <-done:
+			t.Fatal("installer exited before the CLI authorization prompt")
+		case <-ctx.Done():
+			t.Fatal("CLI authorization prompt did not appear")
+		}
+		if _, err := terminal.Write([]byte("\r")); err != nil {
 			t.Fatal(err)
 		}
 	}

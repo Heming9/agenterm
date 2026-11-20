@@ -84,11 +84,6 @@ impl Address {
     pub fn url(&self) -> String {
         format!("{}://{}{}", self.scheme, self.authority, self.path)
     }
-    pub fn http(&self) -> Self {
-        let mut a = self.clone();
-        a.scheme = if a.secure() { "https" } else { "http" }.into();
-        a
-    }
     pub fn server(&self) -> String {
         format!(
             "{}://{}{}",
@@ -212,11 +207,6 @@ impl Token {
         } else {
             format!("{url}/{}", self.identifier)
         }
-    }
-    pub fn invitation_url(&self) -> Address {
-        let mut a = self.address.http();
-        a.path = a.path.strip_suffix("/client").unwrap().to_string() + "/invite/redeem";
-        a
     }
 }
 

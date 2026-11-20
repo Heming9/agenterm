@@ -3,39 +3,24 @@ package service
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"agenterm/internal/protocol"
-	"agenterm/internal/version"
 )
 
 func TestUnusedTokenCleanupWithAndWithoutQuota(t *testing.T) {
 	for _, quota := range []int{0, 2} {
-		for _, redeemed := range []bool{false, true} {
-			s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: quota}
-			issued, err := s.createClient("192.0.2.1")
-			if err != nil {
-				t.Fatal(err)
-			}
-			token := issued["client_token"].(string)
-			decoded, _ := protocol.Decode(token)
-			invitation, _ := protocol.Decode(issued["invitation"].(string))
-			if redeemed {
-				req := httptest.NewRequest(http.MethodPost, "/invite/redeem", nil)
-				req.Header.Set("Authorization", "Bearer "+invitation.Secret)
-				req.Header.Set(version.Header, version.Protocol)
-				response := httptest.NewRecorder()
-				s.redeemInvitation(response, req)
-				if response.Code != http.StatusOK {
-					t.Fatalf("redeem: %d", response.Code)
-				}
-			}
-			s.cleanupTokensLocked(s.clientOwners[decoded.Secret].expires)
-			if len(s.tokens)+len(s.clientOwners)+len(s.multiDevice)+len(s.invitations)+len(s.shortCodes) != 0 {
-				t.Fatalf("quota=%d redeemed=%v: expired token or associated state retained", quota, redeemed)
-			}
+		s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client", maxClientsPerIP: quota}
+		issued, err := s.createClient("192.0.2.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		token := issued["client_token"].(string)
+		decoded, _ := protocol.Decode(token)
+		s.cleanupTokensLocked(s.clientOwners[decoded.Secret].expires)
+		if len(s.tokens)+len(s.clientOwners)+len(s.multiDevice)+len(s.shortCodes) != 0 {
+			t.Fatalf("quota=%d: expired token or associated state retained", quota)
 		}
 	}
 }
@@ -138,7 +123,7 @@ func TestTokenCleanupRunsWithoutNewRequests(t *testing.T) {
 		s.mu.Lock()
 		_, expiredRetained := s.tokens[issued["client_token"].(string)]
 		clean := !expiredRetained && len(s.tokens) == 1 && s.tokens["startup"] == "startup-secret" &&
-			len(s.clientOwners)+len(s.invitations)+len(s.shortCodes)+len(s.multiDevice) == 0
+			len(s.clientOwners)+len(s.shortCodes)+len(s.multiDevice) == 0
 		s.mu.Unlock()
 		if clean {
 			break

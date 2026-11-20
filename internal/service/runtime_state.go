@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -77,55 +76,11 @@ type runtimeState struct {
 	mu              sync.Mutex
 	limiter         authLimiter
 	adminLimiter    authLimiter
-	invitations     map[string]invitation
 	shortCodes      shortCodeStore // code -> connection token and redemption count
 	maxClientsPerIP int
 	clientOwners    map[string]*clientOwner // client secret -> issuing IP and lifecycle
 	nextClientOrder uint64
 	p2pRooms        map[string]*p2pRoom
-}
-
-type invitation struct {
-	token   string
-	expires time.Time
-}
-
-func (s *runtimeState) redeemInvitation(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, i18n.Text(i18n.Terminal(), "method.not.allowed"), http.StatusMethodNotAllowed)
-		return
-	}
-	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	s.mu.Lock()
-	entry, ok := s.invitations[secret]
-	ok = ok && r.Header.Get("Authorization") == "Bearer "+secret && time.Now().Before(entry.expires)
-	if status, err := s.authorize(r, ok); err != nil {
-		s.mu.Unlock()
-		http.Error(w, err.Error(), status)
-		return
-	}
-	if !acceptClientVersion(w, r) {
-		s.mu.Unlock()
-		return
-	}
-	clientSecret := s.tokens[entry.token]
-	if owner := s.clientOwners[clientSecret]; owner != nil && owner.temporaryAssistance {
-		s.mu.Unlock()
-		http.Error(w, serverText("temporary.assistance.requires.installer"), http.StatusForbidden)
-		return
-	}
-	if !s.multiDevice[clientSecret] && (s.connecting[clientSecret] > 0 || s.hasClientLocked(clientSecret)) {
-		s.mu.Unlock()
-		http.Error(w, i18n.Text(i18n.Terminal(), "unauthorized"), http.StatusUnauthorized)
-		return
-	}
-	if !s.multiDevice[clientSecret] {
-		delete(s.invitations, secret)
-	}
-	s.mu.Unlock()
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"token": entry.token})
 }
 
 func random() string {
@@ -261,10 +216,6 @@ func (s *runtimeState) reserveConnection(secret, resume string) (*client, string
 }
 
 func (s *runtimeState) connect(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("probe") == "1" {
-		s.probeConnection(w, r)
-		return
-	}
 	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if status, err := s.authorize(r, r.Header.Get("Authorization") == "Bearer "+secret && s.validSecret(secret) && s.validClientRoute(secret, r.URL.Path)); err != nil {
 		http.Error(w, err.Error(), status)

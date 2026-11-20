@@ -124,14 +124,9 @@ impl Reporter {
             self.send(Event::Connecting(token.connection_url()));
         }
     }
-    pub fn connected(&self, invited: bool, elapsed: Duration) {
+    pub fn connected(&self, elapsed: Duration) {
         if self.sink.is_some() {
             self.send(Event::Connected { elapsed });
-        } else if invited {
-            line(
-                "[4/4] Connected. Close the client to disconnect.",
-                "[4/4] 连接成功。关闭客户端即可断开连接。",
-            );
         } else {
             line(
                 "[Agenterm] Connected. Commands from the server will appear here.",

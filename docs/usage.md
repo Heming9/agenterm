@@ -42,7 +42,7 @@ For self-hosting, use the MCP address printed at startup and configure your agen
 
 1. Describe the task to your agent and ask it to create an invitation for the target computer.
 2. Privately send the invitation link to the person at the target computer. When the server issues an invitation without a short link, share the connection command for their operating system. Keep the management key and `control_token` with the agent.
-3. On the target computer, open the invitation link or run the shared connection command. On the invitation page, choose **Not yet** for first-time setup, then run the command for your operating system and follow the authorization prompts. If you have used the Rust CLI on that computer, choose **I have**, then **Open terminal app** and confirm the access mode. If the browser cannot open the client, use the command shown on the page or paste the connection token into the CLI.
+3. On the target computer, open the invitation link or run the shared connection command. If you have the updated Rust CLI, choose **I have**, then **Open terminal app**. For first-time setup or if the browser cannot open the updated client, run the command for your operating system. Review the server and approve or deny remote control in the CLI, not on the web page.
 4. Keep the agent conversation active while the device connects, then start the task. The other person can see commands and output in the client and disconnect at any time.
 5. Close or disconnect the client when finished.
 
@@ -58,7 +58,7 @@ After a successful connection, the client saves the server address locally. Ente
 
 The maintained client is the [Rust CLI](../components/agenterm-cli/README.md). Paste a connection token or short-code address to connect. Use the arrow keys or mouse wheel to scroll and drag to select and copy text. Press Esc to clear a selection, then Ctrl+C to disconnect and return to the connection form. On that form, Ctrl+C clears the token first, then quits.
 
-Temporary connections disconnect after five minutes of inactivity, excluding time spent running commands. Persistent connections stay open until disconnected. Connections from the invitation page or an installer command use the mode selected during authorization. When launching the CLI directly with a token, use `-connection-mode=temporary` or `-connection-mode=persistent`. The default is `temporary`. See [how the Rust CLI registers browser links](../components/agenterm-cli/README.md#protocol-links).
+Temporary connections disconnect after five minutes of inactivity, excluding time spent running commands. Persistent connections stay open until disconnected. Regardless of how you open the invitation, choose the mode in the CLI's authorization prompt. See [how the Rust CLI registers browser links](../components/agenterm-cli/README.md#protocol-links).
 
 The one-command connection stores a client in a local cache. You can delete it after closing the client:
 

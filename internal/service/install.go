@@ -4,7 +4,6 @@ import (
 	"agenterm/internal/components"
 	"agenterm/internal/i18n"
 	"agenterm/internal/installer"
-	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"encoding/base64"
 	"encoding/binary"
@@ -27,42 +26,29 @@ var safeWindowsURL = regexp.MustCompile(`^[A-Za-z0-9._~:/-]+$`)
 
 const shortCodeLength = 6
 
-// The caller holds s.mu.
-func (s *runtimeState) newInvitation(token, identifier string, expires time.Time) (string, error) {
-	if s.invitations == nil {
-		s.invitations = make(map[string]invitation)
-	}
-	for {
-		secret := randomBytes(protocol.TokenSecretSize)
-		if _, exists := s.invitations[secret]; exists {
-			continue
-		}
-		value, err := protocol.Encode(protocol.Token{URL: s.clientURL, Secret: secret, Identifier: identifier})
-		if err != nil {
-			return "", err
-		}
-		s.invitations[secret] = invitation{token: token, expires: expires}
-		return value, nil
-	}
-}
-
 // connectionPageURL derives the public page address from the device credential.
 func connectionPageURL(token, code string) (*url.URL, error) {
-	endpoint, secret, err := invite.Endpoint(token)
+	device, err := protocol.Decode(token)
 	if err != nil {
 		return nil, err
 	}
+	secret := device.Secret
 	if code != "" {
 		if len(code) != shortCodeLength || !validInstallCredential.MatchString(code) {
 			return nil, fmt.Errorf("invalid short code")
 		}
 		secret = code
 	}
-	u, err := url.Parse(endpoint)
+	u, err := url.Parse(device.URL)
 	if err != nil {
 		return nil, err
 	}
-	u.Path = strings.TrimSuffix(u.Path, "/invite/redeem") + "/c/" + secret
+	if u.Scheme == "wss" {
+		u.Scheme = "https"
+	} else {
+		u.Scheme = "http"
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/client") + "/c/" + secret
 	u.RawPath = ""
 	return u, nil
 }
@@ -199,7 +185,7 @@ func (s *frontend) installWrapper(tag string) http.Handler {
 			return
 		}
 		body := strings.ReplaceAll(string(script), "@RELEASE_TAG@", tag)
-		args := " 'token'"
+		args := ""
 		if entry.TemporaryAssistance {
 			args += " 'temporary-assistance'"
 		}

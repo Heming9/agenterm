@@ -1,15 +1,12 @@
 package service
 
 import (
-	"agenterm/internal/invite"
 	"agenterm/internal/protocol"
 	"agenterm/internal/version"
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestInstallWrapperLifecycle(t *testing.T) {
@@ -20,7 +17,6 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 	s := &runtimeState{enableShortCode: true}
 	mux := http.NewServeMux()
 	mux.Handle("/c/", s.installWrapper("v1.2.3"))
-	mux.HandleFunc("/agenterm/invite/redeem", s.redeemInvitation)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	s.clientURL = "ws" + strings.TrimPrefix(ts.URL, "http") + protocol.ClientPath
@@ -28,8 +24,6 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := issued["invitation"].(string)
-	decoded, _ := protocol.Decode(value)
 	device, err := protocol.Decode(issued["client_token"].(string))
 	if err != nil {
 		t.Fatal(err)
@@ -47,35 +41,13 @@ func testInstallWrapperLifecycle(t *testing.T, multi bool) {
 			t.Fatalf("headers: %v", w.Header())
 		}
 	}
-	for _, suffix := range []string{"", ".ps1"} {
-		w := httptest.NewRecorder()
-		s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/c/"+decoded.Secret+suffix, nil))
-		if w.Code != http.StatusUnauthorized {
-			t.Fatalf("invitation secret must not serve installer: %d", w.Code)
-		}
-	}
-	got, err := invite.Redeem(context.Background(), value)
-	if err != nil || got != issued["client_token"] {
-		t.Fatalf("redeem after wrapper: %q %v", got, err)
-	}
-	for _, scriptPath := range paths {
-		w := httptest.NewRecorder()
-		s.installWrapper("v1.2.3").ServeHTTP(w, httptest.NewRequest(http.MethodGet, scriptPath, nil))
-		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), issued["client_token"].(string)) {
-			t.Fatalf("token script after invitation redeem: %d", w.Code)
-		}
-	}
 
 }
 
 func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
 	s := &runtimeState{enableShortCode: true, clientURL: "wss://example.com/agenterm/client"}
 	issued, _ := s.createClient("")
-	decoded, _ := protocol.Decode(issued["invitation"].(string))
 	path := "/c/" + issued["short_code"].(string)
-	entry := s.invitations[decoded.Secret]
-	entry.expires = time.Now().Add(-time.Second)
-	s.invitations[decoded.Secret] = entry
 	for _, tc := range []struct {
 		method, tag, path string
 		status            int
@@ -84,7 +56,7 @@ func TestInstallWrapperRejectsInvalidRequests(t *testing.T) {
 		{"GET", "v1.2.3", path + ".ps1", 200},
 		{"GET", "v1.2.3", path + ".sh", 200},
 		{"POST", "v1.2.3", path + ".sh", 404},
-		{"GET", "v1.2.3", "/c/" + decoded.Secret, 401},
+		{"GET", "v1.2.3", "/c/AAAAAAAAAAAAAA", 401},
 		{"GET", "v1.2.3", "/c/unknown", 404},
 		{"GET", "v1.2.3", path + "/install.sh", 404},
 		{"PUT", "v1.2.3", path, 405},

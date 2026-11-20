@@ -24,27 +24,25 @@ For HTTPS, include the `https://` prefix.
 Existing server history and per-server connection locks are shared.
 
 ```sh
-components/agenterm-cli/target/release/agenterm-cli -invite INVITATION
-components/agenterm-cli/target/release/agenterm-cli -token TOKEN -connection-mode persistent
+components/agenterm-cli/target/release/agenterm-cli -token TOKEN
 components/agenterm-cli/target/release/agenterm-cli -token https://SERVER/agenterm/c/ABC123
 ```
 
 ## Protocol links
 
 Ordinary launches automatically register the current user's `agenterm-cli:`
-protocol handler. Browser links use the same terminal-client format as before:
+protocol handler. Browser links open the CLI for local authorization:
 
 ```text
-agenterm-cli://connect?url=https%3A%2F%2Fexample.com%2Fagenterm%2Fc%2FABC123&mode=persistent
+agenterm-cli://authorize?url=https%3A%2F%2Fexample.com%2Fagenterm%2Fc%2FABC123
 ```
 
-Only an HTTP(S) short-code address and the optional `mode=temporary` or
-`mode=persistent` are accepted. The connection opens directly in the TUI using
-that mode; omitting the mode defaults to temporary. The invitation page's mode
-selection is preserved. These links follow `-token` behavior; `-invite` continues
-to show its authorization prompt. Unsupported/duplicate parameters and malformed
-links are rejected before a connection starts. The former GUI's `agenterm:`
-scheme is not claimed by this terminal client.
+The CLI displays the destination server and waits for approval before redeeming
+the code or connecting. Legacy `connect` links still open in the updated CLI, but
+their mode is ignored. Older clients reject the new browser link. The installer
+requires CLI 0.20.15 or newer before passing connection credentials. After
+upgrading, launch the new CLI normally at least once to refresh the registered handler.
+The former GUI's `agenterm:` scheme is not claimed by this terminal client.
 
 The handler keeps a checksum-verified, content-addressed executable under the
 user's configuration directory, so deleting the original download or installer
@@ -58,11 +56,12 @@ skip registration to avoid replacing an active handler.
 
 ## Interactive interface
 
-Invitations show an authorization explanation and temporary/persistent/deny
-choices, using arrow keys on a terminal and numbered input when
-redirected. Temporary connections disconnect
-after five minutes of inactivity, excluding time spent running commands. The
-`-consent-confirmed` installer flag requires `-invite`. The interactive interface
+All connection entry points require local authorization. The CLI lists temporary,
+persistent, then deny, with temporary selected initially in the terminal menu.
+Temporary-assistance invitations only offer temporary or deny. The legacy
+`-connection-mode` argument does not select a mode.
+Temporary connections disconnect after five minutes of inactivity, excluding
+time spent running commands. The interactive interface
 is the default when both stdin and stdout are terminals; `-plain` or redirected
 input/output selects plain output. Ctrl+C disconnects and stops owned shells.
 

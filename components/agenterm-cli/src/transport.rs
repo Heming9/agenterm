@@ -64,12 +64,9 @@ fn stream(a: &Address) -> Result<MaybeTlsStream<TcpStream>> {
     }
 }
 
-pub fn redeem(a: &Address, secret: Option<&str>) -> Result<(Token, Option<String>)> {
+pub fn redeem(a: &Address) -> Result<(Token, Option<String>)> {
     let mut stream = stream(a)?;
-    let auth = secret
-        .map(|s| format!("Authorization: Bearer {s}\r\n"))
-        .unwrap_or_default();
-    write!(stream,"POST {} HTTP/1.1\r\nHost: {}\r\nX-Agenterm-Version: {WIRE_VERSION}\r\nX-Agenterm-Release-Version: {VERSION}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n",a.path,a.authority).map_err(|e|e.to_string())?;
+    write!(stream,"POST {} HTTP/1.1\r\nHost: {}\r\nX-Agenterm-Version: {WIRE_VERSION}\r\nX-Agenterm-Release-Version: {VERSION}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",a.path,a.authority).map_err(|e|e.to_string())?;
     // The endpoint returns at most a small JSON token. Bound headers and body;
     // redirects are rejected so credentials never follow an untrusted Location.
     let mut bytes = Vec::new();
@@ -241,7 +238,6 @@ pub fn run(
     manager: &Manager,
     stopped: &Arc<AtomicBool>,
     temporary: bool,
-    invited: bool,
     started: Instant,
 ) -> Result<()> {
     let idle = IdleTracker::new(
@@ -254,7 +250,7 @@ pub fn run(
     let mut attempt = 0;
     let mut started = started;
     while !stopped.load(Ordering::SeqCst) {
-        match once(t, manager, stopped, &idle, invited, &mut resume, started) {
+        match once(t, manager, stopped, &idle, &mut resume, started) {
             Ok(()) => return Ok(()),
             Err(e) if stopped.load(Ordering::SeqCst) => {
                 let _ = e;
@@ -296,7 +292,6 @@ fn once(
     manager: &Manager,
     stopped: &Arc<AtomicBool>,
     idle: &IdleTracker,
-    invited: bool,
     resume: &mut String,
     started: Instant,
 ) -> Attempt {
@@ -438,7 +433,7 @@ fn once(
     if !temporary_assistance {
         let _ = crate::storage::remember(&t.address);
     }
-    manager.reporter().connected(invited, started.elapsed());
+    manager.reporter().connected(started.elapsed());
     let (sender, receiver) = mpsc::sync_channel::<(String, Value)>(32);
     let mut pending: HashMap<String, Arc<AtomicBool>> = HashMap::new();
     let mut bootstraps: HashMap<String, Bootstrap> = HashMap::new();
