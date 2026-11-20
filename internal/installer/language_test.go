@@ -7,11 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestShellInstallerLanguage(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("requires macOS or Linux")
+	}
 	for _, tc := range []struct{ locale, want string }{
 		{"zh-CN", "准备客户端"}, {"en", "Preparing client"}, {"ja-JP", "Preparing client"}, {"zh-TW", "Preparing client"},
 	} {
